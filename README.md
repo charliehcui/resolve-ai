@@ -59,7 +59,3 @@ deactivate
 ## Important
 
 Do not upload `.env`, API keys, or the `.venv` folder to GitHub.
-
-
-
-pip install -U langchain langchain-openai python-dotenv
