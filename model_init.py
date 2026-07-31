@@ -40,3 +40,10 @@ response = model.invoke("用一句话解释什么是 LangChain。")
 
 print(response)
 response.pretty_print()
+
+messages = [
+    {"role": "system", "content": "系统提示"},
+    {"role": "user", "content": "用户消息"},
+    {"role": "assistant", "content": "AI回复"},  # 可选，用于对话历史
+    {"role": "user", "content": "继续提问"}
+]
