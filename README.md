@@ -4,7 +4,7 @@ ResolveAI is an evidence-driven investigation and resolution system for internal
 
 ## Current status
 
-The project is currently in **Phase 0: Product Scope**. Application code has not been added yet.
+The project is currently in **Phase 1: Engineering Scaffold**. Product scope is complete, and the frontend now reports the backend API health state.
 
 ## Problem
 
@@ -34,4 +34,15 @@ ResolveAI uses a deterministic outer workflow with a bounded, read-only investig
 - Data: PostgreSQL, PostgreSQL full-text search, and pgvector
 - Local development: Docker Compose
 
-Setup instructions will be added in Phase 1 after the project scaffold exists.
+## Repository structure
+
+| Path | Purpose |
+|---|---|
+| `frontend/` | Browser-based support console. |
+| `backend/` | API, business rules, workflow, tools, and database access. |
+| `simulator/` | ResolveLab synthetic SaaS system and reproducible fault scenarios. |
+| `evals/` | Evaluation datasets, evaluators, runners, and reports. |
+| `infra/` | Local containers and deployment infrastructure. |
+| `docs/` | Product, architecture, security, and decision documents. |
+
+Backend setup instructions are available in [`backend/README.md`](backend/README.md).
