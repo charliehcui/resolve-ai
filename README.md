@@ -1,61 +1,37 @@
-# LangChain Learning
+# ResolveAI
 
-This repository contains my LangChain learning notes, code examples, and small projects.
+ResolveAI is an evidence-driven investigation and resolution system for internal B2B SaaS technical support teams.
 
-## Windows Setup
+## Current status
 
-### 1. Clone the Repository
+The project is currently in **Phase 0: Product Scope**. Application code has not been added yet.
 
-```powershell
-git clone git@github.com:charlie6713/langchain-learning.git
-cd langchain-learning
-```
+## Problem
 
-### 2. Create a Virtual Environment
+Technical support engineers often need to check customer accounts, entitlements, background jobs, webhook deliveries, API usage, logs, and product documentation before they can explain an issue.
 
-```powershell
-python -m venv .venv
-```
+ResolveAI will collect this evidence, produce reviewable diagnoses, and either recommend a resolution, propose a safe action, or prepare an escalation package. It will not allow an AI agent to bypass permissions, approval, or audit rules.
 
-### 3. Activate the Virtual Environment
+## Architecture principle
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+ResolveAI uses a deterministic outer workflow with a bounded, read-only investigation agent.
 
-If PowerShell blocks the script:
+- Normal code controls permissions, ticket state, risk rules, approvals, and write actions.
+- The investigation agent decides which approved read-only tools to use next.
+- Low-risk write actions require policy checks and human approval.
+- Unsupported or high-risk cases are escalated instead of guessed.
 
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
+## Documentation
 
-Then activate it again:
+- [Product specification](docs/product-spec.md)
+- [ADR-001: Deterministic workflow with a bounded agent](docs/adr/001-deterministic-workflow-bounded-agent.md)
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+## Planned stack
 
-### 4. Install Dependencies
+- Frontend: Next.js and TypeScript
+- Backend: FastAPI and Python
+- Workflow: LangGraph and LangChain
+- Data: PostgreSQL, PostgreSQL full-text search, and pgvector
+- Local development: Docker Compose
 
-```powershell
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 5. Update Dependencies
-
-After installing a new package:
-
-```powershell
-pip freeze > requirements.txt
-```
-
-### 6. Deactivate the Virtual Environment
-
-```powershell
-deactivate
-```
-
-## Important
-
-Do not upload `.env`, API keys, or the `.venv` folder to GitHub.
+Setup instructions will be added in Phase 1 after the project scaffold exists.
