@@ -7,8 +7,8 @@ app = FastAPI(
 )
 
 
-class NotificationAttempt(BaseModel):
-    attempt_id: str
+class EventNotificationDelivery(BaseModel):
+    delivery_id: str
     customer_id: str
     order_id: str
     notification_type: str
@@ -18,9 +18,9 @@ class NotificationAttempt(BaseModel):
     attempted_at: str
 
 
-notification_attempts = [
-    NotificationAttempt(
-        attempt_id="attempt_001",
+event_notification_deliveries = [
+    EventNotificationDelivery(
+        delivery_id="delivery_001",
         customer_id="customer_001",
         order_id="order_1001",
         notification_type="order_completed",
@@ -29,8 +29,8 @@ notification_attempts = [
         response_message="Unauthorized",
         attempted_at="2026-08-25T09:15:00Z",
     ),
-    NotificationAttempt(
-        attempt_id="attempt_002",
+    EventNotificationDelivery(
+        delivery_id="delivery_002",
         customer_id="customer_001",
         order_id="order_1001",
         notification_type="order_completed",
@@ -47,18 +47,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get(
-    "/customers/{customer_id}/notification-attempts",
-    response_model=list[NotificationAttempt],
-)
-def get_notification_attempts(customer_id: str) -> list[NotificationAttempt]:
-    customer_attempts = []
+@app.get("/customers/{customer_id}/event-notification-deliveries", response_model=list[EventNotificationDelivery])
+def get_event_notification_deliveries(customer_id: str) -> list[EventNotificationDelivery]:
+    customer_deliveries = []
 
-    for attempt in notification_attempts:
-        if attempt.customer_id == customer_id:
-            customer_attempts.append(attempt)
+    for delivery in event_notification_deliveries:
+        if delivery.customer_id == customer_id:
+            customer_deliveries.append(delivery)
 
-    if not customer_attempts:
-        raise HTTPException(status_code=404, detail="Customer notification attempts not found")
+    if not customer_deliveries:
+        raise HTTPException(status_code=404, detail="Customer event notification deliveries not found")
 
-    return customer_attempts
+    return customer_deliveries

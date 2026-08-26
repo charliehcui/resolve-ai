@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -221,3 +221,4 @@ __marimo__/
 
 # Local project planning
 /project_plan.md
+/ResolveAI_Zero_to_One_Build_Plan.md
