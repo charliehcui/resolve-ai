@@ -4,3 +4,5 @@ sqlalchemy>=2.0,<3.0
 alembic>=1.18,<2.0
 psycopg[binary]>=3.3,<4.0
 pydantic-settings>=2.0,<3.0
+langchain>=1.0,<2.0
+langchain-groq>=1.0,<2.0
