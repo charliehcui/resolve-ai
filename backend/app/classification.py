@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.config import settings
 
 
-class TicketCategory(StrEnum):   #strenum用来固定值只可以是下面的这些
+class TicketCategory(StrEnum):
     EVENT_NOTIFICATION_FAILURE = "event_notification_failure"
     BACKGROUND_JOB_FAILURE = "background_job_failure"
     API_ACCESS_OR_RATE_LIMIT = "api_access_or_rate_limit"
@@ -21,15 +21,15 @@ class TicketSeverity(StrEnum):
     CRITICAL = "critical"
 
 
-class TriageRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")    #用来禁止额外的字段
+class ClassificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=5000)
     customer_id: str | None = Field(default=None, max_length=100)
 
 
-class TriageResult(BaseModel):
+class ClassificationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category: TicketCategory = Field(description="The supported ResolveAI issue category")
@@ -40,8 +40,8 @@ class TriageResult(BaseModel):
     urgency_reason: str = Field(description="The evidence-based reason for the selected severity")
 
 
-TRIAGE_SYSTEM_PROMPT_V1 = """
-You are the ticket triage component of ResolveAI.
+CLASSIFICATION_SYSTEM_PROMPT = """
+You classify technical support tickets for ResolveAI.
 
 Classify the ticket into exactly one of these supported categories:
 - event_notification_failure
@@ -69,30 +69,28 @@ model = ChatGroq(
     max_retries=1,
 )
 
-
-structured_model = model.with_structured_output(
-    TriageResult,
+classification_model = model.with_structured_output(
+    ClassificationResult,
     method="json_schema",
     strict=True,
 )
 
 
-def triage_ticket(request: TriageRequest) -> TriageResult:
-    ticket_text = f"""         #告诉模型要做的事情
-Ticket title: {request.title}
+def classify_ticket(request: ClassificationRequest) -> ClassificationResult:
+    ticket_text = f"""Ticket title: {request.title}
 Customer ID: {request.customer_id or "not provided"}
 Ticket description:
 {request.description}
 """
 
     messages = [
-        SystemMessage(content=TRIAGE_SYSTEM_PROMPT_V1),
+        SystemMessage(content=CLASSIFICATION_SYSTEM_PROMPT),
         HumanMessage(content=ticket_text),
     ]
 
-    result = structured_model.invoke(messages)
+    result = classification_model.invoke(messages)
 
-    if not isinstance(result, TriageResult):
-        raise TypeError("Triage model did not return TriageResult")
+    if not isinstance(result, ClassificationResult):
+        raise TypeError("Model did not return ClassificationResult")
 
     return result

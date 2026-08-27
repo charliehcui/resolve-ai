@@ -1,0 +1,57 @@
+[
+  {
+    "case_id": "classification_001",
+    "title": "Order notification rejected",
+    "description": "Order order_1001 notification attempts returned HTTP 401 at 09:15 and 09:20 UTC.",
+    "customer_id": "customer_001",
+    "expected_category": "event_notification_failure",
+    "required_missing_information_topics": []
+  },
+  {
+    "case_id": "classification_002",
+    "title": "Webhook not arriving",
+    "description": "Our customer says order notifications stopped arriving.",
+    "customer_id": "customer_002",
+    "expected_category": "event_notification_failure",
+    "required_missing_information_topics": [
+      "event identifier",
+      "time window"
+    ]
+  },
+  {
+    "case_id": "classification_003",
+    "title": "Export job failed",
+    "description": "Export job job_3001 failed after a temporary dependency timeout.",
+    "customer_id": "customer_003",
+    "expected_category": "background_job_failure",
+    "required_missing_information_topics": []
+  },
+  {
+    "case_id": "classification_004",
+    "title": "API returns 429",
+    "description": "Customer customer_004 receives HTTP 429 after sending approximately 1000 requests in one hour.",
+    "customer_id": "customer_004",
+    "expected_category": "api_access_or_rate_limit",
+    "required_missing_information_topics": []
+  },
+  {
+    "case_id": "classification_005",
+    "title": "API authentication fails",
+    "description": "API requests started returning unauthorized responses.",
+    "customer_id": "customer_005",
+    "expected_category": "api_access_or_rate_limit",
+    "required_missing_information_topics": [
+      "endpoint",
+      "credential identifier",
+      "time window"
+    ]
+  },
+  {
+    "case_id": "classification_006",
+    "title": "Feature unavailable after plan update",
+    "description": "Customer customer_006 upgraded their plan but the export feature is still unavailable.",
+    "customer_id": "customer_006",
+    "expected_category": "account_or_entitlement_mismatch",
+    "required_missing_information_topics": []
+  }
+]

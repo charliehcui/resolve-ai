@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.classification import ClassificationRequest, ClassificationResult, classify_ticket
 from app.db.database import engine
 
 app = FastAPI(
@@ -24,3 +25,11 @@ def health_ready() -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Database is not ready")
 
     return {"status": "ready"}
+
+
+@app.post("/api/v1/classification", response_model=ClassificationResult, tags=["classification"])
+def create_classification(request: ClassificationRequest) -> ClassificationResult:
+    try:
+        return classify_ticket(request)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Ticket classification failed") from error
