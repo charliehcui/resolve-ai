@@ -1,10 +1,17 @@
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(
-    title="ResolveLab Simulator",
-    version="0.1.0",
-)
+app = FastAPI(title="ResolveLab Simulator", version="0.1.0")
+
+
+class CustomerAccount(BaseModel):
+    customer_id: str
+    status: str
+    plan: str
+    event_notifications_enabled: bool
+    updated_at: datetime
 
 
 class EventNotificationDelivery(BaseModel):
@@ -15,8 +22,24 @@ class EventNotificationDelivery(BaseModel):
     delivery_status: str
     response_status: int
     response_message: str
-    attempted_at: str
+    attempted_at: datetime
 
+
+class PlatformStatus(BaseModel):
+    service: str
+    status: str
+    updated_at: datetime
+
+
+customer_accounts = {
+    "customer_001": CustomerAccount(
+        customer_id="customer_001",
+        status="active",
+        plan="pro",
+        event_notifications_enabled=True,
+        updated_at="2026-08-25T09:00:00Z",
+    )
+}
 
 event_notification_deliveries = [
     EventNotificationDelivery(
@@ -41,10 +64,26 @@ event_notification_deliveries = [
     ),
 ]
 
+platform_status = PlatformStatus(
+    service="event_notifications",
+    status="operational",
+    updated_at="2026-08-25T09:25:00Z",
+)
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/customers/{customer_id}", response_model=CustomerAccount)
+def get_customer_account(customer_id: str) -> CustomerAccount:
+    customer = customer_accounts.get(customer_id)
+
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer account not found")
+
+    return customer
 
 
 @app.get("/customers/{customer_id}/event-notification-deliveries", response_model=list[EventNotificationDelivery])
@@ -59,3 +98,8 @@ def get_event_notification_deliveries(customer_id: str) -> list[EventNotificatio
         raise HTTPException(status_code=404, detail="Customer event notification deliveries not found")
 
     return customer_deliveries
+
+
+@app.get("/platform-status", response_model=PlatformStatus)
+def get_platform_status() -> PlatformStatus:
+    return platform_status

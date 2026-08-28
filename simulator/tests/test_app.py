@@ -5,6 +5,14 @@ from simulator.app import app
 client = TestClient(app)
 
 
+def test_get_customer_account() -> None:
+    response = client.get("/customers/customer_001")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "active"
+    assert response.json()["event_notifications_enabled"] is True
+
+
 def test_get_event_notification_deliveries_for_known_customer() -> None:
     response = client.get("/customers/customer_001/event-notification-deliveries")
 
@@ -25,3 +33,11 @@ def test_get_event_notification_deliveries_for_unknown_customer() -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Customer event notification deliveries not found"}
+
+
+def test_get_platform_status() -> None:
+    response = client.get("/platform-status")
+
+    assert response.status_code == 200
+    assert response.json()["service"] == "event_notifications"
+    assert response.json()["status"] == "operational"
