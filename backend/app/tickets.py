@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from app.classification import ClassificationRequest, ClassificationResult
 from app.db.models import Ticket
@@ -13,15 +13,13 @@ class TicketStatus(StrEnum):
 
 
 class TicketCreate(ClassificationRequest):
-    external_id: str = Field(min_length=1, max_length=100)
+    pass
 
 
 class TicketResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    organization_id: str
-    external_id: str
     customer_id: str | None
     title: str
     description: str
@@ -35,12 +33,12 @@ class TicketContext(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    external_id: str
     customer_id: str | None
     title: str
     description: str
     classification: ClassificationResult
     status: TicketStatus
+
 
 def build_ticket_context(ticket: Ticket) -> TicketContext:
     return TicketContext.model_validate(ticket)

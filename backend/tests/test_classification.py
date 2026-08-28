@@ -1,7 +1,8 @@
 import pytest
+from fastapi.testclient import TestClient
+
 from app import main
 from app.classification import ClassificationRequest, ClassificationResult, TicketCategory, TicketSeverity
-from fastapi.testclient import TestClient
 
 client = TestClient(main.app)
 

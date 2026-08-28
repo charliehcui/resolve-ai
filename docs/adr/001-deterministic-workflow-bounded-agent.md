@@ -7,7 +7,7 @@
 
 Technical support investigations are not fully predictable. The next useful data source depends on the ticket and on evidence returned by earlier tools.
 
-However, permissions, tenant isolation, ticket state changes, approvals, and write actions must be predictable and testable. A language model is not a safe authority for these rules.
+However, permissions, ticket state changes, approvals, and write actions must be predictable and testable. A language model is not a safe authority for these rules.
 
 ## Decision
 

@@ -15,7 +15,7 @@ ResolveAI is not a general customer-facing chatbot.
 
 ### `support_agent`
 
-- Creates and reads tickets for their organization.
+- Creates and reads tickets.
 - Starts an investigation.
 - Reviews evidence, diagnoses, and proposed resolutions.
 - Can escalate a ticket.
@@ -29,15 +29,13 @@ ResolveAI is not a general customer-facing chatbot.
 
 ### `admin`
 
-- Manages users, roles, and organization settings.
+- Manages users, roles, and system settings.
 - Can inspect audit records.
 - Cannot give the investigation agent unrestricted tools.
 
 ### Role safety rules
 
-- Every request belongs to one organization.
-- A user cannot access another organization's tickets or operational data.
-- The investigation agent receives organization context from the server. It cannot choose or change it.
+- The investigation agent receives ticket and customer context from the server. It cannot choose or change the customer ID.
 - Protected write actions require an `approver` decision in the first release.
 
 ## 3. Supported issue categories
@@ -53,7 +51,7 @@ Tickets outside this scope must be escalated or handled manually.
 
 ## 4. Standard case flow
 
-1. A support agent creates or imports a ticket.
+1. A support agent creates a ticket.
 2. The system validates and classifies the issue.
 3. If important information is missing, the system drafts clarification questions.
 4. The system loads the customer's account and entitlement baseline.
