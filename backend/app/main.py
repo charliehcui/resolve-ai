@@ -6,6 +6,7 @@ from app.classification import ClassificationRequest, ClassificationResult, clas
 from app.db.database import SessionLocal, engine
 from app.db.models import Ticket
 from app.tickets import TicketCreate, TicketResponse, TicketStatus
+from app.workflow import InvestigationResponse, run_investigation
 
 app = FastAPI(title="ResolveAI API", version="0.1.0")
 
@@ -69,3 +70,11 @@ def read_ticket(ticket_id: int) -> TicketResponse:
             raise HTTPException(status_code=404, detail="Ticket not found")
 
         return TicketResponse.model_validate(ticket)
+
+
+@app.post("/api/v1/tickets/{ticket_id}/investigations", response_model=InvestigationResponse, tags=["investigations"])
+def create_investigation(ticket_id: int) -> InvestigationResponse:
+    try:
+        return run_investigation(ticket_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Ticket not found") from error
