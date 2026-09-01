@@ -1,10 +1,9 @@
 from enum import StrEnum
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.config import settings
+from app.model import create_chat_model
 
 
 class TicketCategory(StrEnum):
@@ -61,15 +60,7 @@ Rules:
 """
 
 
-model = ChatGroq(
-    model=settings.groq_model,
-    api_key=settings.groq_api_key,
-    temperature=0,
-    timeout=20,
-    max_retries=1,
-)
-
-classification_model = model.with_structured_output(
+classification_model = create_chat_model(temperature=0).with_structured_output(
     ClassificationResult,
     method="json_schema",
     strict=True,
