@@ -1,7 +1,19 @@
 # Simulator
 
-This directory will contain ResolveLab, a deterministic simulated B2B SaaS system.
+This directory contains ResolveLab, a deterministic simulated B2B SaaS system.
 
-It will provide synthetic customers, jobs, webhook deliveries, API usage, feature flags, and logs. This keeps the demo reproducible and prevents the project from depending on real customer data.
+It provides fixed customer account, event notification delivery, and platform status data. This keeps support investigations reproducible and avoids real customer data.
 
-Simulator code will be added in Phase 2.
+## Run the simulator
+
+From the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn simulator.app:app --port 8001
+```
+
+## Run tests
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest simulator\tests
+```

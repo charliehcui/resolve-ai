@@ -5,28 +5,28 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from app.agent import InvestigationResult, investigate_ticket
 from app.db.database import SessionLocal
 from app.db.models import Ticket
+from app.support_agent import SupportInvestigationResult, investigate_support_ticket
 from app.tickets import TicketContext, build_ticket_context
 
 
-class CaseState(TypedDict):
+class SupportCaseState(TypedDict):
     ticket_id: int
     ticket: TicketContext | None
-    investigation_result: InvestigationResult | None
+    investigation_result: SupportInvestigationResult | None
     outcome: str | None
     error: str | None
 
 
-class InvestigationResponse(BaseModel):
+class SupportInvestigationResponse(BaseModel):
     ticket_id: int
     outcome: str
-    result: InvestigationResult | None = None
+    result: SupportInvestigationResult | None = None
     message: str | None = None
 
 
-def load_ticket(state: CaseState) -> dict[str, object]:
+def load_ticket(state: SupportCaseState) -> dict[str, object]:
     with SessionLocal() as database:
         ticket = database.get(Ticket, state["ticket_id"])
 
@@ -36,7 +36,7 @@ def load_ticket(state: CaseState) -> dict[str, object]:
         return {"ticket": build_ticket_context(ticket)}
 
 
-def route_after_load(state: CaseState) -> str:
+def route_after_load(state: SupportCaseState) -> str:
     ticket = state["ticket"]
 
     if ticket is None:
@@ -48,21 +48,21 @@ def route_after_load(state: CaseState) -> str:
     return "investigate"
 
 
-def investigate(state: CaseState) -> dict[str, object]:
+def investigate(state: SupportCaseState) -> dict[str, object]:
     ticket = state["ticket"]
 
     if ticket is None:
         return {"error": "Ticket could not be loaded"}
 
     try:
-        result = investigate_ticket(ticket)
+        result = investigate_support_ticket(ticket)
     except Exception:
         return {"error": "Investigation failed"}
 
     return {"investigation_result": result}
 
 
-def finalize(state: CaseState) -> dict[str, object]:
+def finalize(state: SupportCaseState) -> dict[str, object]:
     if state["error"] is not None:
         return {"outcome": "escalation"}
 
@@ -85,24 +85,24 @@ def finalize(state: CaseState) -> dict[str, object]:
     return {"outcome": "resolution"}
 
 
-workflow_builder = StateGraph(CaseState)
-workflow_builder.add_node("load_ticket", load_ticket)
-workflow_builder.add_node("investigate", investigate)
-workflow_builder.add_node("finalize", finalize)
-workflow_builder.add_edge(START, "load_ticket")
-workflow_builder.add_conditional_edges(
+support_workflow_builder = StateGraph(SupportCaseState)
+support_workflow_builder.add_node("load_ticket", load_ticket)
+support_workflow_builder.add_node("investigate", investigate)
+support_workflow_builder.add_node("finalize", finalize)
+support_workflow_builder.add_edge(START, "load_ticket")
+support_workflow_builder.add_conditional_edges(
     "load_ticket",
     route_after_load,
     {"investigate": "investigate", "finalize": "finalize"},
 )
-workflow_builder.add_edge("investigate", "finalize")
-workflow_builder.add_edge("finalize", END)
+support_workflow_builder.add_edge("investigate", "finalize")
+support_workflow_builder.add_edge("finalize", END)
 
-investigation_workflow = workflow_builder.compile(checkpointer=InMemorySaver())
+support_investigation_workflow = support_workflow_builder.compile(checkpointer=InMemorySaver())
 
 
-def run_investigation(ticket_id: int) -> InvestigationResponse:
-    initial_state: CaseState = {
+def run_support_investigation(ticket_id: int) -> SupportInvestigationResponse:
+    initial_state: SupportCaseState = {
         "ticket_id": ticket_id,
         "ticket": None,
         "investigation_result": None,
@@ -111,11 +111,11 @@ def run_investigation(ticket_id: int) -> InvestigationResponse:
     }
 
     config = {"configurable": {"thread_id": str(uuid4())}, "recursion_limit": 10}
-    final_state = investigation_workflow.invoke(initial_state, config)
+    final_state = support_investigation_workflow.invoke(initial_state, config)
     outcome = final_state["outcome"]
 
     if outcome is None:
-        raise RuntimeError("Workflow did not produce an outcome")
+        raise RuntimeError("Support workflow did not produce an outcome")
 
     message = final_state["error"]
     ticket = final_state["ticket"]
@@ -124,7 +124,7 @@ def run_investigation(ticket_id: int) -> InvestigationResponse:
         missing_information = ", ".join(ticket.classification.missing_information)
         message = f"More information is required: {missing_information}"
 
-    return InvestigationResponse(
+    return SupportInvestigationResponse(
         ticket_id=ticket_id,
         outcome=outcome,
         result=final_state["investigation_result"],

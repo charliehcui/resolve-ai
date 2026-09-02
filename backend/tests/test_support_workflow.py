@@ -1,9 +1,9 @@
 import pytest
 
-from app import workflow
-from app.agent import InvestigationResult
+from app import support_workflow
 from app.classification import ClassificationResult, TicketCategory, TicketSeverity
 from app.db.models import Ticket
+from app.support_agent import SupportInvestigationResult
 from app.tickets import TicketContext, TicketStatus
 
 
@@ -46,38 +46,38 @@ def build_ticket(missing_information: list[str]) -> Ticket:
     return ticket
 
 
-def test_workflow_investigates_complete_ticket(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.MonkeyPatch) -> None:
     ticket = build_ticket([])
-    expected_result = InvestigationResult(
+    expected_result = SupportInvestigationResult(
         conclusion="The customer destination returned HTTP 401 while the platform remained operational.",
         supporting_facts=["Two deliveries returned HTTP 401.", "The platform is operational."],
         needs_escalation=False,
     )
 
-    def fake_investigate_ticket(ticket_context: TicketContext) -> InvestigationResult:
+    def fake_investigate_support_ticket(ticket_context: TicketContext) -> SupportInvestigationResult:
         assert ticket_context.id == ticket.id
         return expected_result
 
-    monkeypatch.setattr(workflow, "SessionLocal", lambda: FakeDatabase(ticket))
-    monkeypatch.setattr(workflow, "investigate_ticket", fake_investigate_ticket)
+    monkeypatch.setattr(support_workflow, "SessionLocal", lambda: FakeDatabase(ticket))
+    monkeypatch.setattr(support_workflow, "investigate_support_ticket", fake_investigate_support_ticket)
 
-    response = workflow.run_investigation(ticket.id)
+    response = support_workflow.run_support_investigation(ticket.id)
 
     assert response.outcome == "resolution"
     assert response.result == expected_result
     assert response.message is None
 
 
-def test_workflow_requests_clarification_before_investigation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_support_workflow_requests_clarification_before_investigation(monkeypatch: pytest.MonkeyPatch) -> None:
     ticket = build_ticket(["destination URL"])
 
-    def fail_investigation(ticket_context: TicketContext) -> InvestigationResult:
-        pytest.fail("Investigation Agent should not run when required information is missing")
+    def fail_investigation(ticket_context: TicketContext) -> SupportInvestigationResult:
+        pytest.fail("Support Agent should not run when required information is missing")
 
-    monkeypatch.setattr(workflow, "SessionLocal", lambda: FakeDatabase(ticket))
-    monkeypatch.setattr(workflow, "investigate_ticket", fail_investigation)
+    monkeypatch.setattr(support_workflow, "SessionLocal", lambda: FakeDatabase(ticket))
+    monkeypatch.setattr(support_workflow, "investigate_support_ticket", fail_investigation)
 
-    response = workflow.run_investigation(ticket.id)
+    response = support_workflow.run_support_investigation(ticket.id)
 
     assert response.outcome == "clarification"
     assert response.result is None

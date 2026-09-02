@@ -7,7 +7,7 @@ The backend is separate from the frontend so that model credentials, database ac
 ## Current endpoints
 
 - `GET /health/live` confirms that the API process is running.
-- `GET /health/ready` confirms that the API is ready to receive requests. Database checks will be added to this endpoint later.
+- `GET /health/ready` confirms that the API can connect to the database.
 
 ## Local setup
 

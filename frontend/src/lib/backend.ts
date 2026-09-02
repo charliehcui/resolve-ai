@@ -1,33 +1,29 @@
-import "server-only";
-
 export type BackendHealth = {
   isReady: boolean;
   label: "Ready" | "Unavailable";
 };
 
+type HealthResponse = {
+  status?: string;
+};
+
 export async function getBackendHealth(): Promise<BackendHealth> {
-  const backendUrl = (
-    process.env.BACKEND_URL ?? "http://127.0.0.1:8000"
-  ).replace(/\/$/, "");
+  let backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000";
+
+  if (backendUrl.endsWith("/")) {
+    backendUrl = backendUrl.slice(0, -1);
+  }
 
   try {
-    const response = await fetch(`${backendUrl}/health/ready`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(3000),
-    });
+    const response = await fetch(`${backendUrl}/health/ready`);
 
     if (!response.ok) {
       return { isReady: false, label: "Unavailable" };
     }
 
-    const data: unknown = await response.json();
+    const data = (await response.json()) as HealthResponse;
 
-    if (
-      typeof data === "object" &&
-      data !== null &&
-      "status" in data &&
-      data.status === "ready"
-    ) {
+    if (data.status === "ready") {
       return { isReady: true, label: "Ready" };
     }
 

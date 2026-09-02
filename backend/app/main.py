@@ -1,14 +1,23 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.classification import ClassificationRequest, ClassificationResult, classify_ticket
+from app.core.config import settings
 from app.db.database import SessionLocal, engine
 from app.db.models import Ticket
+from app.support_workflow import SupportInvestigationResponse, run_support_investigation
 from app.tickets import TicketCreate, TicketResponse, TicketStatus
-from app.workflow import InvestigationResponse, run_investigation
 
 app = FastAPI(title="ResolveAI API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 @app.get("/health/live", tags=["health"])
@@ -72,9 +81,13 @@ def read_ticket(ticket_id: int) -> TicketResponse:
         return TicketResponse.model_validate(ticket)
 
 
-@app.post("/api/v1/tickets/{ticket_id}/investigations", response_model=InvestigationResponse, tags=["investigations"])
-def create_investigation(ticket_id: int) -> InvestigationResponse:
+@app.post(
+    "/api/v1/tickets/{ticket_id}/investigations",
+    response_model=SupportInvestigationResponse,
+    tags=["investigations"],
+)
+def create_investigation(ticket_id: int) -> SupportInvestigationResponse:
     try:
-        return run_investigation(ticket_id)
+        return run_support_investigation(ticket_id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail="Ticket not found") from error

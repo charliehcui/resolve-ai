@@ -1,8 +1,8 @@
 # Frontend
 
-This directory contains the ResolveAI Next.js support console.
+This directory contains the small ResolveAI browser interface built with Vite, React, TypeScript, and Tailwind CSS.
 
-The current page calls the FastAPI readiness endpoint from a Next.js Server Component and displays either `Ready` or `Unavailable`.
+The current page calls the FastAPI readiness endpoint and displays whether the backend and database are ready.
 
 ## Local setup
 
@@ -12,13 +12,13 @@ Install dependencies from the repository root:
 npm.cmd --prefix frontend install
 ```
 
-The default backend URL is `http://127.0.0.1:8000`. To override it, copy the example file:
+The default backend URL is `http://127.0.0.1:8000`. To change it, copy the example file:
 
 ```powershell
 Copy-Item frontend\.env.example frontend\.env.local
 ```
 
-`BACKEND_URL` does not use the `NEXT_PUBLIC_` prefix because it is read only by the Next.js server.
+The browser reads `VITE_BACKEND_URL` when the frontend starts.
 
 ## Run the frontend
 

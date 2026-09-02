@@ -3,10 +3,10 @@ from langchain.agents.structured_output import ToolStrategy
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.model import create_chat_model
+from app.support_tools import get_customer_account, get_event_notification_deliveries, get_platform_status
 from app.tickets import TicketContext
-from app.tools import get_customer_account, get_event_notification_deliveries, get_platform_status
 
-INVESTIGATION_SYSTEM_PROMPT_V1 = """
+SUPPORT_INVESTIGATION_SYSTEM_PROMPT = """
 You investigate ResolveAI technical support tickets.
 
 Rules:
@@ -23,7 +23,7 @@ Rules:
 """
 
 
-class InvestigationResult(BaseModel):
+class SupportInvestigationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conclusion: str = Field(description="A concise conclusion supported by tool results")
@@ -31,18 +31,18 @@ class InvestigationResult(BaseModel):
     needs_escalation: bool = Field(description="Whether the available evidence requires human escalation")
 
 
-investigation_tools = [get_customer_account, get_event_notification_deliveries, get_platform_status]
-investigation_model = create_chat_model(temperature=0.2)
+support_investigation_tools = [get_customer_account, get_event_notification_deliveries, get_platform_status]
+support_investigation_model = create_chat_model(temperature=0.2)
 
-investigation_agent = create_agent(
-    model=investigation_model,
-    tools=investigation_tools,
-    system_prompt=INVESTIGATION_SYSTEM_PROMPT_V1,
-    response_format=ToolStrategy(InvestigationResult),
+support_investigation_agent = create_agent(
+    model=support_investigation_model,
+    tools=support_investigation_tools,
+    system_prompt=SUPPORT_INVESTIGATION_SYSTEM_PROMPT,
+    response_format=ToolStrategy(SupportInvestigationResult),
 )
 
 
-def investigate_ticket(ticket: TicketContext) -> InvestigationResult:
+def investigate_support_ticket(ticket: TicketContext) -> SupportInvestigationResult:
     ticket_text = f"""Investigate this support ticket.
 Ticket ID: {ticket.id}
 Customer ID: {ticket.customer_id or "not provided"}
@@ -53,10 +53,10 @@ Status: {ticket.status}
 """
 
     agent_input = {"messages": [{"role": "user", "content": ticket_text}]}
-    result = investigation_agent.invoke(agent_input, {"recursion_limit": 10})
+    result = support_investigation_agent.invoke(agent_input, {"recursion_limit": 10})
     structured_response = result.get("structured_response")
 
-    if not isinstance(structured_response, InvestigationResult):
-        raise TypeError("Agent did not return InvestigationResult")
+    if not isinstance(structured_response, SupportInvestigationResult):
+        raise TypeError("Support Agent did not return SupportInvestigationResult")
 
     return structured_response

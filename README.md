@@ -83,15 +83,9 @@ The agents do not freely chat with each other. They exchange a validated `Diagno
 
 ## Current development focus
 
-The product scope and the 15-day implementation plan are defined. The repository currently contains the backend, database, simulator, structured model output, read-only support tools, a bounded support agent, and an initial LangGraph workflow.
+The repository is aligned with the current product scope. It contains the backend, database, simulator, structured model output, read-only support tools, a bounded Support Investigation Agent, and its three-node LangGraph workflow.
 
-The next implementation step is **Day 0: repository alignment**:
-
-- Reorganize the existing investigation code around the Support Investigation Agent.
-- Replace the current frontend scaffold with Vite, React, TypeScript, and Tailwind CSS.
-- Preserve the working backend and tests.
-
-Day 1 then begins the Customer Diagnostic Agent with the first customer message and structured problem understanding.
+The lightweight Vite interface checks the FastAPI and database readiness status. The next implementation step begins the Customer Diagnostic Agent with the first customer message and structured problem understanding.
 
 ## Planned technology stack
 
