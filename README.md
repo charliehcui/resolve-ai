@@ -1,48 +1,126 @@
 # ResolveAI
 
-ResolveAI is an evidence-driven investigation and resolution system for internal B2B SaaS technical support teams.
+ResolveAI is an AI-powered technical support system for B2B SaaS products. It helps non-technical customers explain problems, automatically gathers relevant context, attempts safe self-service diagnosis, and creates an evidence-rich support ticket when the issue cannot be resolved.
 
-## Current status
-
-The project is currently in **Phase 1: Engineering Scaffold**. Product scope is complete, and the frontend now reports the backend API health state.
+The ticket is then investigated by a separate support agent. If the support agent still cannot resolve the issue, it prepares a complete escalation package for a human engineer.
 
 ## Problem
 
-Technical support engineers often need to check customer accounts, entitlements, background jobs, webhook deliveries, API usage, logs, and product documentation before they can explain an issue.
+Customers often know that something is not working but do not know what information technical support needs. They may not understand system errors, account settings, product versions, or diagnostic data.
 
-ResolveAI will collect this evidence, produce reviewable diagnoses, and either recommend a resolution, propose a safe action, or prepare an escalation package. It will not allow an AI agent to bypass permissions, approval, or audit rules.
+This creates a slow support process:
 
-## Architecture principle
+```text
+Customer reports a vague problem
+        ↓
+Support repeatedly asks for missing information
+        ↓
+The same context is collected again during each handoff
+        ↓
+An engineer eventually starts a new investigation
+```
 
-ResolveAI uses a deterministic outer workflow with a bounded, read-only investigation agent.
+ResolveAI reduces this repeated communication by keeping one structured support context from the first customer message to the final resolution.
 
-- Normal code controls permissions, ticket state, risk rules, approvals, and write actions.
-- The investigation agent decides which approved read-only tools to use next.
-- Low-risk write actions require policy checks and human approval.
-- Unsupported or high-risk cases are escalated instead of guessed.
+## Core workflow
+
+```text
+Customer describes a problem in plain language
+        ↓
+Customer Diagnostic Agent understands the issue
+        ↓
+Automatically collects available product and account context
+        ↓
+Retrieves relevant customer-facing product knowledge
+        ↓
+Provides simple guidance and verifies the result
+        ↓
+Resolved? ── Yes ──→ Close the diagnostic session
+    │ No
+    ↓
+Create a structured, evidence-rich ticket
+        ↓
+Support Investigation Agent queries internal systems and knowledge
+        ↓
+Produce a supported resolution, request approval for a safe action,
+or prepare an escalation package for a human engineer
+```
+
+## Agent design
+
+ResolveAI uses two bounded agent workflows connected by a validated handoff.
+
+### Customer Diagnostic Agent
+
+- Communicates with customers using plain language.
+- Identifies the real problem behind an incomplete description.
+- Collects information the system already knows before asking questions.
+- Uses customer-visible retrieval-augmented generation (RAG).
+- Calls only customer-scoped read tools.
+- Resolves simple issues or creates a structured ticket.
+
+### Support Investigation Agent
+
+- Receives the structured ticket and completed customer-side diagnosis.
+- Calls approved internal read-only tools.
+- Collects and validates evidence.
+- Produces a supported diagnosis and resolution.
+- Proposes safe actions without executing them directly.
+- Escalates unresolved or high-risk cases to a human engineer.
+
+The agents do not freely chat with each other. They exchange a validated `DiagnosticHandoff` containing the problem summary, customer impact, collected facts, attempted steps, citations, and unresolved questions.
+
+## Safety model
+
+- The server controls customer identity, data access, and tool permissions.
+- Customer and support agents use separate tool and knowledge scopes.
+- The customer agent cannot access internal documents or internal tools.
+- Agents cannot directly execute write actions.
+- Safe actions require deterministic policy checks and human approval.
+- Results are verified after guidance or an approved action.
+- Insufficient or conflicting evidence leads to escalation instead of guessing.
+- Hidden reasoning is not stored or shown in the user interface.
+
+## Current development focus
+
+The product scope and the 15-day implementation plan are defined. The repository currently contains the backend, database, simulator, structured model output, read-only support tools, a bounded support agent, and an initial LangGraph workflow.
+
+The next implementation step is **Day 0: repository alignment**:
+
+- Reorganize the existing investigation code around the Support Investigation Agent.
+- Replace the current frontend scaffold with Vite, React, TypeScript, and Tailwind CSS.
+- Preserve the working backend and tests.
+
+Day 1 then begins the Customer Diagnostic Agent with the first customer message and structured problem understanding.
+
+## Planned technology stack
+
+| Area | Technology |
+|---|---|
+| Frontend | Vite, React, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python, Pydantic |
+| Agents and tools | LangChain |
+| Stateful workflows | LangGraph |
+| Model | ChatGroq |
+| Database | PostgreSQL, SQLAlchemy, Alembic |
+| Knowledge retrieval | pgvector, PostgreSQL full-text search |
+| Tracing and evaluation | LangSmith, Pytest, versioned JSON datasets |
+| Local delivery | Docker Compose |
+| Continuous integration | GitHub Actions |
 
 ## Documentation
 
-- [Product specification](docs/product-spec.md)
-- [ADR-001: Deterministic workflow with a bounded agent](docs/adr/001-deterministic-workflow-bounded-agent.md)
-
-## Planned stack
-
-- Frontend: Next.js and TypeScript
-- Backend: FastAPI and Python
-- Workflow: LangGraph and LangChain
-- Data: PostgreSQL, PostgreSQL full-text search, and pgvector
-- Local development: Docker Compose
+- [ResolveAI V2 Project Plan](project_plan.md)
+- [ResolveAI V2 Zero-to-One Build Plan](ResolveAI_V2_Zero_to_One_Build_Plan.md)
+- [Backend setup](backend/README.md)
 
 ## Repository structure
 
 | Path | Purpose |
 |---|---|
-| `frontend/` | Browser-based support console. |
-| `backend/` | API, business rules, workflow, tools, and database access. |
-| `simulator/` | ResolveLab synthetic SaaS system and reproducible fault scenarios. |
-| `evals/` | Evaluation datasets, evaluators, runners, and reports. |
-| `infra/` | Local containers and deployment infrastructure. |
+| `frontend/` | Customer and support views in one lightweight application. |
+| `backend/` | APIs, agent workflows, tools, retrieval, rules, and database access. |
+| `simulator/` | ResolveLab synthetic SaaS data and reproducible support scenarios. |
+| `evals/` | Versioned cases, evaluators, runners, and result reports. |
+| `infra/` | Local containers and deployment files. |
 | `docs/` | Product, architecture, security, and decision documents. |
-
-Backend setup instructions are available in [`backend/README.md`](backend/README.md).
