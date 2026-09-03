@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.classification import ClassificationRequest, ClassificationResult, classify_ticket
 from app.core.config import settings
+from app.customer_workflow import SupportRequest, SupportResponse, start_customer_support
 from app.db.database import SessionLocal, engine
 from app.db.models import Ticket
 from app.support_workflow import SupportInvestigationResponse, run_support_investigation
@@ -34,6 +35,14 @@ def health_ready() -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Database is not ready")
 
     return {"status": "ready"}
+
+
+@app.post("/api/v1/support-sessions", response_model=SupportResponse, status_code=201, tags=["support"])
+def start_support_session(request: SupportRequest) -> SupportResponse:
+    try:
+        return start_customer_support(request.customer_id, request.message)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Customer support failed") from error
 
 
 @app.post("/api/v1/classification", response_model=ClassificationResult, tags=["classification"])
@@ -81,11 +90,7 @@ def read_ticket(ticket_id: int) -> TicketResponse:
         return TicketResponse.model_validate(ticket)
 
 
-@app.post(
-    "/api/v1/tickets/{ticket_id}/investigations",
-    response_model=SupportInvestigationResponse,
-    tags=["investigations"],
-)
+@app.post("/api/v1/tickets/{ticket_id}/investigations", response_model=SupportInvestigationResponse, tags=["investigations"])
 def create_investigation(ticket_id: int) -> SupportInvestigationResponse:
     try:
         return run_support_investigation(ticket_id)
