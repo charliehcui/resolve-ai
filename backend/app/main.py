@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.classification import ClassificationRequest, ClassificationResult, classify_ticket
 from app.core.config import settings
-from app.customer_workflow import SupportRequest, SupportResponse, start_customer_support
+from app.customer_workflow import CustomerMessageRequest, SupportRequest, SupportResponse, continue_customer_support, start_customer_support
 from app.db.database import SessionLocal, engine
 from app.db.models import Ticket
 from app.support_workflow import SupportInvestigationResponse, run_support_investigation
@@ -41,6 +41,16 @@ def health_ready() -> dict[str, str]:
 def start_support_session(request: SupportRequest) -> SupportResponse:
     try:
         return start_customer_support(request.customer_id, request.message)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Customer support failed") from error
+
+
+@app.post("/api/v1/support-sessions/{session_id}/messages", response_model=SupportResponse, tags=["support"])
+def continue_support_session(session_id: str, request: CustomerMessageRequest) -> SupportResponse:
+    try:
+        return continue_customer_support(session_id, request.message)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Support session not found") from error
     except Exception as error:
         raise HTTPException(status_code=502, detail="Customer support failed") from error
 
