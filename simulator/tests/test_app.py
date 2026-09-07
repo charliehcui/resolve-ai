@@ -13,6 +13,28 @@ def test_get_customer_account() -> None:
     assert response.json()["event_notifications_enabled"] is True
 
 
+def test_get_customer_product_context_returns_only_customer_visible_data() -> None:
+    response = client.get("/customers/customer_001/product-context")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "account_status": "active",
+        "product_version": "2026.8",
+        "affected_feature": "event notifications",
+        "feature_enabled": True,
+    }
+
+
+def test_get_recent_customer_activity_returns_only_the_latest_simple_result() -> None:
+    response = client.get("/customers/customer_001/recent-activity")
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert set(response_data) == {"affected_feature", "activity", "result", "occurred_at"}
+    assert response_data["result"] == "failed"
+    assert response_data["occurred_at"] == "2026-08-25T09:20:00Z"
+
+
 def test_get_event_notification_deliveries_for_known_customer() -> None:
     response = client.get("/customers/customer_001/event-notification-deliveries")
 

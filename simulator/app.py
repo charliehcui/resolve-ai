@@ -10,6 +10,7 @@ class CustomerAccount(BaseModel):
     customer_id: str
     status: str
     plan: str
+    product_version: str
     event_notifications_enabled: bool
     updated_at: datetime
 
@@ -31,11 +32,26 @@ class PlatformStatus(BaseModel):
     updated_at: datetime
 
 
+class CustomerProductContext(BaseModel):
+    account_status: str
+    product_version: str
+    affected_feature: str
+    feature_enabled: bool
+
+
+class CustomerRecentActivity(BaseModel):
+    affected_feature: str
+    activity: str
+    result: str
+    occurred_at: datetime
+
+
 customer_accounts = {
     "customer_001": CustomerAccount(
         customer_id="customer_001",
         status="active",
         plan="pro",
+        product_version="2026.8",
         event_notifications_enabled=True,
         updated_at="2026-08-25T09:00:00Z",
     )
@@ -84,6 +100,41 @@ def get_customer_account(customer_id: str) -> CustomerAccount:
         raise HTTPException(status_code=404, detail="Customer account not found")
 
     return customer
+
+
+@app.get("/customers/{customer_id}/product-context", response_model=CustomerProductContext)
+def get_customer_product_context(customer_id: str) -> CustomerProductContext:
+    customer = customer_accounts.get(customer_id)
+
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer account not found")
+
+    return CustomerProductContext(
+        account_status=customer.status,
+        product_version=customer.product_version,
+        affected_feature="event notifications",
+        feature_enabled=customer.event_notifications_enabled,
+    )
+
+
+@app.get("/customers/{customer_id}/recent-activity", response_model=CustomerRecentActivity)
+def get_customer_recent_activity(customer_id: str) -> CustomerRecentActivity:
+    recent_delivery = None
+
+    for delivery in event_notification_deliveries:
+        if delivery.customer_id == customer_id:
+            if recent_delivery is None or delivery.attempted_at > recent_delivery.attempted_at:
+                recent_delivery = delivery
+
+    if recent_delivery is None:
+        raise HTTPException(status_code=404, detail="Recent customer activity not found")
+
+    return CustomerRecentActivity(
+        affected_feature="event notifications",
+        activity="Sending the latest order notification",
+        result=recent_delivery.delivery_status,
+        occurred_at=recent_delivery.attempted_at,
+    )
 
 
 @app.get("/customers/{customer_id}/event-notification-deliveries", response_model=list[EventNotificationDelivery])

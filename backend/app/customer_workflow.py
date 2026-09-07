@@ -5,7 +5,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.customer_agent import ProblemDetails, create_customer_question, update_customer_problem
+from app.customer_agent import ProblemDetails, create_customer_question, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data
+from app.customer_tools import get_current_product_context, get_recent_customer_activity
 
 
 class CustomerSupportState(TypedDict):
@@ -14,6 +15,7 @@ class CustomerSupportState(TypedDict):
     customer_message: str
     messages: list[str]
     problem_details: ProblemDetails | None
+    customer_side_data: dict[str, object]
     asked_questions: list[str]
     missing_information: list[str]
     turn_count: int
@@ -56,6 +58,46 @@ def update_problem_details(state: CustomerSupportState) -> dict[str, object]:
     try:
         problem_details = update_customer_problem(state["messages"], state["problem_details"])
         return {"problem_details": problem_details, "missing_information": problem_details.missing_information}
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+
+def get_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
+    if state["error"]:
+        return {}
+
+    problem_details = state["problem_details"]
+
+    if problem_details is None:
+        return {"status": "error", "error": "Problem details are missing"}
+
+    try:
+        current_product_context = get_current_product_context(state["customer_id"])
+        customer_side_data = {"current_product_context": current_product_context}
+
+        needs_recent_activity = should_get_recent_customer_activity(problem_details, current_product_context)
+
+        if needs_recent_activity:
+            recent_activity = get_recent_customer_activity(state["customer_id"])
+            customer_side_data["recent_activity"] = recent_activity
+
+        return {"customer_side_data": customer_side_data}
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+
+def update_problem_with_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
+    if state["error"]:
+        return {}
+
+    problem_details = state["problem_details"]
+
+    if problem_details is None:
+        return {"status": "error", "error": "Problem details are missing"}
+
+    try:
+        updated_problem_details = update_customer_problem_with_customer_side_data(problem_details, state["customer_side_data"])
+        return {"problem_details": updated_problem_details, "missing_information": updated_problem_details.missing_information}
     except Exception as error:
         return {"status": "error", "error": str(error)}
 
@@ -126,13 +168,17 @@ def needs_assistance(state: CustomerSupportState) -> dict[str, object]:
 customer_support_graph_builder = StateGraph(CustomerSupportState)
 customer_support_graph_builder.add_node("save_customer_message", save_customer_message)
 customer_support_graph_builder.add_node("update_problem_details", update_problem_details)
+customer_support_graph_builder.add_node("get_customer_side_data", get_customer_side_data)
+customer_support_graph_builder.add_node("update_problem_with_customer_side_data", update_problem_with_customer_side_data)
 customer_support_graph_builder.add_node("ask_for_information", ask_for_information)
 customer_support_graph_builder.add_node("ready_for_support", ready_for_support)
 customer_support_graph_builder.add_node("needs_assistance", needs_assistance)
 
 customer_support_graph_builder.add_edge(START, "save_customer_message")
 customer_support_graph_builder.add_edge("save_customer_message", "update_problem_details")
-customer_support_graph_builder.add_conditional_edges("update_problem_details", choose_next_step, {"ask_for_information": "ask_for_information", "ready_for_support": "ready_for_support", "needs_assistance": "needs_assistance", "error": END})
+customer_support_graph_builder.add_edge("update_problem_details", "get_customer_side_data")
+customer_support_graph_builder.add_edge("get_customer_side_data", "update_problem_with_customer_side_data")
+customer_support_graph_builder.add_conditional_edges("update_problem_with_customer_side_data", choose_next_step, {"ask_for_information": "ask_for_information", "ready_for_support": "ready_for_support", "needs_assistance": "needs_assistance", "error": END})
 customer_support_graph_builder.add_edge("ask_for_information", END)
 customer_support_graph_builder.add_edge("ready_for_support", END)
 customer_support_graph_builder.add_edge("needs_assistance", END)
@@ -149,6 +195,7 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
         "customer_message": customer_message,
         "messages": [],
         "problem_details": None,
+        "customer_side_data": {},
         "asked_questions": [],
         "missing_information": [],
         "turn_count": 0,
@@ -166,7 +213,6 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
     return SupportResponse(session_id=session_id, problem_details=final_state["problem_details"], customer_response=final_state["customer_response"], status=final_state["status"])
 
 
-
 def continue_customer_support(session_id: str, customer_message: str) -> SupportResponse:
     config = {"configurable": {"thread_id": session_id}, "recursion_limit": 10}
     saved_state = customer_support_graph.get_state(config)
@@ -182,6 +228,7 @@ def continue_customer_support(session_id: str, customer_message: str) -> Support
         "customer_message": customer_message,
         "messages": saved_values["messages"],
         "problem_details": saved_values["problem_details"],
+        "customer_side_data": saved_values["customer_side_data"],
         "asked_questions": saved_values["asked_questions"],
         "missing_information": saved_values["missing_information"],
         "turn_count": saved_values["turn_count"],

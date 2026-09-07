@@ -9,6 +9,29 @@ from app.customer_agent import ProblemDetails
 client = TestClient(main.app)
 
 
+@pytest.fixture(autouse=True)
+def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    current_product_context = {
+        "account_status": "active",
+        "product_version": "2026.8",
+        "affected_feature": "event notifications",
+        "feature_enabled": True,
+    }
+
+    def fake_get_current_product_context(customer_id: str) -> dict[str, object]:
+        return current_product_context
+
+    def fake_should_get_recent_customer_activity(problem_details: ProblemDetails, received_product_context: dict[str, object]) -> bool:
+        return False
+
+    def fake_update_customer_problem_with_customer_side_data(problem_details: ProblemDetails, customer_side_data: dict[str, object]) -> ProblemDetails:
+        return problem_details
+
+    monkeypatch.setattr(customer_workflow, "get_current_product_context", fake_get_current_product_context)
+    monkeypatch.setattr(customer_workflow, "should_get_recent_customer_activity", fake_should_get_recent_customer_activity)
+    monkeypatch.setattr(customer_workflow, "update_customer_problem_with_customer_side_data", fake_update_customer_problem_with_customer_side_data)
+
+
 def test_start_support_session_asks_one_question(monkeypatch: pytest.MonkeyPatch) -> None:
     problem_details = ProblemDetails(
         summary="The customer says a feature has not worked today.",
@@ -176,6 +199,105 @@ def test_start_support_session_returns_error_when_agent_fails(monkeypatch: pytes
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Customer support failed"}
+
+
+def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    problem_details = ProblemDetails(
+        summary="Order notifications are not being received.",
+        affected_feature="event notifications",
+        problem="Order notifications are not arriving.",
+        customer_goal="Receive order notifications.",
+        missing_information=["recent activity"],
+    )
+    current_product_context = {
+        "account_status": "active",
+        "product_version": "2026.8",
+        "affected_feature": "event notifications",
+        "feature_enabled": True,
+    }
+    requested_customer_ids = []
+
+    def fake_get_current_product_context(customer_id: str) -> dict[str, object]:
+        requested_customer_ids.append(customer_id)
+        return current_product_context
+
+    def fake_should_get_recent_customer_activity(received_problem_details: ProblemDetails, received_product_context: dict[str, object]) -> bool:
+        assert received_problem_details == problem_details
+        assert received_product_context == current_product_context
+        return True
+
+    def fake_get_recent_customer_activity(customer_id: str) -> dict[str, object]:
+        requested_customer_ids.append(customer_id)
+        return {"affected_feature": "event notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"}
+
+    monkeypatch.setattr(customer_workflow, "get_current_product_context", fake_get_current_product_context)
+    monkeypatch.setattr(customer_workflow, "should_get_recent_customer_activity", fake_should_get_recent_customer_activity)
+    monkeypatch.setattr(customer_workflow, "get_recent_customer_activity", fake_get_recent_customer_activity)
+
+    state: customer_workflow.CustomerSupportState = {
+        "session_id": "session_001",
+        "customer_id": "customer_001",
+        "customer_message": "My order notifications are not arriving.",
+        "messages": ["Customer: My order notifications are not arriving."],
+        "problem_details": problem_details,
+        "customer_side_data": {},
+        "asked_questions": [],
+        "missing_information": problem_details.missing_information,
+        "turn_count": 1,
+        "customer_response": None,
+        "status": "started",
+        "error": None,
+    }
+
+    result = customer_workflow.get_customer_side_data(state)
+
+    assert requested_customer_ids == ["customer_001", "customer_001"]
+    assert result["customer_side_data"] == {
+        "current_product_context": current_product_context,
+        "recent_activity": {"affected_feature": "event notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
+    }
+
+
+def test_support_session_does_not_ask_for_known_product_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    problem_before_customer_side_data = ProblemDetails(
+        summary="Order notifications are not being received.",
+        affected_feature="event notifications",
+        problem="Order notifications are not arriving.",
+        customer_goal="Receive order notifications.",
+        missing_information=["product version", "when the problem started"],
+    )
+    problem_after_customer_side_data = ProblemDetails(
+        summary="Order notifications are not being received on product version 2026.8.",
+        affected_feature="event notifications",
+        problem="Order notifications are not arriving.",
+        customer_goal="Receive order notifications.",
+        missing_information=["when the problem started"],
+    )
+
+    def fake_update_customer_problem(customer_messages: list[str], current_problem_details: ProblemDetails | None) -> ProblemDetails:
+        return problem_before_customer_side_data
+
+    def fake_update_customer_problem_with_customer_side_data(problem_details: ProblemDetails, customer_side_data: dict[str, object]) -> ProblemDetails:
+        assert customer_side_data["current_product_context"]["product_version"] == "2026.8"
+        return problem_after_customer_side_data
+
+    def fake_create_customer_question(problem_details: ProblemDetails, asked_questions: list[str]) -> str:
+        assert problem_details.missing_information == ["when the problem started"]
+        return "When did this problem start? This will help me understand what may have changed."
+
+    monkeypatch.setattr(customer_workflow, "update_customer_problem", fake_update_customer_problem)
+    monkeypatch.setattr(customer_workflow, "update_customer_problem_with_customer_side_data", fake_update_customer_problem_with_customer_side_data)
+    monkeypatch.setattr(customer_workflow, "create_customer_question", fake_create_customer_question)
+
+    response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "My order notifications are not arriving."})
+    response_data = response.json()
+    session_id = response_data["session_id"]
+    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+
+    assert response.status_code == 201
+    assert response_data["customer_response"] == "When did this problem start? This will help me understand what may have changed."
+    assert "version" not in response_data["customer_response"].lower()
+    assert saved_state.values["customer_side_data"]["current_product_context"]["product_version"] == "2026.8"
 
 
 @pytest.mark.skipif(os.getenv("RUN_REAL_MODEL_TEST") != "1", reason="Set RUN_REAL_MODEL_TEST=1 to call the real model")
