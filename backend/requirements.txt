@@ -8,3 +8,5 @@ langchain>=1.0,<2.0
 langchain-groq>=1.0,<2.0
 langgraph>=1.0,<2.0
 httpx>=0.28,<1.0
+pgvector>=0.5,<1.0
+sentence-transformers>=6.0,<7.0

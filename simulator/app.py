@@ -112,7 +112,7 @@ def get_customer_product_context(customer_id: str) -> CustomerProductContext:
     return CustomerProductContext(
         account_status=customer.status,
         product_version=customer.product_version,
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         feature_enabled=customer.event_notifications_enabled,
     )
 
@@ -130,7 +130,7 @@ def get_customer_recent_activity(customer_id: str) -> CustomerRecentActivity:
         raise HTTPException(status_code=404, detail="Recent customer activity not found")
 
     return CustomerRecentActivity(
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         activity="Sending the latest order notification",
         result=recent_delivery.delivery_status,
         occurred_at=recent_delivery.attempted_at,

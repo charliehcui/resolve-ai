@@ -16,7 +16,7 @@ class FakeResponse:
 
 
 def test_get_current_product_context_uses_the_bound_customer_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    response_data = {"account_status": "active", "product_version": "2026.8", "affected_feature": "event notifications", "feature_enabled": True}
+    response_data = {"account_status": "active", "product_version": "2026.8", "affected_feature": "order notifications", "feature_enabled": True}
     fake_response = FakeResponse(response_data)
 
     def fake_get(url: str, timeout: float) -> FakeResponse:
@@ -33,7 +33,7 @@ def test_get_current_product_context_uses_the_bound_customer_id(monkeypatch: pyt
 
 
 def test_get_recent_customer_activity_uses_the_bound_customer_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    response_data = {"affected_feature": "event notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"}
+    response_data = {"affected_feature": "order notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"}
     fake_response = FakeResponse(response_data)
 
     def fake_get(url: str, timeout: float) -> FakeResponse:

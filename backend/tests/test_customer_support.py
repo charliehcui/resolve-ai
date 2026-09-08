@@ -14,7 +14,7 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch) -> None:
     current_product_context = {
         "account_status": "active",
         "product_version": "2026.8",
-        "affected_feature": "event notifications",
+        "affected_feature": "order notifications",
         "feature_enabled": True,
     }
 
@@ -204,7 +204,7 @@ def test_start_support_session_returns_error_when_agent_fails(monkeypatch: pytes
 def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.MonkeyPatch) -> None:
     problem_details = ProblemDetails(
         summary="Order notifications are not being received.",
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         problem="Order notifications are not arriving.",
         customer_goal="Receive order notifications.",
         missing_information=["recent activity"],
@@ -212,7 +212,7 @@ def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.Mo
     current_product_context = {
         "account_status": "active",
         "product_version": "2026.8",
-        "affected_feature": "event notifications",
+        "affected_feature": "order notifications",
         "feature_enabled": True,
     }
     requested_customer_ids = []
@@ -228,7 +228,7 @@ def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.Mo
 
     def fake_get_recent_customer_activity(customer_id: str) -> dict[str, object]:
         requested_customer_ids.append(customer_id)
-        return {"affected_feature": "event notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"}
+        return {"affected_feature": "order notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"}
 
     monkeypatch.setattr(customer_workflow, "get_current_product_context", fake_get_current_product_context)
     monkeypatch.setattr(customer_workflow, "should_get_recent_customer_activity", fake_should_get_recent_customer_activity)
@@ -254,21 +254,21 @@ def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.Mo
     assert requested_customer_ids == ["customer_001", "customer_001"]
     assert result["customer_side_data"] == {
         "current_product_context": current_product_context,
-        "recent_activity": {"affected_feature": "event notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
+        "recent_activity": {"affected_feature": "order notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
     }
 
 
 def test_support_session_does_not_ask_for_known_product_version(monkeypatch: pytest.MonkeyPatch) -> None:
     problem_before_customer_side_data = ProblemDetails(
         summary="Order notifications are not being received.",
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         problem="Order notifications are not arriving.",
         customer_goal="Receive order notifications.",
         missing_information=["product version", "when the problem started"],
     )
     problem_after_customer_side_data = ProblemDetails(
         summary="Order notifications are not being received on product version 2026.8.",
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         problem="Order notifications are not arriving.",
         customer_goal="Receive order notifications.",
         missing_information=["when the problem started"],

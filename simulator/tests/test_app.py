@@ -20,7 +20,7 @@ def test_get_customer_product_context_returns_only_customer_visible_data() -> No
     assert response.json() == {
         "account_status": "active",
         "product_version": "2026.8",
-        "affected_feature": "event notifications",
+        "affected_feature": "order notifications",
         "feature_enabled": True,
     }
 
