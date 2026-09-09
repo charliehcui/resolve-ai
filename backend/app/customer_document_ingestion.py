@@ -26,13 +26,13 @@ def load_customer_document(document_path: Path) -> Document:
     document_content = document_parts[2].strip()
     metadata_values = yaml.safe_load(metadata_text)
 
-    if not isinstance(metadata_values, dict):
+    if isinstance(metadata_values, dict) is False:
         raise ValueError(f"Document metadata is invalid: {document_path}")
 
     required_fields = ["title", "visibility", "feature", "version", "source_uri", "effective_from"]
 
     for required_field in required_fields:
-        if not metadata_values.get(required_field):
+        if metadata_values.get(required_field) is None:
             raise ValueError(f"Document field is missing: {required_field}")
 
     if metadata_values["visibility"] != "CUSTOMER":
@@ -40,7 +40,7 @@ def load_customer_document(document_path: Path) -> Document:
 
     effective_from = date.fromisoformat(str(metadata_values["effective_from"]))
 
-    if metadata_values.get("effective_to"):
+    if metadata_values.get("effective_to") is not None:
         effective_to = date.fromisoformat(str(metadata_values["effective_to"]))
     else:
         effective_to = None
@@ -87,7 +87,7 @@ def create_chunk_ids(document_chunks: list[Document]) -> list[str]:
 def import_customer_documents() -> int:
     customer_documents = load_all_customer_documents()
 
-    if not customer_documents:
+    if len(customer_documents) == 0:
         raise ValueError("No customer documents were found")
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)

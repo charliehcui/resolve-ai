@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import customer_workflow, main
-from app.customer_agent import ProblemDetails
+from app.customer_agent import CustomerDocumentAnswer, ProblemDetails
 
 client = TestClient(main.app)
 
@@ -95,8 +95,18 @@ def test_continue_support_session_updates_the_same_problem(monkeypatch: pytest.M
     def fake_create_customer_question(problem_details: ProblemDetails, asked_questions: list[str]) -> str:
         return "Which feature is not working? This will help me understand where the problem happens."
 
+    class FakeCustomerDocumentSearch:
+        def invoke(self, search_input: dict[str, object]) -> list[dict[str, object]]:
+            assert search_input == {"customer_question": "The customer cannot use invoice export.\nAffected feature: invoice export\nInvoice export does not start.\nCustomer goal: Export an invoice.", "version": "2026.8"}
+            return [{"chunk_id": "docs/customer/recovery.md:0", "source_uri": "docs/customer/recovery.md", "version": "2026.8", "content": "Save the destination again, then send one test notification."}]
+
+    def fake_create_customer_answer_from_documents(problem_details: ProblemDetails, customer_side_data: dict[str, object], retrieved_customer_documents: list[dict[str, object]]) -> CustomerDocumentAnswer:
+        return CustomerDocumentAnswer(can_answer=True, answer="Save the destination again, then send one test notification.", citation_ids=["docs/customer/recovery.md:0"])
+
     monkeypatch.setattr(customer_workflow, "update_customer_problem", fake_update_customer_problem)
     monkeypatch.setattr(customer_workflow, "create_customer_question", fake_create_customer_question)
+    monkeypatch.setattr(customer_workflow, "retrieve_documents_for_customer_question", FakeCustomerDocumentSearch())
+    monkeypatch.setattr(customer_workflow, "create_customer_answer_from_documents", fake_create_customer_answer_from_documents)
 
     first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "A feature does not work."})
     session_id = first_response.json()["session_id"]
@@ -108,7 +118,9 @@ def test_continue_support_session_updates_the_same_problem(monkeypatch: pytest.M
     assert second_response.status_code == 200
     assert second_response_data["session_id"] == session_id
     assert second_response_data["problem_details"] == updated_problem_details.model_dump(mode="json")
-    assert second_response_data["status"] == "ready_for_support"
+    assert second_response_data["customer_response"] == "Save the destination again, then send one test notification."
+    assert second_response_data["citations"] == [{"chunk_id": "docs/customer/recovery.md:0", "source_uri": "docs/customer/recovery.md", "version": "2026.8"}]
+    assert second_response_data["status"] == "answer_provided"
     assert saved_state.values["turn_count"] == 2
 
 

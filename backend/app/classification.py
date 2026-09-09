@@ -81,7 +81,7 @@ Ticket description:
 
     result = classification_model.invoke(messages)
 
-    if not isinstance(result, ClassificationResult):
+    if isinstance(result, ClassificationResult) is False:
         raise TypeError("Model did not return ClassificationResult")
 
     return result

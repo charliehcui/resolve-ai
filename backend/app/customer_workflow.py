@@ -5,8 +5,15 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.customer_agent import ProblemDetails, create_customer_question, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data
+from app.customer_agent import ProblemDetails, create_customer_answer_from_documents, create_customer_question, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data
+from app.customer_question_retrieval import retrieve_documents_for_customer_question
 from app.customer_tools import get_current_product_context, get_recent_customer_activity
+
+
+class CustomerDocumentCitation(BaseModel):
+    chunk_id: str
+    source_uri: str
+    version: str
 
 
 class CustomerSupportState(TypedDict):
@@ -18,6 +25,8 @@ class CustomerSupportState(TypedDict):
     customer_side_data: dict[str, object]
     asked_questions: list[str]
     missing_information: list[str]
+    retrieved_customer_documents: list[dict[str, object]]
+    citations: list[dict[str, object]]
     turn_count: int
     customer_response: str | None
     status: str
@@ -41,6 +50,7 @@ class SupportResponse(BaseModel):
     session_id: str
     problem_details: ProblemDetails
     customer_response: str
+    citations: list[CustomerDocumentCitation]
     status: str
 
 
@@ -63,7 +73,7 @@ def update_problem_details(state: CustomerSupportState) -> dict[str, object]:
 
 
 def get_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
-    if state["error"]:
+    if state["error"] is not None:
         return {}
 
     problem_details = state["problem_details"]
@@ -77,7 +87,7 @@ def get_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
 
         needs_recent_activity = should_get_recent_customer_activity(problem_details, current_product_context)
 
-        if needs_recent_activity:
+        if needs_recent_activity is True:
             recent_activity = get_recent_customer_activity(state["customer_id"])
             customer_side_data["recent_activity"] = recent_activity
 
@@ -87,7 +97,7 @@ def get_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
 
 
 def update_problem_with_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
-    if state["error"]:
+    if state["error"] is not None:
         return {}
 
     problem_details = state["problem_details"]
@@ -103,11 +113,11 @@ def update_problem_with_customer_side_data(state: CustomerSupportState) -> dict[
 
 
 def choose_next_step(state: CustomerSupportState) -> str:
-    if state["error"]:
+    if state["error"] is not None:
         return "error"
 
-    if not state["missing_information"]:
-        return "ready_for_support"
+    if len(state["missing_information"]) == 0:
+        return "retrieve_customer_documents"
 
     if state["turn_count"] > 3:
         return "needs_assistance"
@@ -132,7 +142,7 @@ def ask_for_information(state: CustomerSupportState) -> dict[str, object]:
         if customer_question.strip().lower() == asked_question.strip().lower():
             question_repeated = True
 
-    if question_repeated:
+    if question_repeated is True:
         customer_response = "I still do not have enough information, so I will ask the support team to continue checking this problem."
         messages = state["messages"].copy()
         messages.append(f"Agent: {customer_response}")
@@ -147,22 +157,70 @@ def ask_for_information(state: CustomerSupportState) -> dict[str, object]:
     return {"messages": messages, "asked_questions": asked_questions, "customer_response": customer_question, "status": "waiting_for_customer"}
 
 
-def ready_for_support(state: CustomerSupportState) -> dict[str, object]:
-    customer_response = "Thanks. I now have enough information to continue checking this problem."
+def retrieve_customer_documents(state: CustomerSupportState) -> dict[str, object]:
+    problem_details = state["problem_details"]
 
-    messages = state["messages"].copy()
-    messages.append(f"Agent: {customer_response}")
+    if problem_details is None:
+        return {"status": "error", "error": "Problem details are missing"}
 
-    return {"messages": messages, "customer_response": customer_response, "status": "ready_for_support"}
+    current_product_context: dict[str, object] = state["customer_side_data"]["current_product_context"]
+    version = current_product_context.get("product_version")
+    customer_question = f"{problem_details.summary}\nAffected feature: {problem_details.affected_feature}\n{problem_details.problem}\nCustomer goal: {problem_details.customer_goal}"
+
+    try:
+        retrieved_customer_documents = retrieve_documents_for_customer_question.invoke({"customer_question": customer_question, "version": version})
+        return {"retrieved_customer_documents": retrieved_customer_documents}
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+
+def choose_step_after_document_retrieval(state: CustomerSupportState) -> str:
+    if state["error"] is not None:
+        return "error"
+
+    if len(state["retrieved_customer_documents"]) == 0:
+        return "needs_assistance"
+
+    return "answer_customer_with_documents"
 
 
 def needs_assistance(state: CustomerSupportState) -> dict[str, object]:
-    customer_response = "Thanks. I still do not have enough information, so I will ask the support team to continue checking this problem."
+    customer_response = "Thanks. I cannot safely solve this problem with the available information, so I will ask the support team to continue checking it."
 
     messages = state["messages"].copy()
     messages.append(f"Agent: {customer_response}")
 
-    return {"messages": messages, "customer_response": customer_response, "status": "needs_assistance"}
+    return {"messages": messages, "customer_response": customer_response, "citations": [], "status": "needs_assistance"}
+
+
+def answer_customer_with_documents(state: CustomerSupportState) -> dict[str, object]:
+    problem_details = state["problem_details"]
+
+    if problem_details is None:
+        return {"status": "error", "error": "Problem details are missing"}
+
+    try:
+        answer_result = create_customer_answer_from_documents(problem_details, state["customer_side_data"], state["retrieved_customer_documents"])
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+    if answer_result.can_answer is False:
+        return needs_assistance(state)
+
+    citations: list[dict[str, object]] = []
+
+    for retrieved_document in state["retrieved_customer_documents"]:
+        if retrieved_document["chunk_id"] in answer_result.citation_ids:
+            citation = {"chunk_id": str(retrieved_document["chunk_id"]), "source_uri": str(retrieved_document["source_uri"]), "version": str(retrieved_document["version"])}
+            citations.append(citation)
+
+    if len(citations) == 0:
+        return needs_assistance(state)
+
+    messages = state["messages"].copy()
+    messages.append(f"Agent: {answer_result.answer}")
+
+    return {"messages": messages, "customer_response": answer_result.answer, "citations": citations, "status": "answer_provided"}
 
 
 customer_support_graph_builder = StateGraph(CustomerSupportState)
@@ -171,16 +229,18 @@ customer_support_graph_builder.add_node("update_problem_details", update_problem
 customer_support_graph_builder.add_node("get_customer_side_data", get_customer_side_data)
 customer_support_graph_builder.add_node("update_problem_with_customer_side_data", update_problem_with_customer_side_data)
 customer_support_graph_builder.add_node("ask_for_information", ask_for_information)
-customer_support_graph_builder.add_node("ready_for_support", ready_for_support)
+customer_support_graph_builder.add_node("retrieve_customer_documents", retrieve_customer_documents)
+customer_support_graph_builder.add_node("answer_customer_with_documents", answer_customer_with_documents)
 customer_support_graph_builder.add_node("needs_assistance", needs_assistance)
 
 customer_support_graph_builder.add_edge(START, "save_customer_message")
 customer_support_graph_builder.add_edge("save_customer_message", "update_problem_details")
 customer_support_graph_builder.add_edge("update_problem_details", "get_customer_side_data")
 customer_support_graph_builder.add_edge("get_customer_side_data", "update_problem_with_customer_side_data")
-customer_support_graph_builder.add_conditional_edges("update_problem_with_customer_side_data", choose_next_step, {"ask_for_information": "ask_for_information", "ready_for_support": "ready_for_support", "needs_assistance": "needs_assistance", "error": END})
+customer_support_graph_builder.add_conditional_edges("update_problem_with_customer_side_data", choose_next_step, {"ask_for_information": "ask_for_information", "retrieve_customer_documents": "retrieve_customer_documents", "needs_assistance": "needs_assistance", "error": END})
+customer_support_graph_builder.add_conditional_edges("retrieve_customer_documents", choose_step_after_document_retrieval, {"answer_customer_with_documents": "answer_customer_with_documents", "needs_assistance": "needs_assistance", "error": END})
 customer_support_graph_builder.add_edge("ask_for_information", END)
-customer_support_graph_builder.add_edge("ready_for_support", END)
+customer_support_graph_builder.add_edge("answer_customer_with_documents", END)
 customer_support_graph_builder.add_edge("needs_assistance", END)
 
 customer_support_graph = customer_support_graph_builder.compile(checkpointer=InMemorySaver())
@@ -198,26 +258,28 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
         "customer_side_data": {},
         "asked_questions": [],
         "missing_information": [],
+        "retrieved_customer_documents": [],
+        "citations": [],
         "turn_count": 0,
         "customer_response": None,
         "status": "started",
         "error": None,
     }
 
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 10}
+    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 12}
     final_state = customer_support_graph.invoke(initial_state, config)
 
     if final_state["error"] is not None:
         raise RuntimeError(final_state["error"])
 
-    return SupportResponse(session_id=session_id, problem_details=final_state["problem_details"], customer_response=final_state["customer_response"], status=final_state["status"])
+    return SupportResponse(session_id=session_id, problem_details=final_state["problem_details"], customer_response=final_state["customer_response"], citations=final_state["citations"], status=final_state["status"])
 
 
 def continue_customer_support(session_id: str, customer_message: str) -> SupportResponse:
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 10}
+    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 12}
     saved_state = customer_support_graph.get_state(config)
 
-    if not saved_state.values:
+    if len(saved_state.values) == 0:
         raise ValueError("Support session not found")
 
     saved_values = saved_state.values
@@ -231,6 +293,8 @@ def continue_customer_support(session_id: str, customer_message: str) -> Support
         "customer_side_data": saved_values["customer_side_data"],
         "asked_questions": saved_values["asked_questions"],
         "missing_information": saved_values["missing_information"],
+        "retrieved_customer_documents": [],
+        "citations": [],
         "turn_count": saved_values["turn_count"],
         "customer_response": None,
         "status": "started",
@@ -242,4 +306,4 @@ def continue_customer_support(session_id: str, customer_message: str) -> Support
     if final_state["error"] is not None:
         raise RuntimeError(final_state["error"])
 
-    return SupportResponse(session_id=session_id, problem_details=final_state["problem_details"], customer_response=final_state["customer_response"], status=final_state["status"])
+    return SupportResponse(session_id=session_id, problem_details=final_state["problem_details"], customer_response=final_state["customer_response"], citations=final_state["citations"], status=final_state["status"])

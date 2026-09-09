@@ -42,7 +42,7 @@ def route_after_load(state: SupportCaseState) -> str:
     if ticket is None:
         return "finalize"
 
-    if ticket.classification.missing_information:
+    if len(ticket.classification.missing_information) > 0:
         return "finalize"
 
     return "investigate"
@@ -71,7 +71,7 @@ def finalize(state: SupportCaseState) -> dict[str, object]:
     if ticket is None:
         return {"outcome": "escalation", "error": "Ticket could not be loaded"}
 
-    if ticket.classification.missing_information:
+    if len(ticket.classification.missing_information) > 0:
         return {"outcome": "clarification"}
 
     result = state["investigation_result"]
@@ -79,7 +79,7 @@ def finalize(state: SupportCaseState) -> dict[str, object]:
     if result is None:
         return {"outcome": "escalation", "error": "Investigation produced no result"}
 
-    if result.needs_escalation:
+    if result.needs_escalation is True:
         return {"outcome": "escalation"}
 
     return {"outcome": "resolution"}

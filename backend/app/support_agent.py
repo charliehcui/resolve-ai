@@ -56,7 +56,7 @@ Status: {ticket.status}
     result = support_investigation_agent.invoke(agent_input, {"recursion_limit": 10})
     structured_response = result.get("structured_response")
 
-    if not isinstance(structured_response, SupportInvestigationResult):
+    if isinstance(structured_response, SupportInvestigationResult) is False:
         raise TypeError("Support Agent did not return SupportInvestigationResult")
 
     return structured_response

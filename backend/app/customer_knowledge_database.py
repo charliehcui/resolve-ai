@@ -46,13 +46,7 @@ def reset_customer_knowledge_table() -> None:
     database_engine = get_customer_knowledge_database_engine()
 
     # Recreates the PostgreSQL table used to store customer document chunks and vectors.
-    database_engine.init_vectorstore_table(
-        table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME,
-        vector_size=EMBEDDING_VECTOR_SIZE,
-        metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_COLUMNS,
-        id_column=Column("chunk_id", "VARCHAR", nullable=False),
-        overwrite_existing=True,
-    )
+    database_engine.init_vectorstore_table(table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME, vector_size=EMBEDDING_VECTOR_SIZE, metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_COLUMNS, id_column=Column("chunk_id", "VARCHAR", nullable=False), overwrite_existing=True)
 
 
 def get_customer_knowledge_database_client() -> PGVectorStore:
@@ -62,12 +56,6 @@ def get_customer_knowledge_database_client() -> PGVectorStore:
         database_engine = get_customer_knowledge_database_engine()
 
         # Creates a Python object for reading and writing the existing customer knowledge table.
-        knowledge_database_client = PGVectorStore.create_sync(
-            engine=database_engine,
-            table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME,
-            embedding_service=get_embedding_model(),
-            metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_FIELDS,
-            id_column="chunk_id",
-        )
+        knowledge_database_client = PGVectorStore.create_sync(engine=database_engine, table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME, embedding_service=get_embedding_model(), metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_FIELDS, id_column="chunk_id")
 
     return knowledge_database_client

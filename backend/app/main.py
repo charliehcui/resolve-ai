@@ -70,7 +70,7 @@ def create_ticket(request: TicketCreate) -> TicketResponse:
     except Exception as error:
         raise HTTPException(status_code=502, detail="Ticket classification failed") from error
 
-    if classification.missing_information:
+    if len(classification.missing_information) > 0:
         ticket_status = TicketStatus.WAITING_CUSTOMER
     else:
         ticket_status = TicketStatus.CLASSIFIED
