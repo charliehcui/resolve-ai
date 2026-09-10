@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 from uuid import uuid4
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -30,7 +30,7 @@ class CustomerSupportState(TypedDict):
     citations: list[dict[str, object]]
     resolution: CustomerResolution | None
     verification_result: CustomerVerification | None
-    verification_source: str | None
+    verification_source: Literal["customer_confirmation", "tool_verification"] | None
     turn_count: int
     customer_response: str | None
     status: str
@@ -58,7 +58,7 @@ class SupportResponse(BaseModel):
     citations: list[CustomerDocumentCitation]
     resolution: CustomerResolution | None
     verification_result: CustomerVerification | None
-    verification_source: str | None
+    verification_source: Literal["customer_confirmation", "tool_verification"] | None
     status: str
 
 
@@ -211,7 +211,7 @@ def prepare_customer_resolution(state: CustomerSupportState) -> dict[str, object
     if resolution.can_resolve is False:
         return {"resolution": None, "citations": []}
 
-    if len(resolution.steps) == 0 or len(resolution.citation_ids) == 0:
+    if not resolution.explanation.strip() or len(resolution.steps) == 0 or len(resolution.citation_ids) == 0:
         return {"resolution": None, "citations": []}
 
     for step in resolution.steps:
@@ -371,7 +371,7 @@ def finalize_customer_resolution(state: CustomerSupportState) -> dict[str, objec
 
     if verification_result.result == "resolved" and verification_source == "tool_verification":
         status = "resolved"
-        customer_response = "The system confirmed that the relevant customer state changed successfully. This support session is complete."
+        customer_response = "The latest account information confirms that the problem is fixed. This support session is complete."
     elif verification_result.result == "resolved":
         status = "resolved"
         verification_source = "customer_confirmation"

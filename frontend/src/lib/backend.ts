@@ -26,7 +26,7 @@ export type CustomerResolution = {
   explanation: string;
   steps: string[];
   citation_ids: string[];
-  verification_method: "customer_confirmation";
+  verification_method: "customer_confirmation_or_tool";
 };
 
 export type CustomerVerification = {
@@ -42,7 +42,7 @@ export type SupportResponse = {
   citations: CustomerDocumentCitation[];
   resolution: CustomerResolution | null;
   verification_result: CustomerVerification | null;
-  verification_source: string | null;
+  verification_source: "customer_confirmation" | "tool_verification" | null;
   status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance";
 };
 
