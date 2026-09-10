@@ -1,3 +1,6 @@
+import asyncio
+import sys
+
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import Column, PGEngine, PGVectorStore
 
@@ -37,6 +40,9 @@ def get_customer_knowledge_database_engine() -> PGEngine:
     global knowledge_database_engine
 
     if knowledge_database_engine is None:
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
         knowledge_database_engine = PGEngine.from_connection_string(url=settings.database_url)
 
     return knowledge_database_engine
