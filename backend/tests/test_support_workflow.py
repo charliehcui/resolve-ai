@@ -1,8 +1,8 @@
 import pytest
 
 from app import support_workflow
-from app.classification import ClassificationResult, TicketCategory, TicketSeverity
 from app.db.models import Ticket
+from app.handoff import SupportHandoff
 from app.support_agent import SupportInvestigationResult
 from app.tickets import TicketContext, TicketStatus
 
@@ -27,21 +27,25 @@ class FakeDatabase:
 
 
 def build_ticket(missing_information: list[str]) -> Ticket:
-    classification = ClassificationResult(
-        category=TicketCategory.EVENT_NOTIFICATION_FAILURE,
-        severity=TicketSeverity.MEDIUM,
-        affected_feature="event notifications",
-        summary="Order notifications returned HTTP 401.",
-        missing_information=missing_information,
-        urgency_reason="Notifications are repeatedly failing.",
+    handoff = SupportHandoff(
+        support_session_id="session_001",
+        customer_id="customer_001",
+        issue_summary="订单通知返回 HTTP 401。",
+        affected_feature="事件通知",
+        customer_impact="客户无法收到订单通知。",
+        approximate_start_time=None,
+        environment_snapshot={},
+        collected_facts=[],
+        attempted_steps=[],
+        citation_ids=[],
+        remaining_questions=missing_information,
+        handoff_reason="客户侧没有安全的解决方法。",
     )
 
     ticket = Ticket()
     ticket.id = 1
-    ticket.customer_id = "customer_001"
-    ticket.title = "Order notification failed"
-    ticket.description = "Order notifications returned HTTP 401 twice."
-    ticket.classification = classification.model_dump(mode="json")
+    ticket.support_session_id = handoff.support_session_id
+    ticket.handoff = handoff.model_dump(mode="json")
     ticket.status = TicketStatus.WAITING_CUSTOMER.value if missing_information else TicketStatus.CLASSIFIED.value
     return ticket
 
@@ -49,8 +53,8 @@ def build_ticket(missing_information: list[str]) -> Ticket:
 def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.MonkeyPatch) -> None:
     ticket = build_ticket([])
     expected_result = SupportInvestigationResult(
-        conclusion="The customer destination returned HTTP 401 while the platform remained operational.",
-        supporting_facts=["Two deliveries returned HTTP 401.", "The platform is operational."],
+        conclusion="客户接收端返回 HTTP 401，平台运行正常。",
+        supporting_facts=["两次发送都返回 HTTP 401。", "平台运行正常。"],
         needs_escalation=False,
     )
 
@@ -69,7 +73,7 @@ def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.Monke
 
 
 def test_support_workflow_requests_clarification_before_investigation(monkeypatch: pytest.MonkeyPatch) -> None:
-    ticket = build_ticket(["destination URL"])
+    ticket = build_ticket(["接收地址"])
 
     def fail_investigation(ticket_context: TicketContext) -> SupportInvestigationResult:
         pytest.fail("Support Agent should not run when required information is missing")
@@ -81,4 +85,4 @@ def test_support_workflow_requests_clarification_before_investigation(monkeypatc
 
     assert response.outcome == "clarification"
     assert response.result is None
-    assert response.message == "More information is required: destination URL"
+    assert response.message == "还需要客户补充以下信息：接收地址"

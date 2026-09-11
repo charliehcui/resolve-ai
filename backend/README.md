@@ -10,6 +10,7 @@ The backend is separate from the frontend so that model credentials, database ac
 - `GET /health/ready` confirms that the API can connect to the database.
 - `POST /api/v1/support-sessions` starts a customer support session.
 - `POST /api/v1/support-sessions/{session_id}/messages` continues an existing customer support session.
+- `GET /api/v1/tickets/{ticket_id}` reads an automatically created support ticket.
 
 ## Local setup
 

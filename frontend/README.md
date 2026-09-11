@@ -2,7 +2,7 @@
 
 This directory contains the ResolveAI customer support interface built with Vite, React, TypeScript, and Tailwind CSS.
 
-The current page starts and continues customer support sessions through the FastAPI API. It displays the conversation, problem summary, automatically collected customer information, customer-visible citations, verification result, and current session status. The local demo uses `customer_001` from ResolveLab.
+The current Chinese page starts and continues customer support sessions through the FastAPI API. It displays the conversation, problem summary, automatically collected customer information, customer-visible citations, verification result, ticket ID, and current session status. The local demo uses `customer_001` from ResolveLab.
 
 ## Local setup
 

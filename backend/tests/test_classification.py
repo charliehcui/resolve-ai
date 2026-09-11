@@ -1,36 +1,27 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from app import main
+from app import classification
 from app.classification import ClassificationRequest, ClassificationResult, TicketCategory, TicketSeverity
 
-client = TestClient(main.app)
 
-
-def test_classification_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_classification_returns_the_model_result_in_chinese(monkeypatch: pytest.MonkeyPatch) -> None:
     expected_result = ClassificationResult(
         category=TicketCategory.EVENT_NOTIFICATION_FAILURE,
         severity=TicketSeverity.MEDIUM,
-        affected_feature="event notifications",
-        summary="Order completion notifications receive HTTP 401 responses.",
+        affected_feature="事件通知",
+        summary="订单完成通知返回 HTTP 401。",
         missing_information=[],
-        urgency_reason="Notifications are repeatedly failing for one customer.",
+        urgency_reason="单个客户的通知持续失败。",
     )
 
-    def fake_classify_ticket(request: ClassificationRequest) -> ClassificationResult:
-        assert request.customer_id == "customer_001"
-        return expected_result
+    class FakeClassificationModel:
+        def invoke(self, messages: list[object]) -> ClassificationResult:
+            assert "简体中文" in messages[0].content
+            return expected_result
 
-    monkeypatch.setattr(main, "classify_ticket", fake_classify_ticket)
+    monkeypatch.setattr(classification, "classification_model", FakeClassificationModel())
 
-    response = client.post(
-        "/api/v1/classification",
-        json={
-            "title": "Order notification failed",
-            "description": "Order order_1001 notifications returned HTTP 401 twice.",
-            "customer_id": "customer_001",
-        },
-    )
+    request = ClassificationRequest(title="订单通知失败", description="订单通知两次返回 HTTP 401。", customer_id="customer_001")
+    result = classification.classify_ticket(request)
 
-    assert response.status_code == 200
-    assert response.json() == expected_result.model_dump(mode="json")
+    assert result == expected_result

@@ -1,6 +1,6 @@
 export type BackendHealth = {
   isReady: boolean;
-  label: "Ready" | "Unavailable";
+  label: "正常" | "不可用";
 };
 
 type HealthResponse = {
@@ -43,6 +43,7 @@ export type SupportResponse = {
   resolution: CustomerResolution | null;
   verification_result: CustomerVerification | null;
   verification_source: "customer_confirmation" | "tool_verification" | null;
+  ticket_id: number | null;
   status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance";
 };
 
@@ -57,18 +58,18 @@ export async function getBackendHealth(): Promise<BackendHealth> {
     const response = await fetch(`${backendUrl}/health/ready`);
 
     if (!response.ok) {
-      return { isReady: false, label: "Unavailable" };
+      return { isReady: false, label: "不可用" };
     }
 
     const data = (await response.json()) as HealthResponse;
 
     if (data.status === "ready") {
-      return { isReady: true, label: "Ready" };
+      return { isReady: true, label: "正常" };
     }
 
-    return { isReady: false, label: "Unavailable" };
+    return { isReady: false, label: "不可用" };
   } catch {
-    return { isReady: false, label: "Unavailable" };
+    return { isReady: false, label: "不可用" };
   }
 }
 
@@ -88,15 +89,15 @@ export async function sendCustomerMessage(sessionId: string | null, message: str
   });
 
   if (response.status === 404) {
-    throw new Error("This conversation is no longer available. Please start a new conversation.");
+    throw new Error("当前会话已不可用，请开始新的会话。");
   }
 
   if (response.status === 422) {
-    throw new Error("Please enter a message between 1 and 5,000 characters.");
+    throw new Error("请输入 1 到 5,000 个字符的消息。");
   }
 
   if (!response.ok) {
-    throw new Error("We could not process your message. Please try again.");
+    throw new Error("暂时无法处理你的消息，请重试。");
   }
 
   return (await response.json()) as SupportResponse;

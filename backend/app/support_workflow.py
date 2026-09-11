@@ -42,7 +42,7 @@ def route_after_load(state: SupportCaseState) -> str:
     if ticket is None:
         return "finalize"
 
-    if len(ticket.classification.missing_information) > 0:
+    if ticket.handoff is None or len(ticket.handoff.remaining_questions) > 0:
         return "finalize"
 
     return "investigate"
@@ -71,7 +71,10 @@ def finalize(state: SupportCaseState) -> dict[str, object]:
     if ticket is None:
         return {"outcome": "escalation", "error": "Ticket could not be loaded"}
 
-    if len(ticket.classification.missing_information) > 0:
+    if ticket.handoff is None:
+        return {"outcome": "escalation", "error": "Ticket does not contain a support handoff"}
+
+    if len(ticket.handoff.remaining_questions) > 0:
         return {"outcome": "clarification"}
 
     result = state["investigation_result"]
@@ -121,8 +124,9 @@ def run_support_investigation(ticket_id: int) -> SupportInvestigationResponse:
     ticket = final_state["ticket"]
 
     if outcome == "clarification" and ticket is not None:
-        missing_information = ", ".join(ticket.classification.missing_information)
-        message = f"More information is required: {missing_information}"
+        if ticket.handoff is not None:
+            missing_information = "、".join(ticket.handoff.remaining_questions)
+            message = f"还需要客户补充以下信息：{missing_information}"
 
     return SupportInvestigationResponse(
         ticket_id=ticket_id,

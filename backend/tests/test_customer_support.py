@@ -2,15 +2,25 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app import customer_agent, customer_workflow, main
+from app import customer_agent, customer_workflow, main, support_sessions, tickets
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails
+from app.db.database import Base
+from app.db.models import SupportSession, Ticket
+from app.handoff import SupportHandoffSummary
 
 client = TestClient(main.app)
 
 
 @pytest.fixture(autouse=True)
-def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch) -> None:
+def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch):
+    engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    test_session = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
     current_product_context = {
         "account_status": "active",
         "product_version": "2026.8",
@@ -27,23 +37,35 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_update_customer_problem_with_customer_side_data(problem_details: ProblemDetails, customer_side_data: dict[str, object]) -> ProblemDetails:
         return problem_details
 
+    def fake_create_support_handoff_summary(problem_details: ProblemDetails, customer_messages: list[str]) -> SupportHandoffSummary:
+        return SupportHandoffSummary(issue_summary=problem_details.summary, customer_impact="客户无法完成当前操作。", approximate_start_time=None)
+
+    monkeypatch.setattr(main, "SessionLocal", test_session)
+    monkeypatch.setattr(support_sessions, "SessionLocal", test_session)
+    monkeypatch.setattr(tickets, "SessionLocal", test_session)
     monkeypatch.setattr(customer_workflow, "get_current_product_context", fake_get_current_product_context)
     monkeypatch.setattr(customer_workflow, "should_get_recent_customer_activity", fake_should_get_recent_customer_activity)
     monkeypatch.setattr(customer_workflow, "update_customer_problem_with_customer_side_data", fake_update_customer_problem_with_customer_side_data)
+    monkeypatch.setattr(customer_workflow, "create_support_handoff_summary", fake_create_support_handoff_summary)
+
+    yield
+
+    Base.metadata.drop_all(engine)
+    engine.dispose()
 
 
 def configure_resolvable_customer_path(monkeypatch: pytest.MonkeyPatch) -> tuple[ProblemDetails, CustomerResolution]:
     problem_details = ProblemDetails(
-        summary="Order notifications stopped arriving today.",
-        affected_feature="order notifications",
-        problem="Order notifications are not arriving.",
-        customer_goal="Receive order notifications again.",
+        summary="订单通知从今天开始无法送达。",
+        affected_feature="订单通知",
+        problem="客户收不到订单通知。",
+        customer_goal="恢复接收订单通知。",
         missing_information=[],
     )
     resolution = CustomerResolution(
         can_resolve=True,
-        explanation="The saved notification destination may need to be refreshed.",
-        steps=["Open notification settings and save the destination again.", "Send one test order notification."],
+        explanation="已保存的通知地址可能需要重新保存。",
+        steps=["打开通知设置并重新保存接收地址。", "发送一条测试订单通知。"],
         citation_ids=["docs/customer/order-notifications.md:0"],
         verification_method="customer_confirmation_or_tool",
     )
@@ -54,7 +76,7 @@ def configure_resolvable_customer_path(monkeypatch: pytest.MonkeyPatch) -> tuple
     class FakeCustomerDocumentSearch:
         def invoke(self, search_input: dict[str, object]) -> list[dict[str, object]]:
             assert search_input["version"] == "2026.8"
-            return [{"chunk_id": "docs/customer/order-notifications.md:0", "source_uri": "docs/customer/order-notifications.md", "version": "2026.8", "content": "Save the notification destination again, then send one test notification."}]
+            return [{"chunk_id": "docs/customer/order-notifications.md:0", "source_uri": "docs/customer/order-notifications.md", "version": "2026.8", "content": "重新保存通知地址，然后发送一条测试通知。"}]
 
     def fake_create_customer_resolution_from_documents(received_problem_details: ProblemDetails, customer_side_data: dict[str, object], retrieved_customer_documents: list[dict[str, object]]) -> CustomerResolution:
         assert received_problem_details == problem_details
@@ -155,7 +177,7 @@ def test_continue_support_session_updates_the_same_problem(monkeypatch: pytest.M
     assert second_response.status_code == 200
     assert second_response_data["session_id"] == session_id
     assert second_response_data["problem_details"] == updated_problem_details.model_dump(mode="json")
-    assert second_response_data["customer_response"] == "The saved destination may need to be refreshed.\n\n1. Save the destination again.\n2. Send one test notification.\n\nAfter trying these steps, please tell me whether the problem is fixed."
+    assert second_response_data["customer_response"] == "The saved destination may need to be refreshed.\n\n1. Save the destination again.\n2. Send one test notification.\n\n完成以上步骤后，请告诉我问题是否已经解决。"
     assert second_response_data["citations"] == [{"chunk_id": "docs/customer/recovery.md:0", "source_uri": "docs/customer/recovery.md", "version": "2026.8"}]
     assert second_response_data["resolution"]["verification_method"] == "customer_confirmation_or_tool"
     assert second_response_data["status"] == "waiting_for_verification"
@@ -299,6 +321,9 @@ def test_customer_side_data_uses_customer_id_from_session(monkeypatch: pytest.Mo
         "resolution": None,
         "verification_result": None,
         "verification_source": None,
+        "handoff": None,
+        "handoff_reason": None,
+        "ticket_id": None,
         "turn_count": 1,
         "customer_response": None,
         "status": "started",
@@ -358,26 +383,26 @@ def test_support_session_does_not_ask_for_known_product_version(monkeypatch: pyt
 
 def test_customer_completes_the_day_five_self_service_path(monkeypatch: pytest.MonkeyPatch) -> None:
     problem_details, resolution = configure_resolvable_customer_path(monkeypatch)
-    customer_confirmation = "The notifications are arriving now. The problem is fixed."
+    customer_confirmation = "通知已经恢复，问题解决了。"
 
     def fake_verify_customer_resolution(received_problem_details: ProblemDetails, received_resolution: CustomerResolution, customer_message: str) -> CustomerVerification:
         assert received_problem_details == problem_details
         assert received_resolution == resolution
         assert customer_message == customer_confirmation
-        return CustomerVerification(result="resolved", supporting_text="The problem is fixed.")
+        return CustomerVerification(result="resolved", supporting_text="问题解决了")
 
     monkeypatch.setattr(customer_workflow, "verify_customer_resolution", fake_verify_customer_resolution)
 
-    first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "My order notifications stopped arriving today. I want to receive them again."})
+    first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "我的订单通知从今天开始收不到了，我希望恢复接收。"})
     first_response_data = first_response.json()
 
     assert first_response.status_code == 201
     assert first_response_data["status"] == "waiting_for_verification"
     assert first_response_data["resolution"] == resolution.model_dump(mode="json")
     assert first_response_data["citations"] == [{"chunk_id": "docs/customer/order-notifications.md:0", "source_uri": "docs/customer/order-notifications.md", "version": "2026.8"}]
-    assert first_response_data["customer_facts"] == ["Account status: active.", "Product version: 2026.8.", "Order notifications: enabled."]
-    assert "1. Open notification settings and save the destination again." in first_response_data["customer_response"]
-    assert "2. Send one test order notification." in first_response_data["customer_response"]
+    assert first_response_data["customer_facts"] == ["账户状态：正常。", "产品版本：2026.8。", "订单通知：已开启。"]
+    assert "1. 打开通知设置并重新保存接收地址。" in first_response_data["customer_response"]
+    assert "2. 发送一条测试订单通知。" in first_response_data["customer_response"]
 
     session_id = first_response_data["session_id"]
     final_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": customer_confirmation})
@@ -387,29 +412,58 @@ def test_customer_completes_the_day_five_self_service_path(monkeypatch: pytest.M
     assert final_response.status_code == 200
     assert final_response_data["status"] == "resolved"
     assert final_response_data["verification_source"] == "customer_confirmation"
-    assert final_response_data["verification_result"] == {"result": "resolved", "supporting_text": "The problem is fixed."}
+    assert final_response_data["verification_result"] == {"result": "resolved", "supporting_text": "问题解决了"}
     assert saved_state.values["turn_count"] == 2
+
+    with support_sessions.SessionLocal() as database:
+        saved_session = database.get(SupportSession, session_id)
+        ticket_count = database.scalar(select(func.count()).select_from(Ticket))
+
+    assert saved_session is not None
+    assert saved_session.status == "resolved"
+    assert saved_session.final_problem_details == problem_details.model_dump(mode="json")
+    assert ticket_count == 0
 
 
 def test_customer_can_report_that_the_resolution_did_not_work(monkeypatch: pytest.MonkeyPatch) -> None:
-    configure_resolvable_customer_path(monkeypatch)
-    customer_feedback = "I tried both steps, but notifications are still not arriving."
+    problem_details, resolution = configure_resolvable_customer_path(monkeypatch)
+    customer_feedback = "我完成了两个步骤，但仍然收不到通知。"
 
     def fake_verify_customer_resolution(problem_details: ProblemDetails, resolution: CustomerResolution, customer_message: str) -> CustomerVerification:
-        return CustomerVerification(result="unresolved", supporting_text="notifications are still not arriving")
+        return CustomerVerification(result="unresolved", supporting_text="仍然收不到通知")
 
     monkeypatch.setattr(customer_workflow, "verify_customer_resolution", fake_verify_customer_resolution)
 
-    first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "My order notifications stopped arriving."})
+    first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "我的订单通知收不到了。"})
     session_id = first_response.json()["session_id"]
     final_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": customer_feedback})
     response_data = final_response.json()
+    ticket_id = response_data["ticket_id"]
+    ticket_response = client.get(f"/api/v1/tickets/{ticket_id}")
 
     assert final_response.status_code == 200
-    assert response_data["status"] == "unresolved"
+    assert response_data["status"] == "needs_assistance"
     assert response_data["verification_source"] == "customer_confirmation"
-    assert response_data["verification_result"] == {"result": "unresolved", "supporting_text": "notifications are still not arriving"}
-    assert "contact technical support" in response_data["customer_response"]
+    assert response_data["verification_result"] == {"result": "unresolved", "supporting_text": "仍然收不到通知"}
+    assert isinstance(ticket_id, int)
+    assert f"工单 #{ticket_id}" in response_data["customer_response"]
+    assert ticket_response.status_code == 200
+    assert ticket_response.json()["handoff"]["support_session_id"] == session_id
+    assert ticket_response.json()["handoff"]["customer_id"] == "customer_001"
+    assert ticket_response.json()["handoff"]["issue_summary"] == problem_details.summary
+    assert ticket_response.json()["handoff"]["attempted_steps"] == resolution.steps
+    assert ticket_response.json()["handoff"]["citation_ids"] == resolution.citation_ids
+    assert ticket_response.json()["handoff"]["handoff_reason"] == "客户确认建议步骤没有解决问题。"
+
+    with support_sessions.SessionLocal() as database:
+        saved_session = database.get(SupportSession, session_id)
+        saved_ticket = database.get(Ticket, ticket_id)
+
+    assert saved_session is not None
+    assert saved_session.status == "needs_assistance"
+    assert saved_session.final_problem_details == problem_details.model_dump(mode="json")
+    assert saved_ticket is not None
+    assert saved_ticket.handoff == ticket_response.json()["handoff"]
 
 
 def test_tool_state_change_can_confirm_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -445,7 +499,7 @@ def test_tool_state_change_can_confirm_recovery(monkeypatch: pytest.MonkeyPatch)
     assert response_data["status"] == "resolved"
     assert response_data["verification_source"] == "tool_verification"
     assert response_data["verification_result"] == {"result": "resolved", "supporting_text": ""}
-    assert "Result: delivered." in response_data["customer_facts"][-1]
+    assert "结果：已送达。" in response_data["customer_facts"][-1]
 
 
 def test_unchanged_tool_state_does_not_mark_the_problem_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -473,7 +527,7 @@ def test_unchanged_tool_state_does_not_mark_the_problem_resolved(monkeypatch: py
     assert response_data["status"] == "waiting_for_verification"
     assert response_data["verification_source"] is None
     assert response_data["verification_result"] == {"result": "unclear", "supporting_text": ""}
-    assert "is the original problem still happening?" in response_data["customer_response"]
+    assert "原来的问题是否仍然存在？" in response_data["customer_response"]
 
 
 def test_customer_verification_requires_an_exact_quote(monkeypatch: pytest.MonkeyPatch) -> None:

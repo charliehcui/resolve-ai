@@ -1,54 +1,98 @@
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app import main
-from app.classification import ClassificationRequest, ClassificationResult, TicketCategory, TicketSeverity
-from app.db.database import SessionLocal
-from app.db.models import Ticket
+from app import main, support_sessions, tickets
+from app.db.database import Base
+from app.db.models import SupportSession, Ticket
+from app.handoff import SupportHandoff
 
 client = TestClient(main.app)
 
 
-def test_create_and_read_ticket(monkeypatch) -> None:
-    expected_result = ClassificationResult(
-        category=TicketCategory.EVENT_NOTIFICATION_FAILURE,
-        severity=TicketSeverity.MEDIUM,
-        affected_feature="event notifications",
-        summary="Notifications returned HTTP 401.",
-        missing_information=[],
-        urgency_reason="Notifications are repeatedly failing.",
+@pytest.fixture
+def test_database(monkeypatch: pytest.MonkeyPatch):
+    engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    test_session = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    monkeypatch.setattr(main, "SessionLocal", test_session)
+    monkeypatch.setattr(support_sessions, "SessionLocal", test_session)
+    monkeypatch.setattr(tickets, "SessionLocal", test_session)
+
+    yield test_session
+
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def build_handoff(customer_id: str = "customer_001") -> SupportHandoff:
+    return SupportHandoff(
+        support_session_id="session_001",
+        customer_id=customer_id,
+        issue_summary="订单通知无法送达。",
+        affected_feature="订单通知",
+        customer_impact="客户无法收到订单状态更新。",
+        approximate_start_time="今天上午",
+        environment_snapshot={"product_version": "2026.8"},
+        collected_facts=[],
+        attempted_steps=["重新保存通知地址。"],
+        citation_ids=["docs/customer/order-notifications.md:0"],
+        remaining_questions=[],
+        handoff_reason="客户确认建议步骤没有解决问题。",
     )
 
-    def fake_classify_ticket(request: ClassificationRequest) -> ClassificationResult:
-        return expected_result
 
-    monkeypatch.setattr(main, "classify_ticket", fake_classify_ticket)
+def test_create_ticket_from_handoff_and_read_it(test_database) -> None:
+    support_sessions.create_support_session_record("session_001", "customer_001", "thread_001")
+    handoff = build_handoff()
 
-    payload = {
-        "customer_id": "customer_001",
-        "title": "Order notification failed",
-        "description": "Order notifications returned HTTP 401.",
-    }
+    ticket_id = tickets.create_ticket_from_handoff(handoff)
+    read_response = client.get(f"/api/v1/tickets/{ticket_id}")
 
-    ticket_id = None
+    assert read_response.status_code == 200
+    assert read_response.json()["support_session_id"] == "session_001"
+    assert read_response.json()["handoff"] == handoff.model_dump(mode="json")
+    assert read_response.json()["status"] == "OPEN"
 
-    try:
-        create_response = client.post("/api/v1/tickets", json=payload)
+    with test_database() as database:
+        ticket = database.get(Ticket, ticket_id)
+        support_session = database.get(SupportSession, "session_001")
 
-        assert create_response.status_code == 201
+        assert ticket is not None
+        assert ticket.legacy_customer_id is None
+        assert ticket.legacy_title is None
+        assert ticket.legacy_description is None
+        assert ticket.legacy_classification is None
+        assert support_session is not None
+        assert support_session.status == "needs_assistance"
+        assert hasattr(support_session, "ticket_id") is False
+        assert hasattr(support_session, "handoff") is False
 
-        created_ticket = create_response.json()
-        ticket_id = created_ticket["id"]
 
-        assert created_ticket["classification"] == expected_result.model_dump(mode="json")
-        assert created_ticket["status"] == "CLASSIFIED"
+def test_same_support_session_only_creates_one_ticket(test_database) -> None:
+    support_sessions.create_support_session_record("session_001", "customer_001", "thread_001")
+    handoff = build_handoff()
 
-        read_response = client.get(f"/api/v1/tickets/{ticket_id}")
+    first_ticket_id = tickets.create_ticket_from_handoff(handoff)
+    second_ticket_id = tickets.create_ticket_from_handoff(handoff)
 
-        assert read_response.status_code == 200
-        assert read_response.json() == created_ticket
-    finally:
-        if ticket_id is not None:
-            with SessionLocal() as database:
-                database.execute(delete(Ticket).where(Ticket.id == ticket_id))
-                database.commit()
+    with test_database() as database:
+        ticket_count = database.scalar(select(func.count()).select_from(Ticket))
+
+    assert second_ticket_id == first_ticket_id
+    assert ticket_count == 1
+
+
+def test_handoff_cannot_change_the_session_customer(test_database) -> None:
+    support_sessions.create_support_session_record("session_001", "customer_001", "thread_001")
+
+    with pytest.raises(ValueError, match="customer does not match"):
+        tickets.create_ticket_from_handoff(build_handoff(customer_id="customer_999"))
+
+    with test_database() as database:
+        ticket_count = database.scalar(select(func.count()).select_from(Ticket))
+
+    assert ticket_count == 0

@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails, create_customer_question, create_customer_resolution_from_documents, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data, verify_customer_resolution
 from app.customer_question_retrieval import retrieve_documents_for_customer_question
 from app.customer_tools import get_current_product_context, get_recent_customer_activity
+from app.handoff import SupportFact, SupportHandoff, create_support_handoff_summary
+from app.support_sessions import create_support_session_record, save_support_session_progress
+from app.tickets import create_ticket_from_handoff
 
 
 class CustomerDocumentCitation(BaseModel):
@@ -31,6 +34,9 @@ class CustomerSupportState(TypedDict):
     resolution: CustomerResolution | None
     verification_result: CustomerVerification | None
     verification_source: Literal["customer_confirmation", "tool_verification"] | None
+    handoff: SupportHandoff | None
+    handoff_reason: str | None
+    ticket_id: int | None
     turn_count: int
     customer_response: str | None
     status: str
@@ -59,6 +65,7 @@ class SupportResponse(BaseModel):
     resolution: CustomerResolution | None
     verification_result: CustomerVerification | None
     verification_source: Literal["customer_confirmation", "tool_verification"] | None
+    ticket_id: int | None
     status: str
 
 
@@ -150,7 +157,7 @@ def ask_for_information(state: CustomerSupportState) -> dict[str, object]:
 
     for asked_question in state["asked_questions"]:
         if customer_question.strip().lower() == asked_question.strip().lower():
-            return needs_assistance(state)
+            return {"customer_response": None, "resolution": None, "citations": [], "handoff_reason": "系统无法提出新的有效澄清问题。", "status": "preparing_handoff"}
 
     asked_questions = state["asked_questions"].copy()
     asked_questions.append(customer_question)
@@ -159,6 +166,16 @@ def ask_for_information(state: CustomerSupportState) -> dict[str, object]:
     messages.append(f"Agent: {customer_question}")
 
     return {"messages": messages[-12:], "asked_questions": asked_questions, "customer_response": customer_question, "status": "waiting_for_customer"}
+
+
+def choose_step_after_customer_question(state: CustomerSupportState) -> str:
+    if state["error"] is not None:
+        return "error"
+
+    if state["status"] == "preparing_handoff":
+        return "build_support_handoff"
+
+    return "end"
 
 
 def retrieve_customer_documents(state: CustomerSupportState) -> dict[str, object]:
@@ -189,12 +206,14 @@ def choose_step_after_document_retrieval(state: CustomerSupportState) -> str:
 
 
 def needs_assistance(state: CustomerSupportState) -> dict[str, object]:
-    customer_response = "I cannot safely suggest a solution with the available information. Please contact technical support for further help."
+    if len(state["missing_information"]) > 0 and len(state["asked_questions"]) >= 3:
+        handoff_reason = "会话已经达到三次澄清上限，但仍缺少安全解决问题所需的信息。"
+    elif len(state["retrieved_customer_documents"]) == 0:
+        handoff_reason = "没有找到能够支持安全解决方法的当前客户文档。"
+    else:
+        handoff_reason = "现有客户信息和文档不足以支持安全的客户自行解决方法。"
 
-    messages = state["messages"].copy()
-    messages.append(f"Agent: {customer_response}")
-
-    return {"messages": messages[-12:], "customer_response": customer_response, "resolution": None, "citations": [], "status": "needs_assistance"}
+    return {"customer_response": None, "resolution": None, "citations": [], "handoff_reason": handoff_reason, "status": "preparing_handoff"}
 
 
 def prepare_customer_resolution(state: CustomerSupportState) -> dict[str, object]:
@@ -267,7 +286,7 @@ def offer_customer_resolution(state: CustomerSupportState) -> dict[str, object]:
         response_parts.append(f"{step_number}. {step}")
 
     response_parts.append("")
-    response_parts.append("After trying these steps, please tell me whether the problem is fixed.")
+    response_parts.append("完成以上步骤后，请告诉我问题是否已经解决。")
     customer_response = "\n".join(response_parts)
 
     messages = state["messages"].copy()
@@ -371,24 +390,136 @@ def finalize_customer_resolution(state: CustomerSupportState) -> dict[str, objec
 
     if verification_result.result == "resolved" and verification_source == "tool_verification":
         status = "resolved"
-        customer_response = "The latest account information confirms that the problem is fixed. This support session is complete."
+        customer_response = "最新的账户信息确认问题已经恢复，本次支持会话已完成。"
+        handoff_reason = None
     elif verification_result.result == "resolved":
         status = "resolved"
         verification_source = "customer_confirmation"
-        customer_response = "You confirmed that the problem is fixed. This support session is complete."
+        customer_response = "你已确认问题解决，本次支持会话已完成。"
+        handoff_reason = None
     elif verification_result.result == "unresolved":
         status = "unresolved"
         verification_source = "customer_confirmation"
-        customer_response = "You confirmed that the problem still happens. Please stop repeating these steps and contact technical support for further help."
+        customer_response = None
+        handoff_reason = "客户确认建议步骤没有解决问题。"
     else:
         status = "waiting_for_verification"
         verification_source = None
-        customer_response = "I have not recorded the problem as fixed. After trying the suggested steps, is the original problem still happening?"
+        customer_response = "目前还不能确认问题已经解决。完成建议步骤后，原来的问题是否仍然存在？"
+        handoff_reason = None
+
+    if customer_response is None:
+        return {"customer_response": None, "verification_source": verification_source, "handoff_reason": handoff_reason, "status": status}
 
     messages = state["messages"].copy()
     messages.append(f"Agent: {customer_response}")
 
-    return {"messages": messages[-12:], "customer_response": customer_response, "verification_source": verification_source, "status": status}
+    return {"messages": messages[-12:], "customer_response": customer_response, "verification_source": verification_source, "handoff_reason": handoff_reason, "status": status}
+
+
+def choose_step_after_customer_resolution(state: CustomerSupportState) -> str:
+    if state["error"] is not None:
+        return "error"
+
+    if state["status"] == "unresolved":
+        return "build_support_handoff"
+
+    return "end"
+
+
+def create_handoff_facts(customer_side_data: dict[str, object]) -> list[SupportFact]:
+    facts: list[SupportFact] = []
+    sources = {
+        "current_product_context": "ResolveLab customer product context",
+        "recent_activity": "ResolveLab recent customer activity",
+    }
+
+    for data_name, source in sources.items():
+        data = customer_side_data.get(data_name)
+
+        if isinstance(data, dict) is False:
+            continue
+
+        for name, value in data.items():
+            if value is not None:
+                facts.append(SupportFact(name=str(name), value=str(value), source=source))
+
+    return facts
+
+
+def build_support_handoff(state: CustomerSupportState) -> dict[str, object]:
+    problem_details = state["problem_details"]
+    handoff_reason = state["handoff_reason"]
+
+    if problem_details is None:
+        return {"status": "error", "error": "Problem details are missing"}
+
+    if handoff_reason is None:
+        return {"status": "error", "error": "Handoff reason is missing"}
+
+    customer_side_data = state["customer_side_data"]
+
+    if len(state["verification_customer_side_data"]) > 0:
+        customer_side_data = state["verification_customer_side_data"]
+
+    try:
+        handoff_summary = create_support_handoff_summary(problem_details, state["messages"])
+        citation_ids = []
+
+        for citation in state["citations"]:
+            chunk_id = citation.get("chunk_id")
+
+            if isinstance(chunk_id, str):
+                citation_ids.append(chunk_id)
+
+        attempted_steps = []
+
+        if state["resolution"] is not None:
+            attempted_steps = state["resolution"].steps.copy()
+
+        handoff = SupportHandoff(
+            support_session_id=state["session_id"],
+            customer_id=state["customer_id"],
+            issue_summary=handoff_summary.issue_summary,
+            affected_feature=problem_details.affected_feature,
+            customer_impact=handoff_summary.customer_impact,
+            approximate_start_time=handoff_summary.approximate_start_time,
+            environment_snapshot=customer_side_data.copy(),
+            collected_facts=create_handoff_facts(customer_side_data),
+            attempted_steps=attempted_steps,
+            citation_ids=citation_ids,
+            remaining_questions=problem_details.missing_information.copy(),
+            handoff_reason=handoff_reason,
+        )
+
+        return {"handoff": handoff}
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+
+def choose_step_after_handoff(state: CustomerSupportState) -> str:
+    if state["error"] is not None or state["handoff"] is None:
+        return "error"
+
+    return "create_support_ticket"
+
+
+def create_support_ticket(state: CustomerSupportState) -> dict[str, object]:
+    handoff = state["handoff"]
+
+    if handoff is None:
+        return {"status": "error", "error": "Support handoff is missing"}
+
+    try:
+        ticket_id = create_ticket_from_handoff(handoff)
+    except Exception as error:
+        return {"status": "error", "error": str(error)}
+
+    customer_response = f"现有信息不足以确认安全的解决方法。已创建技术支持工单 #{ticket_id}，并把已经收集的信息一并提交，你不需要重复说明。"
+    messages = state["messages"].copy()
+    messages.append(f"Agent: {customer_response}")
+
+    return {"messages": messages[-12:], "customer_response": customer_response, "ticket_id": ticket_id, "status": "needs_assistance"}
 
 
 customer_support_graph_builder = StateGraph(CustomerSupportState)
@@ -404,6 +535,8 @@ customer_support_graph_builder.add_node("wait_for_customer_verification", wait_f
 customer_support_graph_builder.add_node("verify_resolution_with_tools", verify_resolution_with_tools)
 customer_support_graph_builder.add_node("finalize_customer_resolution", finalize_customer_resolution)
 customer_support_graph_builder.add_node("needs_assistance", needs_assistance)
+customer_support_graph_builder.add_node("build_support_handoff", build_support_handoff)
+customer_support_graph_builder.add_node("create_support_ticket", create_support_ticket)
 
 customer_support_graph_builder.add_edge(START, "save_customer_message")
 customer_support_graph_builder.add_conditional_edges("save_customer_message", choose_step_after_message, {"update_problem_details": "update_problem_details", "wait_for_customer_verification": "wait_for_customer_verification"})
@@ -412,12 +545,14 @@ customer_support_graph_builder.add_edge("get_customer_side_data", "update_proble
 customer_support_graph_builder.add_conditional_edges("update_problem_with_customer_side_data", choose_next_step, {"ask_for_information": "ask_for_information", "retrieve_customer_documents": "retrieve_customer_documents", "needs_assistance": "needs_assistance", "error": END})
 customer_support_graph_builder.add_conditional_edges("retrieve_customer_documents", choose_step_after_document_retrieval, {"prepare_customer_resolution": "prepare_customer_resolution", "needs_assistance": "needs_assistance", "error": END})
 customer_support_graph_builder.add_conditional_edges("prepare_customer_resolution", choose_step_after_resolution, {"offer_customer_resolution": "offer_customer_resolution", "needs_assistance": "needs_assistance", "error": END})
-customer_support_graph_builder.add_edge("ask_for_information", END)
+customer_support_graph_builder.add_conditional_edges("ask_for_information", choose_step_after_customer_question, {"build_support_handoff": "build_support_handoff", "end": END, "error": END})
 customer_support_graph_builder.add_edge("offer_customer_resolution", END)
-customer_support_graph_builder.add_edge("needs_assistance", END)
+customer_support_graph_builder.add_edge("needs_assistance", "build_support_handoff")
 customer_support_graph_builder.add_conditional_edges("wait_for_customer_verification", choose_step_after_customer_verification, {"verify_resolution_with_tools": "verify_resolution_with_tools", "finalize_customer_resolution": "finalize_customer_resolution", "error": END})
 customer_support_graph_builder.add_edge("verify_resolution_with_tools", "finalize_customer_resolution")
-customer_support_graph_builder.add_edge("finalize_customer_resolution", END)
+customer_support_graph_builder.add_conditional_edges("finalize_customer_resolution", choose_step_after_customer_resolution, {"build_support_handoff": "build_support_handoff", "end": END, "error": END})
+customer_support_graph_builder.add_conditional_edges("build_support_handoff", choose_step_after_handoff, {"create_support_ticket": "create_support_ticket", "error": END})
+customer_support_graph_builder.add_edge("create_support_ticket", END)
 
 customer_support_graph = customer_support_graph_builder.compile(checkpointer=InMemorySaver())
 
@@ -444,18 +579,20 @@ def build_support_response(state: CustomerSupportState) -> SupportResponse:
         feature_enabled = current_product_context.get("feature_enabled")
 
         if isinstance(account_status, str):
-            customer_facts.append(f"Account status: {account_status}.")
+            account_status_text = {"active": "正常", "inactive": "停用", "suspended": "暂停"}.get(account_status.strip().lower(), account_status)
+            customer_facts.append(f"账户状态：{account_status_text}。")
 
         if isinstance(product_version, str):
-            customer_facts.append(f"Product version: {product_version}.")
+            customer_facts.append(f"产品版本：{product_version}。")
 
         if isinstance(affected_feature, str) and isinstance(feature_enabled, bool):
-            feature_status = "disabled"
+            feature_status = "已关闭"
 
             if feature_enabled:
-                feature_status = "enabled"
+                feature_status = "已开启"
 
-            customer_facts.append(f"{affected_feature.capitalize()}: {feature_status}.")
+            affected_feature_text = {"order notifications": "订单通知"}.get(affected_feature.strip().lower(), affected_feature)
+            customer_facts.append(f"{affected_feature_text}：{feature_status}。")
 
     recent_activity = customer_side_data.get("recent_activity")
 
@@ -465,13 +602,24 @@ def build_support_response(state: CustomerSupportState) -> SupportResponse:
         occurred_at = recent_activity.get("occurred_at")
 
         if isinstance(activity, str) and isinstance(result, str) and isinstance(occurred_at, str):
-            customer_facts.append(f"Recorded activity: {activity}. Result: {result}. Recorded at: {occurred_at}.")
+            result_text = {"failed": "失败", "delivered": "已送达", "success": "成功", "completed": "已完成"}.get(result.strip().lower(), result)
+            customer_facts.append(f"最近活动：{activity}。结果：{result_text}。记录时间：{occurred_at}。")
 
-    return SupportResponse(session_id=state["session_id"], problem_details=state["problem_details"], customer_response=state["customer_response"], customer_facts=customer_facts, citations=state["citations"], resolution=state["resolution"], verification_result=state["verification_result"], verification_source=state["verification_source"], status=state["status"])
+    return SupportResponse(session_id=state["session_id"], problem_details=state["problem_details"], customer_response=state["customer_response"], customer_facts=customer_facts, citations=state["citations"], resolution=state["resolution"], verification_result=state["verification_result"], verification_source=state["verification_source"], ticket_id=state["ticket_id"], status=state["status"])
+
+
+def persist_customer_support_state(state: CustomerSupportState) -> None:
+    problem_details = None
+
+    if state["problem_details"] is not None:
+        problem_details = state["problem_details"].model_dump(mode="json")
+
+    save_support_session_progress(state["session_id"], state["status"], problem_details)
 
 
 def start_customer_support(customer_id: str, customer_message: str) -> SupportResponse:
     session_id = str(uuid4())
+    create_support_session_record(session_id, customer_id, session_id)
 
     initial_state: CustomerSupportState = {
         "session_id": session_id,
@@ -488,6 +636,9 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
         "resolution": None,
         "verification_result": None,
         "verification_source": None,
+        "handoff": None,
+        "handoff_reason": None,
+        "ticket_id": None,
         "turn_count": 0,
         "customer_response": None,
         "status": "started",
@@ -496,6 +647,7 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
 
     config = {"configurable": {"thread_id": session_id}, "recursion_limit": 16}
     final_state = customer_support_graph.invoke(initial_state, config)
+    persist_customer_support_state(final_state)
 
     return build_support_response(final_state)
 
@@ -511,5 +663,6 @@ def continue_customer_support(session_id: str, customer_message: str) -> Support
         return build_support_response(saved_state.values)
 
     final_state = customer_support_graph.invoke({"customer_message": customer_message, "error": None}, config)
+    persist_customer_support_state(final_state)
 
     return build_support_response(final_state)
