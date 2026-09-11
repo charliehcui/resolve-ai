@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import { getBackendHealth, sendCustomerMessage } from "./lib/backend";
-import type { SupportResponse } from "./lib/backend";
+import { getBackendHealth, getTicket, sendCustomerMessage } from "./lib/backend";
+import type { SupportResponse, TicketResponse } from "./lib/backend";
 
 type ChatMessage = {
   role: "customer" | "assistant";
@@ -16,7 +16,180 @@ const statusLabels: Record<SupportResponse["status"], string> = {
   resolved: "问题已解决",
   unresolved: "需要进一步处理",
   needs_assistance: "已转交技术支持",
+  support_resolved: "技术支持已给出结论",
+  engineer_escalation: "工程师继续检查",
 };
+
+type SupportTicketViewProps = {
+  ticket: TicketResponse | null;
+  isLoading: boolean;
+  errorMessage: string;
+};
+
+function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketViewProps) {
+  if (isLoading) {
+    return <p className="mt-10 text-sm text-slate-400">正在读取支持调查结果……</p>;
+  }
+
+  if (errorMessage) {
+    return <p role="alert" className="mt-10 rounded-xl border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-200">{errorMessage}</p>;
+  }
+
+  if (ticket === null) {
+    return <p className="mt-10 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-400">当前会话还没有生成工单。</p>;
+  }
+
+  const handoff = ticket.handoff;
+  const investigation = ticket.investigation_result;
+  const resultLabel = investigation?.outcome === "resolution" ? "已有处理结论" : "需要工程师继续检查";
+
+  return (
+    <div className="pb-10">
+      <div className="mb-7 mt-8">
+        <p className="text-xs font-semibold tracking-widest text-cyan-400">支持调查</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">工单 #{ticket.id}</h1>
+        <p className="mt-3 text-slate-400">这里显示客户交接信息和内部调查结果，不显示系统的思考过程。</p>
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <h2 className="text-lg font-semibold">客户交接</h2>
+          {handoff === null ? (
+            <p className="mt-4 text-sm text-slate-400">这个工单没有交接内容。</p>
+          ) : (
+            <div className="mt-5 space-y-5 text-sm">
+              <div>
+                <p className="text-xs text-slate-500">问题</p>
+                <p className="mt-2 leading-6 text-slate-200">{handoff.issue_summary}</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-500">受影响功能</p>
+                  <p className="mt-2 text-slate-300">{handoff.affected_feature}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">开始时间</p>
+                  <p className="mt-2 text-slate-300">{handoff.approximate_start_time ?? "未知"}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">客户受到的影响</p>
+                <p className="mt-2 leading-6 text-slate-300">{handoff.customer_impact}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">转交原因</p>
+                <p className="mt-2 leading-6 text-slate-300">{handoff.handoff_reason}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">已收集的事实</p>
+                {handoff.collected_facts.length === 0 ? (
+                  <p className="mt-2 text-slate-400">没有已收集的事实。</p>
+                ) : (
+                  <ul className="mt-3 space-y-2">
+                    {handoff.collected_facts.map((fact) => (
+                      <li key={`${fact.name}-${fact.source}`} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                        <p className="text-slate-200">{fact.name}：{fact.value}</p>
+                        <p className="mt-1 text-xs text-slate-500">来源：{fact.source}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">当时的账户和产品信息</p>
+                {Object.keys(handoff.environment_snapshot).length === 0 ? (
+                  <p className="mt-2 text-slate-400">没有保存这部分信息。</p>
+                ) : (
+                  <dl className="mt-3 space-y-2">
+                    {Object.entries(handoff.environment_snapshot).map(([name, value]) => (
+                      <div key={name} className="flex flex-wrap justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
+                        <dt className="text-slate-400">{name}</dt>
+                        <dd className="break-all text-slate-200">{typeof value === "object" ? JSON.stringify(value) : String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">已经尝试的步骤</p>
+                {handoff.attempted_steps.length === 0 ? (
+                  <p className="mt-2 text-slate-400">没有已经尝试的步骤。</p>
+                ) : (
+                  <ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-300">
+                    {handoff.attempted_steps.map((step) => <li key={step}>{step}</li>)}
+                  </ol>
+                )}
+              </div>
+              {handoff.citation_ids.length > 0 && (
+                <div>
+                  <p className="text-xs text-slate-500">参考资料编号</p>
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-300">
+                    {handoff.citation_ids.map((citationId) => <li key={citationId} className="break-all">{citationId}</li>)}
+                  </ul>
+                </div>
+              )}
+              {handoff.remaining_questions.length > 0 && (
+                <div>
+                  <p className="text-xs text-slate-500">仍缺少的信息</p>
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-300">
+                    {handoff.remaining_questions.map((question) => <li key={question}>{question}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <h2 className="text-lg font-semibold">使用的内部工具</h2>
+            {ticket.investigation_tools === null || ticket.investigation_tools.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">这次没有成功取得内部工具结果。</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {ticket.investigation_tools.map((toolName) => (
+                  <li key={toolName} className="rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-cyan-300">{toolName}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <h2 className="text-lg font-semibold">调查结果</h2>
+            {investigation === null ? (
+              <p className="mt-4 text-sm text-slate-400">调查结果还没有保存。</p>
+            ) : (
+              <div className="mt-5 space-y-5">
+                <div>
+                  <p className="text-xs text-slate-500">结果</p>
+                  <p className="mt-2 text-sm font-medium text-cyan-300">{resultLabel}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">当前结论</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">{investigation.conclusion}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">关键事实</p>
+                  {investigation.supporting_facts.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-400">没有足够的内部事实。</p>
+                  ) : (
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-300">
+                      {investigation.supporting_facts.map((fact) => <li key={fact}>{fact}</li>)}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">客户看到的说明</p>
+                  <p className="mt-2 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm leading-6 text-slate-300">{investigation.customer_explanation}</p>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [healthLabel, setHealthLabel] = useState("正在检查连接");
@@ -24,6 +197,10 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
   const [support, setSupport] = useState<SupportResponse | null>(null);
+  const [view, setView] = useState<"customer" | "support">("customer");
+  const [ticket, setTicket] = useState<TicketResponse | null>(null);
+  const [isLoadingTicket, setIsLoadingTicket] = useState(false);
+  const [ticketError, setTicketError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const conversationEnd = useRef<HTMLDivElement>(null);
@@ -61,7 +238,7 @@ function App() {
   let sessionFinished = false;
 
   if (support !== null) {
-    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance";
+    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance" || support.status === "support_resolved" || support.status === "engineer_escalation";
   }
 
   let currentStatus = "可以开始咨询";
@@ -76,9 +253,9 @@ function App() {
 
   let statusStyle = "border-slate-700 bg-slate-800 text-slate-300";
 
-  if (support?.status === "resolved") {
+  if (support?.status === "resolved" || support?.status === "support_resolved") {
     statusStyle = "border-emerald-800 bg-emerald-950 text-emerald-300";
-  } else if (support?.status === "unresolved" || support?.status === "needs_assistance") {
+  } else if (support?.status === "unresolved" || support?.status === "needs_assistance" || support?.status === "engineer_escalation") {
     statusStyle = "border-amber-800 bg-amber-950 text-amber-300";
   } else if (isSending || support?.status === "waiting_for_verification") {
     statusStyle = "border-cyan-800 bg-cyan-950 text-cyan-300";
@@ -124,6 +301,24 @@ function App() {
       setMessage("");
       setIsReady(true);
       setHealthLabel("连接正常");
+
+      if (response.ticket_id !== null) {
+        setIsLoadingTicket(true);
+        setTicketError("");
+
+        try {
+          const savedTicket = await getTicket(response.ticket_id);
+          setTicket(savedTicket);
+        } catch (ticketLoadError) {
+          if (ticketLoadError instanceof Error) {
+            setTicketError(ticketLoadError.message);
+          } else {
+            setTicketError("暂时无法读取工单，请重试。");
+          }
+        } finally {
+          setIsLoadingTicket(false);
+        }
+      }
     } catch (error) {
       if (error instanceof Error) {
         setErrorMessage(error.message);
@@ -143,6 +338,9 @@ function App() {
     setMessages([]);
     setMessage("");
     setSupport(null);
+    setView("customer");
+    setTicket(null);
+    setTicketError("");
     setErrorMessage("");
   }
 
@@ -156,11 +354,19 @@ function App() {
             </div>
             <div>
               <p className="text-xl font-semibold tracking-tight">ResolveAI</p>
-              <p className="text-sm text-slate-400">客户支持</p>
+              <p className="text-sm text-slate-400">{view === "customer" ? "客户支持" : "支持调查"}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-1">
+              <button type="button" onClick={() => setView("customer")} className={`rounded-md px-3 py-1.5 text-sm ${view === "customer" ? "bg-cyan-400 font-semibold text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}>
+                客户视图
+              </button>
+              <button type="button" onClick={() => setView("support")} className={`rounded-md px-3 py-1.5 text-sm ${view === "support" ? "bg-cyan-400 font-semibold text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}>
+                支持视图
+              </button>
+            </div>
             <span className="flex items-center gap-2 text-xs text-slate-400">
               <span className={`h-2 w-2 rounded-full ${connectionStyle}`} />
               {healthLabel}
@@ -171,6 +377,8 @@ function App() {
           </div>
         </header>
 
+        {view === "customer" ? (
+          <>
         <div className="mb-7 mt-8">
           <p className="text-xs font-semibold tracking-widest text-cyan-400">一步一步解决问题</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">我们来解决这个问题。</h1>
@@ -346,6 +554,10 @@ function App() {
             )}
           </aside>
         </div>
+          </>
+        ) : (
+          <SupportTicketView ticket={ticket} isLoading={isLoadingTicket} errorMessage={ticketError} />
+        )}
       </div>
     </main>
   );

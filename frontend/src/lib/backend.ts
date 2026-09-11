@@ -34,6 +34,45 @@ export type CustomerVerification = {
   supporting_text: string;
 };
 
+export type SupportFact = {
+  name: string;
+  value: string;
+  source: string;
+};
+
+export type SupportHandoff = {
+  support_session_id: string;
+  customer_id: string;
+  issue_summary: string;
+  affected_feature: string;
+  customer_impact: string;
+  approximate_start_time: string | null;
+  environment_snapshot: Record<string, unknown>;
+  collected_facts: SupportFact[];
+  attempted_steps: string[];
+  citation_ids: string[];
+  remaining_questions: string[];
+  handoff_reason: string;
+};
+
+export type SupportInvestigationResult = {
+  conclusion: string;
+  supporting_facts: string[];
+  customer_explanation: string;
+  outcome: "resolution" | "engineer_escalation";
+};
+
+export type TicketResponse = {
+  id: number;
+  support_session_id: string | null;
+  handoff: SupportHandoff | null;
+  investigation_result: SupportInvestigationResult | null;
+  investigation_tools: string[] | null;
+  status: "OPEN" | "CLASSIFIED" | "WAITING_CUSTOMER" | "RESOLVED" | "ENGINEER_ESCALATION";
+  created_at: string;
+  updated_at: string;
+};
+
 export type SupportResponse = {
   session_id: string;
   problem_details: ProblemDetails;
@@ -44,7 +83,7 @@ export type SupportResponse = {
   verification_result: CustomerVerification | null;
   verification_source: "customer_confirmation" | "tool_verification" | null;
   ticket_id: number | null;
-  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance";
+  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance" | "support_resolved" | "engineer_escalation";
 };
 
 let backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000";
@@ -101,4 +140,18 @@ export async function sendCustomerMessage(sessionId: string | null, message: str
   }
 
   return (await response.json()) as SupportResponse;
+}
+
+export async function getTicket(ticketId: number): Promise<TicketResponse> {
+  const response = await fetch(`${backendUrl}/api/v1/tickets/${ticketId}`);
+
+  if (response.status === 404) {
+    throw new Error("找不到这个工单。");
+  }
+
+  if (!response.ok) {
+    throw new Error("暂时无法读取工单，请重试。");
+  }
+
+  return (await response.json()) as TicketResponse;
 }

@@ -10,6 +10,7 @@ from app.customer_question_retrieval import retrieve_documents_for_customer_ques
 from app.customer_tools import get_current_product_context, get_recent_customer_activity
 from app.handoff import SupportFact, SupportHandoff, create_support_handoff_summary
 from app.support_sessions import create_support_session_record, save_support_session_progress
+from app.support_workflow import run_support_investigation
 from app.tickets import create_ticket_from_handoff
 
 
@@ -512,14 +513,20 @@ def create_support_ticket(state: CustomerSupportState) -> dict[str, object]:
 
     try:
         ticket_id = create_ticket_from_handoff(handoff)
+        investigation = run_support_investigation(ticket_id)
     except Exception as error:
         return {"status": "error", "error": str(error)}
 
-    customer_response = f"现有信息不足以确认安全的解决方法。已创建技术支持工单 #{ticket_id}，并把已经收集的信息一并提交，你不需要重复说明。"
+    customer_response = investigation.result.customer_explanation
     messages = state["messages"].copy()
     messages.append(f"Agent: {customer_response}")
 
-    return {"messages": messages[-12:], "customer_response": customer_response, "ticket_id": ticket_id, "status": "needs_assistance"}
+    if investigation.result.outcome == "resolution":
+        status = "support_resolved"
+    else:
+        status = "engineer_escalation"
+
+    return {"messages": messages[-12:], "customer_response": customer_response, "ticket_id": ticket_id, "status": status}
 
 
 customer_support_graph_builder = StateGraph(CustomerSupportState)
@@ -659,7 +666,7 @@ def continue_customer_support(session_id: str, customer_message: str) -> Support
     if len(saved_state.values) == 0:
         raise ValueError("Support session not found")
 
-    if saved_state.values["status"] in ("resolved", "unresolved", "needs_assistance"):
+    if saved_state.values["status"] in ("resolved", "unresolved", "needs_assistance", "support_resolved", "engineer_escalation"):
         return build_support_response(saved_state.values)
 
     final_state = customer_support_graph.invoke({"customer_message": customer_message, "error": None}, config)

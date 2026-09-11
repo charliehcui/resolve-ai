@@ -9,6 +9,7 @@ def create_support_session_record(session_id: str, customer_id: str, thread_id: 
     support_session.thread_id = thread_id
     support_session.status = "started"
     support_session.final_problem_details = None
+    support_session.customer_result = None
 
     with SessionLocal() as database:
         database.add(support_session)

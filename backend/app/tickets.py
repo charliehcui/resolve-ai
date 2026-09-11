@@ -8,12 +8,15 @@ from sqlalchemy.exc import IntegrityError
 from app.db.database import SessionLocal
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoff
+from app.support_results import SupportInvestigationResult
 
 
 class TicketStatus(StrEnum):
     OPEN = "OPEN"
     CLASSIFIED = "CLASSIFIED"
     WAITING_CUSTOMER = "WAITING_CUSTOMER"
+    RESOLVED = "RESOLVED"
+    ENGINEER_ESCALATION = "ENGINEER_ESCALATION"
 
 
 class TicketResponse(BaseModel):
@@ -22,6 +25,8 @@ class TicketResponse(BaseModel):
     id: int
     support_session_id: str | None
     handoff: SupportHandoff | None
+    investigation_result: SupportInvestigationResult | None
+    investigation_tools: list[str] | None
     status: TicketStatus
     created_at: datetime
     updated_at: datetime

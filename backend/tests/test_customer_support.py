@@ -6,11 +6,15 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import customer_agent, customer_workflow, main, support_sessions, tickets
+from app import customer_agent, customer_workflow, main, support_sessions, support_workflow, tickets
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
+from app.support_agent import SupportInvestigationRun
+from app.support_results import SupportInvestigationResult
+from app.support_workflow import SupportInvestigationResponse
+from app.tickets import TicketContext
 
 client = TestClient(main.app)
 
@@ -40,13 +44,25 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch):
     def fake_create_support_handoff_summary(problem_details: ProblemDetails, customer_messages: list[str]) -> SupportHandoffSummary:
         return SupportHandoffSummary(issue_summary=problem_details.summary, customer_impact="客户无法完成当前操作。", approximate_start_time=None)
 
+    def fake_run_support_investigation(ticket_id: int) -> SupportInvestigationResponse:
+        result = SupportInvestigationResult(
+            conclusion="当前信息不足，需要工程师继续检查。",
+            supporting_facts=[],
+            customer_explanation="我们暂时无法确认问题原因，已经交给工程师继续检查。你不需要重复说明已经提供的信息。",
+            outcome="engineer_escalation",
+        )
+        support_workflow.save_support_result(ticket_id, result, [])
+        return SupportInvestigationResponse(ticket_id=ticket_id, result=result, tools_used=[])
+
     monkeypatch.setattr(main, "SessionLocal", test_session)
     monkeypatch.setattr(support_sessions, "SessionLocal", test_session)
+    monkeypatch.setattr(support_workflow, "SessionLocal", test_session)
     monkeypatch.setattr(tickets, "SessionLocal", test_session)
     monkeypatch.setattr(customer_workflow, "get_current_product_context", fake_get_current_product_context)
     monkeypatch.setattr(customer_workflow, "should_get_recent_customer_activity", fake_should_get_recent_customer_activity)
     monkeypatch.setattr(customer_workflow, "update_customer_problem_with_customer_side_data", fake_update_customer_problem_with_customer_side_data)
     monkeypatch.setattr(customer_workflow, "create_support_handoff_summary", fake_create_support_handoff_summary)
+    monkeypatch.setattr(customer_workflow, "run_support_investigation", fake_run_support_investigation)
 
     yield
 
@@ -219,7 +235,7 @@ def test_support_session_stops_after_three_questions(monkeypatch: pytest.MonkeyP
     saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
 
     assert final_response.status_code == 200
-    assert final_response.json()["status"] == "needs_assistance"
+    assert final_response.json()["status"] == "engineer_escalation"
     assert question_number == 3
     assert saved_state.values["asked_questions"] == questions
     assert saved_state.values["turn_count"] == 4
@@ -250,7 +266,7 @@ def test_support_session_does_not_repeat_a_question(monkeypatch: pytest.MonkeyPa
     saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
 
     assert second_response.status_code == 200
-    assert second_response.json()["status"] == "needs_assistance"
+    assert second_response.json()["status"] == "engineer_escalation"
     assert saved_state.values["asked_questions"] == [repeated_question]
 
 
@@ -442,11 +458,11 @@ def test_customer_can_report_that_the_resolution_did_not_work(monkeypatch: pytes
     ticket_response = client.get(f"/api/v1/tickets/{ticket_id}")
 
     assert final_response.status_code == 200
-    assert response_data["status"] == "needs_assistance"
+    assert response_data["status"] == "engineer_escalation"
     assert response_data["verification_source"] == "customer_confirmation"
     assert response_data["verification_result"] == {"result": "unresolved", "supporting_text": "仍然收不到通知"}
     assert isinstance(ticket_id, int)
-    assert f"工单 #{ticket_id}" in response_data["customer_response"]
+    assert response_data["customer_response"] == "我们暂时无法确认问题原因，已经交给工程师继续检查。你不需要重复说明已经提供的信息。"
     assert ticket_response.status_code == 200
     assert ticket_response.json()["handoff"]["support_session_id"] == session_id
     assert ticket_response.json()["handoff"]["customer_id"] == "customer_001"
@@ -460,10 +476,75 @@ def test_customer_can_report_that_the_resolution_did_not_work(monkeypatch: pytes
         saved_ticket = database.get(Ticket, ticket_id)
 
     assert saved_session is not None
-    assert saved_session.status == "needs_assistance"
+    assert saved_session.status == "engineer_escalation"
     assert saved_session.final_problem_details == problem_details.model_dump(mode="json")
     assert saved_ticket is not None
     assert saved_ticket.handoff == ticket_response.json()["handoff"]
+
+
+def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    problem_details = ProblemDetails(
+        summary="订单通知从今天开始无法送达。",
+        affected_feature="订单通知",
+        problem="客户收不到订单通知。",
+        customer_goal="恢复接收订单通知。",
+        missing_information=[],
+    )
+    expected_result = SupportInvestigationResult(
+        conclusion="平台运行正常，最近两次通知都被客户接收端以 401 拒绝。",
+        supporting_facts=["平台当前运行正常。", "最近两次通知都返回 HTTP 401。"],
+        customer_explanation="我们确认通知已经发出，但你的接收地址拒绝了请求。请检查接收端的访问设置后再试。",
+        outcome="resolution",
+    )
+
+    def fake_update_customer_problem(customer_messages: list[str], current_problem_details: ProblemDetails | None) -> ProblemDetails:
+        return problem_details
+
+    class EmptyCustomerDocumentSearch:
+        def invoke(self, search_input: dict[str, object]) -> list[dict[str, object]]:
+            return []
+
+    def fake_investigate_support_ticket(ticket_context: TicketContext) -> SupportInvestigationRun:
+        assert ticket_context.handoff is not None
+        assert ticket_context.handoff.issue_summary == problem_details.summary
+        assert ticket_context.handoff.customer_id == "customer_001"
+        return SupportInvestigationRun(
+            result=expected_result,
+            tools_used=["get_event_notification_deliveries", "get_platform_status"],
+        )
+
+    monkeypatch.setattr(customer_workflow, "update_customer_problem", fake_update_customer_problem)
+    monkeypatch.setattr(customer_workflow, "retrieve_documents_for_customer_question", EmptyCustomerDocumentSearch())
+    monkeypatch.setattr(support_workflow, "investigate_support_ticket", fake_investigate_support_ticket)
+    monkeypatch.setattr(customer_workflow, "run_support_investigation", support_workflow.run_support_investigation)
+
+    response = client.post(
+        "/api/v1/support-sessions",
+        json={"customer_id": "customer_001", "message": "我的订单通知从今天开始收不到了，我希望恢复接收。"},
+    )
+    response_data = response.json()
+    ticket_id = response_data["ticket_id"]
+    ticket_response = client.get(f"/api/v1/tickets/{ticket_id}")
+    ticket_data = ticket_response.json()
+
+    assert response.status_code == 201
+    assert response_data["status"] == "support_resolved"
+    assert response_data["customer_response"] == expected_result.customer_explanation
+    assert "investigation_result" not in response_data
+    assert "tools_used" not in response_data
+    assert isinstance(ticket_id, int)
+    assert ticket_response.status_code == 200
+    assert ticket_data["status"] == "RESOLVED"
+    assert ticket_data["handoff"]["issue_summary"] == problem_details.summary
+    assert ticket_data["investigation_result"] == expected_result.model_dump(mode="json")
+    assert ticket_data["investigation_tools"] == ["get_event_notification_deliveries", "get_platform_status"]
+
+    with support_sessions.SessionLocal() as database:
+        saved_session = database.get(SupportSession, response_data["session_id"])
+
+    assert saved_session is not None
+    assert saved_session.status == "support_resolved"
+    assert saved_session.customer_result == expected_result.customer_explanation
 
 
 def test_tool_state_change_can_confirm_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -558,7 +639,7 @@ def test_invalid_resolution_is_not_offered(monkeypatch: pytest.MonkeyPatch, inva
     response_data = response.json()
 
     assert response.status_code == 201
-    assert response_data["status"] == "needs_assistance"
+    assert response_data["status"] == "engineer_escalation"
     assert response_data["resolution"] is None
     assert response_data["citations"] == []
 

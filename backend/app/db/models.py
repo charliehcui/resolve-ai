@@ -19,6 +19,7 @@ class SupportSession(Base):
     thread_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(30))
     final_problem_details: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    customer_result: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -34,6 +35,8 @@ class Ticket(Base):
     legacy_description: Mapped[str | None] = mapped_column("description", Text)
     legacy_classification: Mapped[dict[str, object] | None] = mapped_column("classification", JSON)
     handoff: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    investigation_result: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    investigation_tools: Mapped[list[str] | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(30))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
