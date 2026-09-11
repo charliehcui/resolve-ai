@@ -28,7 +28,7 @@ type SupportTicketViewProps = {
 
 function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketViewProps) {
   if (isLoading) {
-    return <p className="mt-10 text-sm text-slate-400">正在读取支持调查结果……</p>;
+    return <p className="mt-10 text-sm text-slate-400">Loading support investigation result...</p>;
   }
 
   if (errorMessage) {
@@ -36,69 +36,69 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
   }
 
   if (ticket === null) {
-    return <p className="mt-10 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-400">当前会话还没有生成工单。</p>;
+    return <p className="mt-10 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-400">The current session has not created a ticket.</p>;
   }
 
   const handoff = ticket.handoff;
   const investigation = ticket.investigation_result;
-  const resultLabel = investigation?.outcome === "resolution" ? "已有处理结论" : "需要工程师继续检查";
+  const resultLabel = investigation?.outcome === "resolution" ? "Resolution" : "Engineer escalation";
 
   return (
     <div className="pb-10">
       <div className="mb-7 mt-8">
-        <p className="text-xs font-semibold tracking-widest text-cyan-400">支持调查</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">工单 #{ticket.id}</h1>
-        <p className="mt-3 text-slate-400">这里显示客户交接信息和内部调查结果，不显示系统的思考过程。</p>
+        <p className="text-xs font-semibold tracking-widest text-cyan-400">SUPPORT INVESTIGATION</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Ticket #{ticket.id}</h1>
+        <p className="mt-3 text-slate-400">This view shows the structured handoff and investigation result. Hidden reasoning is never displayed.</p>
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <h2 className="text-lg font-semibold">客户交接</h2>
+          <h2 className="text-lg font-semibold">Customer handoff</h2>
           {handoff === null ? (
-            <p className="mt-4 text-sm text-slate-400">这个工单没有交接内容。</p>
+            <p className="mt-4 text-sm text-slate-400">This ticket has no handoff data.</p>
           ) : (
             <div className="mt-5 space-y-5 text-sm">
               <div>
-                <p className="text-xs text-slate-500">问题</p>
+                <p className="text-xs text-slate-500">Issue</p>
                 <p className="mt-2 leading-6 text-slate-200">{handoff.issue_summary}</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs text-slate-500">受影响功能</p>
+                  <p className="text-xs text-slate-500">Affected feature</p>
                   <p className="mt-2 text-slate-300">{handoff.affected_feature}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">开始时间</p>
-                  <p className="mt-2 text-slate-300">{handoff.approximate_start_time ?? "未知"}</p>
+                  <p className="text-xs text-slate-500">Approximate start time</p>
+                  <p className="mt-2 text-slate-300">{handoff.approximate_start_time ?? "Unknown"}</p>
                 </div>
               </div>
               <div>
-                <p className="text-xs text-slate-500">客户受到的影响</p>
+                <p className="text-xs text-slate-500">Customer impact</p>
                 <p className="mt-2 leading-6 text-slate-300">{handoff.customer_impact}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">转交原因</p>
+                <p className="text-xs text-slate-500">Handoff reason</p>
                 <p className="mt-2 leading-6 text-slate-300">{handoff.handoff_reason}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">已收集的事实</p>
+                <p className="text-xs text-slate-500">Collected facts</p>
                 {handoff.collected_facts.length === 0 ? (
-                  <p className="mt-2 text-slate-400">没有已收集的事实。</p>
+                  <p className="mt-2 text-slate-400">No customer-side facts were collected.</p>
                 ) : (
                   <ul className="mt-3 space-y-2">
                     {handoff.collected_facts.map((fact) => (
                       <li key={`${fact.name}-${fact.source}`} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-                        <p className="text-slate-200">{fact.name}：{fact.value}</p>
-                        <p className="mt-1 text-xs text-slate-500">来源：{fact.source}</p>
+                        <p className="text-slate-200">{fact.name}: {fact.value}</p>
+                        <p className="mt-1 text-xs text-slate-500">Source: {fact.source}</p>
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
               <div>
-                <p className="text-xs text-slate-500">当时的账户和产品信息</p>
+                <p className="text-xs text-slate-500">Environment snapshot</p>
                 {Object.keys(handoff.environment_snapshot).length === 0 ? (
-                  <p className="mt-2 text-slate-400">没有保存这部分信息。</p>
+                  <p className="mt-2 text-slate-400">No environment snapshot was saved.</p>
                 ) : (
                   <dl className="mt-3 space-y-2">
                     {Object.entries(handoff.environment_snapshot).map(([name, value]) => (
@@ -111,9 +111,9 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
                 )}
               </div>
               <div>
-                <p className="text-xs text-slate-500">已经尝试的步骤</p>
+                <p className="text-xs text-slate-500">Attempted steps</p>
                 {handoff.attempted_steps.length === 0 ? (
-                  <p className="mt-2 text-slate-400">没有已经尝试的步骤。</p>
+                  <p className="mt-2 text-slate-400">No steps have been attempted.</p>
                 ) : (
                   <ol className="mt-3 list-decimal space-y-2 pl-5 text-slate-300">
                     {handoff.attempted_steps.map((step) => <li key={step}>{step}</li>)}
@@ -122,7 +122,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
               </div>
               {handoff.citation_ids.length > 0 && (
                 <div>
-                  <p className="text-xs text-slate-500">参考资料编号</p>
+                  <p className="text-xs text-slate-500">Citation IDs</p>
                   <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-300">
                     {handoff.citation_ids.map((citationId) => <li key={citationId} className="break-all">{citationId}</li>)}
                   </ul>
@@ -130,7 +130,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
               )}
               {handoff.remaining_questions.length > 0 && (
                 <div>
-                  <p className="text-xs text-slate-500">仍缺少的信息</p>
+                  <p className="text-xs text-slate-500">Remaining questions</p>
                   <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-300">
                     {handoff.remaining_questions.map((question) => <li key={question}>{question}</li>)}
                   </ul>
@@ -142,9 +142,9 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
 
         <div className="space-y-6">
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <h2 className="text-lg font-semibold">使用的内部工具</h2>
+            <h2 className="text-lg font-semibold">Tools used</h2>
             {ticket.investigation_tools === null || ticket.investigation_tools.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-400">这次没有成功取得内部工具结果。</p>
+              <p className="mt-4 text-sm text-slate-400">No internal tool result was recorded.</p>
             ) : (
               <ul className="mt-4 space-y-2">
                 {ticket.investigation_tools.map((toolName) => (
@@ -155,23 +155,23 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
           </section>
 
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <h2 className="text-lg font-semibold">调查结果</h2>
+            <h2 className="text-lg font-semibold">Investigation result</h2>
             {investigation === null ? (
-              <p className="mt-4 text-sm text-slate-400">调查结果还没有保存。</p>
+              <p className="mt-4 text-sm text-slate-400">No investigation result has been saved.</p>
             ) : (
               <div className="mt-5 space-y-5">
                 <div>
-                  <p className="text-xs text-slate-500">结果</p>
+                  <p className="text-xs text-slate-500">Outcome</p>
                   <p className="mt-2 text-sm font-medium text-cyan-300">{resultLabel}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">当前结论</p>
+                  <p className="text-xs text-slate-500">Conclusion</p>
                   <p className="mt-2 text-sm leading-6 text-slate-200">{investigation.conclusion}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">关键事实</p>
+                  <p className="text-xs text-slate-500">Supporting facts</p>
                   {investigation.supporting_facts.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-400">没有足够的内部事实。</p>
+                    <p className="mt-2 text-sm text-slate-400">No supporting tool facts were recorded.</p>
                   ) : (
                     <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-300">
                       {investigation.supporting_facts.map((fact) => <li key={fact}>{fact}</li>)}
@@ -179,7 +179,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
                   )}
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">客户看到的说明</p>
+                  <p className="text-xs text-slate-500">Customer-visible explanation</p>
                   <p className="mt-2 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm leading-6 text-slate-300">{investigation.customer_explanation}</p>
                 </div>
               </div>
@@ -267,6 +267,12 @@ function App() {
     connectionStyle = "bg-emerald-400";
   }
 
+  let visibleHealthLabel = healthLabel;
+
+  if (view === "support") {
+    visibleHealthLabel = isReady ? "Connected" : "Unavailable";
+  }
+
   let inputPlaceholder = "请描述哪里不能正常使用，不需要提供技术细节。";
 
   if (support?.status === "waiting_for_verification") {
@@ -313,7 +319,7 @@ function App() {
           if (ticketLoadError instanceof Error) {
             setTicketError(ticketLoadError.message);
           } else {
-            setTicketError("暂时无法读取工单，请重试。");
+            setTicketError("The ticket could not be loaded. Please try again.");
           }
         } finally {
           setIsLoadingTicket(false);
@@ -354,25 +360,25 @@ function App() {
             </div>
             <div>
               <p className="text-xl font-semibold tracking-tight">ResolveAI</p>
-              <p className="text-sm text-slate-400">{view === "customer" ? "客户支持" : "支持调查"}</p>
+              <p className="text-sm text-slate-400">{view === "customer" ? "客户支持" : "Support investigation"}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex rounded-lg border border-slate-700 bg-slate-900 p-1">
               <button type="button" onClick={() => setView("customer")} className={`rounded-md px-3 py-1.5 text-sm ${view === "customer" ? "bg-cyan-400 font-semibold text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}>
-                客户视图
+                {view === "customer" ? "客户视图" : "Customer View"}
               </button>
               <button type="button" onClick={() => setView("support")} className={`rounded-md px-3 py-1.5 text-sm ${view === "support" ? "bg-cyan-400 font-semibold text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}>
-                支持视图
+                {view === "customer" ? "支持视图" : "Support View"}
               </button>
             </div>
             <span className="flex items-center gap-2 text-xs text-slate-400">
               <span className={`h-2 w-2 rounded-full ${connectionStyle}`} />
-              {healthLabel}
+              {visibleHealthLabel}
             </span>
             <button type="button" onClick={startNewConversation} disabled={isSending} className="rounded-lg border border-slate-700 px-3 py-2 text-sm transition hover:border-slate-500 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">
-              新建会话
+              {view === "customer" ? "新建会话" : "New conversation"}
             </button>
           </div>
         </header>

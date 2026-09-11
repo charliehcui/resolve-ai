@@ -146,11 +146,11 @@ export async function getTicket(ticketId: number): Promise<TicketResponse> {
   const response = await fetch(`${backendUrl}/api/v1/tickets/${ticketId}`);
 
   if (response.status === 404) {
-    throw new Error("找不到这个工单。");
+    throw new Error("Ticket not found.");
   }
 
   if (!response.ok) {
-    throw new Error("暂时无法读取工单，请重试。");
+    throw new Error("The ticket could not be loaded. Please try again.");
   }
 
   return (await response.json()) as TicketResponse;

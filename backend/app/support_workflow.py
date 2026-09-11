@@ -69,11 +69,11 @@ def finalize_support_result(state: SupportCaseState) -> dict[str, object]:
     handoff = state["handoff"]
 
     if handoff is None:
-        conclusion = "工单缺少完整的交接信息，当前无法得出可靠结论。"
+        conclusion = "The ticket is missing a complete handoff, so no reliable conclusion can be reached."
     elif len(handoff.remaining_questions) > 0:
-        conclusion = "现有信息还不足以得出可靠结论。"
+        conclusion = "The available information is insufficient for a reliable conclusion."
     else:
-        conclusion = "自动调查暂时无法得出可靠结论。"
+        conclusion = "The automated investigation could not produce a reliable conclusion."
 
     result = SupportInvestigationResult(
         conclusion=conclusion,

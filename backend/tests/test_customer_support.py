@@ -42,11 +42,11 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch):
         return problem_details
 
     def fake_create_support_handoff_summary(problem_details: ProblemDetails, customer_messages: list[str]) -> SupportHandoffSummary:
-        return SupportHandoffSummary(issue_summary=problem_details.summary, customer_impact="客户无法完成当前操作。", approximate_start_time=None)
+        return SupportHandoffSummary(issue_summary="The customer cannot complete the current operation.", customer_impact="The customer cannot complete the current operation.", approximate_start_time=None)
 
     def fake_run_support_investigation(ticket_id: int) -> SupportInvestigationResponse:
         result = SupportInvestigationResult(
-            conclusion="当前信息不足，需要工程师继续检查。",
+            conclusion="The available information is insufficient and requires engineer investigation.",
             supporting_facts=[],
             customer_explanation="我们暂时无法确认问题原因，已经交给工程师继续检查。你不需要重复说明已经提供的信息。",
             outcome="engineer_escalation",
@@ -73,8 +73,8 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch):
 def configure_resolvable_customer_path(monkeypatch: pytest.MonkeyPatch) -> tuple[ProblemDetails, CustomerResolution]:
     problem_details = ProblemDetails(
         summary="订单通知从今天开始无法送达。",
-        affected_feature="订单通知",
-        problem="客户收不到订单通知。",
+        affected_feature="order notifications",
+        problem="Order notifications are not arriving.",
         customer_goal="恢复接收订单通知。",
         missing_information=[],
     )
@@ -466,10 +466,10 @@ def test_customer_can_report_that_the_resolution_did_not_work(monkeypatch: pytes
     assert ticket_response.status_code == 200
     assert ticket_response.json()["handoff"]["support_session_id"] == session_id
     assert ticket_response.json()["handoff"]["customer_id"] == "customer_001"
-    assert ticket_response.json()["handoff"]["issue_summary"] == problem_details.summary
+    assert ticket_response.json()["handoff"]["issue_summary"] == "The customer cannot complete the current operation."
     assert ticket_response.json()["handoff"]["attempted_steps"] == resolution.steps
     assert ticket_response.json()["handoff"]["citation_ids"] == resolution.citation_ids
-    assert ticket_response.json()["handoff"]["handoff_reason"] == "客户确认建议步骤没有解决问题。"
+    assert ticket_response.json()["handoff"]["handoff_reason"] == "The customer confirmed that the proposed steps did not resolve the problem."
 
     with support_sessions.SessionLocal() as database:
         saved_session = database.get(SupportSession, session_id)
@@ -485,14 +485,14 @@ def test_customer_can_report_that_the_resolution_did_not_work(monkeypatch: pytes
 def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: pytest.MonkeyPatch) -> None:
     problem_details = ProblemDetails(
         summary="订单通知从今天开始无法送达。",
-        affected_feature="订单通知",
-        problem="客户收不到订单通知。",
+        affected_feature="order notifications",
+        problem="Order notifications are not arriving.",
         customer_goal="恢复接收订单通知。",
         missing_information=[],
     )
     expected_result = SupportInvestigationResult(
-        conclusion="平台运行正常，最近两次通知都被客户接收端以 401 拒绝。",
-        supporting_facts=["平台当前运行正常。", "最近两次通知都返回 HTTP 401。"],
+        conclusion="The platform is operational, and the customer endpoint rejected the two latest notifications with HTTP 401.",
+        supporting_facts=["The platform status is operational.", "The two latest notifications returned HTTP 401."],
         customer_explanation="我们确认通知已经发出，但你的接收地址拒绝了请求。请检查接收端的访问设置后再试。",
         outcome="resolution",
     )
@@ -500,13 +500,20 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
     def fake_update_customer_problem(customer_messages: list[str], current_problem_details: ProblemDetails | None) -> ProblemDetails:
         return problem_details
 
+    def fake_create_support_handoff_summary(problem_details: ProblemDetails, customer_messages: list[str]) -> SupportHandoffSummary:
+        return SupportHandoffSummary(
+            issue_summary="Order notifications have not been delivered since today.",
+            customer_impact="The customer cannot receive order status updates.",
+            approximate_start_time="Today",
+        )
+
     class EmptyCustomerDocumentSearch:
         def invoke(self, search_input: dict[str, object]) -> list[dict[str, object]]:
             return []
 
     def fake_investigate_support_ticket(ticket_context: TicketContext) -> SupportInvestigationRun:
         assert ticket_context.handoff is not None
-        assert ticket_context.handoff.issue_summary == problem_details.summary
+        assert ticket_context.handoff.issue_summary == "Order notifications have not been delivered since today."
         assert ticket_context.handoff.customer_id == "customer_001"
         return SupportInvestigationRun(
             result=expected_result,
@@ -514,6 +521,7 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
         )
 
     monkeypatch.setattr(customer_workflow, "update_customer_problem", fake_update_customer_problem)
+    monkeypatch.setattr(customer_workflow, "create_support_handoff_summary", fake_create_support_handoff_summary)
     monkeypatch.setattr(customer_workflow, "retrieve_documents_for_customer_question", EmptyCustomerDocumentSearch())
     monkeypatch.setattr(support_workflow, "investigate_support_ticket", fake_investigate_support_ticket)
     monkeypatch.setattr(customer_workflow, "run_support_investigation", support_workflow.run_support_investigation)
@@ -535,7 +543,7 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
     assert isinstance(ticket_id, int)
     assert ticket_response.status_code == 200
     assert ticket_data["status"] == "RESOLVED"
-    assert ticket_data["handoff"]["issue_summary"] == problem_details.summary
+    assert ticket_data["handoff"]["issue_summary"] == "Order notifications have not been delivered since today."
     assert ticket_data["investigation_result"] == expected_result.model_dump(mode="json")
     assert ticket_data["investigation_tools"] == ["get_event_notification_deliveries", "get_platform_status"]
 

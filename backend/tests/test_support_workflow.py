@@ -29,16 +29,16 @@ def build_ticket(test_session, missing_information: list[str]) -> int:
     handoff = SupportHandoff(
         support_session_id="session_001",
         customer_id="customer_001",
-        issue_summary="订单通知返回 HTTP 401。",
-        affected_feature="事件通知",
-        customer_impact="客户无法收到订单通知。",
+        issue_summary="Order notifications return HTTP 401.",
+        affected_feature="event notifications",
+        customer_impact="The customer cannot receive order notifications.",
         approximate_start_time=None,
         environment_snapshot={},
         collected_facts=[],
         attempted_steps=[],
         citation_ids=[],
         remaining_questions=missing_information,
-        handoff_reason="客户侧没有安全的解决方法。",
+        handoff_reason="No safe customer-side resolution is available.",
     )
 
     support_session = SupportSession(
@@ -67,8 +67,8 @@ def build_ticket(test_session, missing_information: list[str]) -> int:
 def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.MonkeyPatch, test_database) -> None:
     ticket_id = build_ticket(test_database, [])
     expected_result = SupportInvestigationResult(
-        conclusion="客户接收端返回 HTTP 401，平台运行正常。",
-        supporting_facts=["两次发送都返回 HTTP 401。", "平台运行正常。"],
+        conclusion="The customer endpoint returns HTTP 401 while the platform remains operational.",
+        supporting_facts=["Two deliveries returned HTTP 401.", "The platform status is operational."],
         customer_explanation="通知已发出，但接收地址拒绝了请求。请检查接收端的访问设置。",
         outcome="resolution",
     )
@@ -98,7 +98,7 @@ def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.Monke
 
 
 def test_support_workflow_escalates_missing_information_without_reasking(monkeypatch: pytest.MonkeyPatch, test_database) -> None:
-    ticket_id = build_ticket(test_database, ["接收地址"])
+    ticket_id = build_ticket(test_database, ["receiving endpoint"])
 
     def fail_investigation(ticket_context: TicketContext) -> SupportInvestigationRun:
         pytest.fail("Support Agent should not run when required information is missing")

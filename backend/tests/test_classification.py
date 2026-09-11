@@ -4,19 +4,19 @@ from app import classification
 from app.classification import ClassificationRequest, ClassificationResult, TicketCategory, TicketSeverity
 
 
-def test_classification_returns_the_model_result_in_chinese(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_classification_returns_internal_fields_in_english(monkeypatch: pytest.MonkeyPatch) -> None:
     expected_result = ClassificationResult(
         category=TicketCategory.EVENT_NOTIFICATION_FAILURE,
         severity=TicketSeverity.MEDIUM,
-        affected_feature="事件通知",
-        summary="订单完成通知返回 HTTP 401。",
+        affected_feature="event notifications",
+        summary="Order completion notifications return HTTP 401.",
         missing_information=[],
-        urgency_reason="单个客户的通知持续失败。",
+        urgency_reason="Notifications continue to fail for one customer.",
     )
 
     class FakeClassificationModel:
         def invoke(self, messages: list[object]) -> ClassificationResult:
-            assert "简体中文" in messages[0].content
+            assert "Use English for every natural-language field" in messages[0].content
             return expected_result
 
     monkeypatch.setattr(classification, "classification_model", FakeClassificationModel())

@@ -15,6 +15,8 @@ The backend is separate from the frontend so that model credentials, database ac
 
 When the customer flow creates a ticket, the backend now starts the support investigation immediately. The customer response only contains the safe customer explanation. The full internal result remains on the ticket for the Support View.
 
+Customer-visible output uses Simplified Chinese. System prompts, tool descriptions, structured field descriptions, internal investigation output, errors, and status values use English.
+
 ## Local setup
 
 Run these commands from the repository root in PowerShell:

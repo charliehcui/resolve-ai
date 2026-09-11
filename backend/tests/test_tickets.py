@@ -32,16 +32,16 @@ def build_handoff(customer_id: str = "customer_001") -> SupportHandoff:
     return SupportHandoff(
         support_session_id="session_001",
         customer_id=customer_id,
-        issue_summary="订单通知无法送达。",
-        affected_feature="订单通知",
-        customer_impact="客户无法收到订单状态更新。",
-        approximate_start_time="今天上午",
+        issue_summary="Order notifications are not delivered.",
+        affected_feature="order notifications",
+        customer_impact="The customer cannot receive order status updates.",
+        approximate_start_time="This morning",
         environment_snapshot={"product_version": "2026.8"},
         collected_facts=[],
         attempted_steps=["重新保存通知地址。"],
         citation_ids=["docs/customer/order-notifications.md:0"],
         remaining_questions=[],
-        handoff_reason="客户确认建议步骤没有解决问题。",
+        handoff_reason="The customer confirmed that the proposed steps did not resolve the problem.",
     )
 
 

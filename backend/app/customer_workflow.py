@@ -158,7 +158,7 @@ def ask_for_information(state: CustomerSupportState) -> dict[str, object]:
 
     for asked_question in state["asked_questions"]:
         if customer_question.strip().lower() == asked_question.strip().lower():
-            return {"customer_response": None, "resolution": None, "citations": [], "handoff_reason": "系统无法提出新的有效澄清问题。", "status": "preparing_handoff"}
+            return {"customer_response": None, "resolution": None, "citations": [], "handoff_reason": "The system could not produce a new useful clarification question.", "status": "preparing_handoff"}
 
     asked_questions = state["asked_questions"].copy()
     asked_questions.append(customer_question)
@@ -208,11 +208,11 @@ def choose_step_after_document_retrieval(state: CustomerSupportState) -> str:
 
 def needs_assistance(state: CustomerSupportState) -> dict[str, object]:
     if len(state["missing_information"]) > 0 and len(state["asked_questions"]) >= 3:
-        handoff_reason = "会话已经达到三次澄清上限，但仍缺少安全解决问题所需的信息。"
+        handoff_reason = "The conversation reached the three-question clarification limit, but information required for a safe resolution is still missing."
     elif len(state["retrieved_customer_documents"]) == 0:
-        handoff_reason = "没有找到能够支持安全解决方法的当前客户文档。"
+        handoff_reason = "No current customer document supports a safe resolution."
     else:
-        handoff_reason = "现有客户信息和文档不足以支持安全的客户自行解决方法。"
+        handoff_reason = "The available customer information and documents do not support a safe self-service resolution."
 
     return {"customer_response": None, "resolution": None, "citations": [], "handoff_reason": handoff_reason, "status": "preparing_handoff"}
 
@@ -402,7 +402,7 @@ def finalize_customer_resolution(state: CustomerSupportState) -> dict[str, objec
         status = "unresolved"
         verification_source = "customer_confirmation"
         customer_response = None
-        handoff_reason = "客户确认建议步骤没有解决问题。"
+        handoff_reason = "The customer confirmed that the proposed steps did not resolve the problem."
     else:
         status = "waiting_for_verification"
         verification_source = None
