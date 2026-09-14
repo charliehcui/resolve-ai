@@ -17,6 +17,7 @@ const statusLabels: Record<SupportResponse["status"], string> = {
   unresolved: "需要进一步处理",
   needs_assistance: "已转交技术支持",
   support_resolved: "技术支持已给出结论",
+  action_required: "等待技术人员进一步处理",
   engineer_escalation: "工程师继续检查",
 };
 
@@ -41,7 +42,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
 
   const handoff = ticket.handoff;
   const investigation = ticket.investigation_result;
-  const resultLabel = investigation?.outcome === "resolution" ? "Resolution" : "Engineer escalation";
+  const resultLabels = { resolution: "Resolution", action_required: "Internal action required — not executed", engineer_escalation: "Engineer escalation" };
 
   return (
     <div className="pb-10">
@@ -162,7 +163,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
               <div className="mt-5 space-y-5">
                 <div>
                   <p className="text-xs text-slate-500">Outcome</p>
-                  <p className="mt-2 text-sm font-medium text-cyan-300">{resultLabel}</p>
+                  <p className="mt-2 text-sm font-medium text-cyan-300">{resultLabels[investigation.outcome]}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Conclusion</p>
@@ -238,7 +239,7 @@ function App() {
   let sessionFinished = false;
 
   if (support !== null) {
-    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance" || support.status === "support_resolved" || support.status === "engineer_escalation";
+    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance" || support.status === "support_resolved" || support.status === "action_required" || support.status === "engineer_escalation";
   }
 
   let currentStatus = "可以开始咨询";
@@ -255,7 +256,7 @@ function App() {
 
   if (support?.status === "resolved" || support?.status === "support_resolved") {
     statusStyle = "border-emerald-800 bg-emerald-950 text-emerald-300";
-  } else if (support?.status === "unresolved" || support?.status === "needs_assistance" || support?.status === "engineer_escalation") {
+  } else if (support?.status === "unresolved" || support?.status === "needs_assistance" || support?.status === "action_required" || support?.status === "engineer_escalation") {
     statusStyle = "border-amber-800 bg-amber-950 text-amber-300";
   } else if (isSending || support?.status === "waiting_for_verification") {
     statusStyle = "border-cyan-800 bg-cyan-950 text-cyan-300";

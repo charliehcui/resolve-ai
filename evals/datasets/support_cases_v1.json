@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "cases": [
+    {"case_id": "support_001", "scenario_id": "notifications_disabled", "customer_message": "我的订单通知收不到了。", "expected_outcome": "resolved"},
+    {"case_id": "support_002", "scenario_id": "notifications_disabled", "customer_message": "订单完成了，但我没收到提醒。", "expected_outcome": "resolved"},
+    {"case_id": "support_003", "scenario_id": "notifications_disabled", "customer_message": "这个功能不行了。", "clarification": "是订单通知，我收不到提醒。", "expected_outcome": "resolved"},
+    {"case_id": "support_004", "scenario_id": "notification_endpoint_rejected", "customer_message": "我的订单通知收不到了。", "expected_outcome": "support_resolved"},
+    {"case_id": "support_005", "scenario_id": "notification_endpoint_rejected", "customer_message": "订单完成了，但我没收到提醒。", "expected_outcome": "support_resolved"},
+    {"case_id": "support_006", "scenario_id": "notification_endpoint_rejected", "customer_message": "这个功能不行了。", "clarification": "是订单通知，我收不到提醒。", "expected_outcome": "support_resolved"},
+    {"case_id": "support_007", "scenario_id": "export_retry_needed", "customer_message": "我的报表一直下载不下来。", "expected_outcome": "action_required"},
+    {"case_id": "support_008", "scenario_id": "export_retry_needed", "customer_message": "导出没完成，我拿不到文件。", "expected_outcome": "action_required"},
+    {"case_id": "support_009", "scenario_id": "export_retry_needed", "customer_message": "一直没反应。", "clarification": "是报表导出，下载不下来。", "expected_outcome": "action_required"},
+    {"case_id": "support_010", "scenario_id": "export_conflicting_state", "customer_message": "我的报表一直下载不下来。", "expected_outcome": "engineer_escalation"},
+    {"case_id": "support_011", "scenario_id": "export_conflicting_state", "customer_message": "导出没完成，我拿不到文件。", "expected_outcome": "engineer_escalation"},
+    {"case_id": "support_012", "scenario_id": "export_conflicting_state", "customer_message": "一直没反应。", "clarification": "是报表导出，下载不下来。", "expected_outcome": "engineer_escalation"}
+  ]
+}

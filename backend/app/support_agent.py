@@ -1,11 +1,15 @@
+import json
+from typing import TypedDict
+
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.model import create_chat_model
 from app.support_results import SupportInvestigationResult
-from app.support_tools import get_customer_account, get_event_notification_deliveries, get_platform_status
+from app.support_tools import get_background_operation, get_customer_account, get_event_notification_deliveries, get_platform_status
 from app.tickets import TicketContext
 
 SUPPORT_INVESTIGATION_SYSTEM_PROMPT = """
@@ -24,12 +28,18 @@ Rules:
 - Call only the tools needed to verify internal state or fill an unknown internal fact. Do not call a tool merely to repeat a handoff fact.
 - Call the required internal tools before deciding what happened.
 - For event notification failures, inspect delivery records, the customer account, and platform status as needed.
+- For report export failures, inspect the latest background operation and the report_exports platform status. Do not query notification deliveries for export issues.
+- Customer identity is bound by the server. Never request or select another customer's records.
 - Do not invent account status, delivery results, platform status, or root causes.
 - A delivery response status comes from the customer's receiving endpoint and does not represent ResolveAI platform status.
 - Every key conclusion and every item in supporting_facts must come from this investigation's tool results.
 - If the available facts are insufficient or conflicting, set outcome to engineer_escalation instead of guessing.
+- A structured tool error is a failed query, not a confirmed customer or platform fact. Use alternative evidence only when it actually supports the conclusion. If required tools fail and no alternative evidence exists, escalate.
+- Set outcome to action_required only when a failed export has failure_code dependency_timeout, latest_run_status failed, retry_allowed true, and the report_exports platform is operational.
+- action_required only identifies the need for a safe internal retry. No action has been proposed for approval or executed. Do not claim recovery, approval, or execution.
+- Conflicting operation and latest-run states require engineer_escalation, not a retry or a claimed resolution.
 - customer_explanation must be safe to show directly to the customer and must not contain internal tool names or hidden information.
-- outcome must be resolution or engineer_escalation.
+- outcome must be resolution, action_required, or engineer_escalation.
 - Keep the conclusion, supporting facts, and customer explanation short and clear.
 - Do not reveal hidden reasoning.
 """
@@ -42,7 +52,27 @@ class SupportInvestigationRun(BaseModel):
     tools_used: list[str] = Field(description="Names of the internal tools actually called during this investigation")
 
 
-support_investigation_tools = [get_customer_account, get_event_notification_deliveries, get_platform_status]
+class SupportToolContext(TypedDict):
+    customer_id: str
+
+
+@wrap_tool_call
+def bind_support_tool_customer(request, handler):
+    tool_call = request.tool_call.copy()
+
+    if tool_call["name"] in ("get_customer_account", "get_event_notification_deliveries", "get_background_operation"):
+        arguments = tool_call["args"].copy()
+        arguments["customer_id"] = request.runtime.context["customer_id"]
+        tool_call["args"] = arguments
+        request = request.override(tool_call=tool_call)
+
+    try:
+        return handler(request)
+    except Exception:
+        return ToolMessage(content=json.dumps({"status": "error", "error": {"code": "tool_error", "message": "The read-only tool could not complete the query"}}), tool_call_id=tool_call["id"], name=tool_call["name"], status="error")
+
+
+support_investigation_tools = [get_customer_account, get_event_notification_deliveries, get_platform_status, get_background_operation]
 support_investigation_model = create_chat_model(temperature=0.2)
 
 support_investigation_agent = create_agent(
@@ -50,6 +80,8 @@ support_investigation_agent = create_agent(
     tools=support_investigation_tools,
     system_prompt=SUPPORT_INVESTIGATION_SYSTEM_PROMPT,
     response_format=ToolStrategy(SupportInvestigationResult),
+    middleware=[bind_support_tool_customer],
+    context_schema=SupportToolContext,
 )
 
 
@@ -68,7 +100,7 @@ Structured handoff:
 """
 
     agent_input = {"messages": [{"role": "user", "content": ticket_text}]}
-    result = support_investigation_agent.invoke(agent_input, {"recursion_limit": 10})
+    result = support_investigation_agent.invoke(agent_input, {"recursion_limit": 10}, context={"customer_id": ticket.handoff.customer_id})
     structured_response = result.get("structured_response")
 
     if isinstance(structured_response, SupportInvestigationResult) is False:
@@ -76,9 +108,22 @@ Structured handoff:
 
     allowed_tool_names = {current_tool.name for current_tool in support_investigation_tools}
     tools_used: list[str] = []
+    successful_tool_count = 0
 
     for message in result.get("messages", []):
-        if isinstance(message, ToolMessage) and message.name in allowed_tool_names and message.name not in tools_used:
-            tools_used.append(message.name)
+        if isinstance(message, ToolMessage) and message.name in allowed_tool_names:
+            if message.name not in tools_used:
+                tools_used.append(message.name)
+
+            try:
+                tool_data = json.loads(message.content)
+            except (TypeError, ValueError):
+                continue
+
+            if message.status != "error" and isinstance(tool_data, (dict, list)) and tool_data and not (isinstance(tool_data, dict) and tool_data.get("status") == "error"):
+                successful_tool_count += 1
+
+    if successful_tool_count == 0:
+        structured_response = SupportInvestigationResult(conclusion="No successful internal tool result supports a reliable conclusion.", supporting_facts=[], customer_explanation="我们暂时无法取得足够的信息，已经交给工程师继续检查。你不需要重复说明已经提供的信息。", outcome="engineer_escalation")
 
     return SupportInvestigationRun(result=structured_response, tools_used=tools_used)

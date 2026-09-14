@@ -1,6 +1,6 @@
 import pytest
 
-from app import customer_tools
+from app import customer_tools, resolvelab
 
 
 class FakeResponse:
@@ -20,11 +20,11 @@ def test_get_current_product_context_uses_the_bound_customer_id(monkeypatch: pyt
     fake_response = FakeResponse(response_data)
 
     def fake_get(url: str, timeout: float) -> FakeResponse:
-        assert url == f"{customer_tools.settings.resolvelab_base_url}/customers/customer_001/product-context"
+        assert url == f"{resolvelab.settings.resolvelab_base_url}/customers/customer_001/product-context"
         assert timeout == 5.0
         return fake_response
 
-    monkeypatch.setattr(customer_tools.httpx, "get", fake_get)
+    monkeypatch.setattr(resolvelab.httpx, "get", fake_get)
 
     result = customer_tools.get_current_product_context("customer_001")
 
@@ -37,11 +37,11 @@ def test_get_recent_customer_activity_uses_the_bound_customer_id(monkeypatch: py
     fake_response = FakeResponse(response_data)
 
     def fake_get(url: str, timeout: float) -> FakeResponse:
-        assert url == f"{customer_tools.settings.resolvelab_base_url}/customers/customer_001/recent-activity"
+        assert url == f"{resolvelab.settings.resolvelab_base_url}/customers/customer_001/recent-activity"
         assert timeout == 5.0
         return fake_response
 
-    monkeypatch.setattr(customer_tools.httpx, "get", fake_get)
+    monkeypatch.setattr(resolvelab.httpx, "get", fake_get)
 
     result = customer_tools.get_recent_customer_activity("customer_001")
 

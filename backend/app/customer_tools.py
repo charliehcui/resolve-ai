@@ -1,17 +1,11 @@
-import httpx
+from urllib.parse import quote
 
-from app.core.config import settings
+from app.resolvelab import get_resolvelab_data
 
 
 def get_current_product_context(customer_id: str) -> dict[str, object]:
-    url = f"{settings.resolvelab_base_url}/customers/{customer_id}/product-context"
-    response = httpx.get(url, timeout=5.0)
-    response.raise_for_status()
-    return response.json()
+    return get_resolvelab_data(f"/customers/{quote(customer_id, safe='')}/product-context")
 
 
 def get_recent_customer_activity(customer_id: str) -> dict[str, object]:
-    url = f"{settings.resolvelab_base_url}/customers/{customer_id}/recent-activity"
-    response = httpx.get(url, timeout=5.0)
-    response.raise_for_status()
-    return response.json()
+    return get_resolvelab_data(f"/customers/{quote(customer_id, safe='')}/recent-activity")

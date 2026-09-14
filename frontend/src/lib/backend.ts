@@ -59,7 +59,7 @@ export type SupportInvestigationResult = {
   conclusion: string;
   supporting_facts: string[];
   customer_explanation: string;
-  outcome: "resolution" | "engineer_escalation";
+  outcome: "resolution" | "action_required" | "engineer_escalation";
 };
 
 export type TicketResponse = {
@@ -68,7 +68,7 @@ export type TicketResponse = {
   handoff: SupportHandoff | null;
   investigation_result: SupportInvestigationResult | null;
   investigation_tools: string[] | null;
-  status: "OPEN" | "CLASSIFIED" | "WAITING_CUSTOMER" | "RESOLVED" | "ENGINEER_ESCALATION";
+  status: "OPEN" | "CLASSIFIED" | "WAITING_CUSTOMER" | "RESOLVED" | "ACTION_REQUIRED" | "ENGINEER_ESCALATION";
   created_at: string;
   updated_at: string;
 };
@@ -83,7 +83,7 @@ export type SupportResponse = {
   verification_result: CustomerVerification | null;
   verification_source: "customer_confirmation" | "tool_verification" | null;
   ticket_id: number | null;
-  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance" | "support_resolved" | "engineer_escalation";
+  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance" | "support_resolved" | "action_required" | "engineer_escalation";
 };
 
 let backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000";

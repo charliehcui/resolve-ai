@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from simulator.app import app
@@ -63,3 +64,39 @@ def test_get_platform_status() -> None:
     assert response.status_code == 200
     assert response.json()["service"] == "event_notifications"
     assert response.json()["status"] == "operational"
+
+
+@pytest.mark.parametrize("customer_id, feature, enabled, result", [("customer_001", "order notifications", True, "failed"), ("customer_002", "order notifications", False, "disabled"), ("customer_003", "report exports", True, "failed"), ("customer_004", "report exports", True, "failed")])
+def test_scenarios_expose_only_customer_visible_context(customer_id, feature, enabled, result):
+    context = client.get(f"/customers/{customer_id}/product-context").json()
+    activity = client.get(f"/customers/{customer_id}/recent-activity").json()
+
+    assert context["affected_feature"] == feature
+    assert context["feature_enabled"] is enabled
+    assert activity["result"] == result
+    assert set(context) == {"account_status", "product_version", "affected_feature", "feature_enabled"}
+    assert set(activity) == {"affected_feature", "activity", "result", "occurred_at"}
+    assert "true_cause" not in str(context)
+    assert "failure_code" not in str(activity)
+
+
+def test_export_operations_are_customer_scoped_and_read_only():
+    retry_operation = client.get("/customers/customer_003/background-operation").json()
+    unknown_operation = client.get("/customers/customer_004/background-operation").json()
+
+    assert retry_operation["operation_id"] == "export_003"
+    assert retry_operation["customer_id"] == "customer_003"
+    assert retry_operation["failure_code"] == "dependency_timeout"
+    assert retry_operation["retry_allowed"] is True
+    assert unknown_operation["operation_id"] == "export_004"
+    assert unknown_operation["retry_allowed"] is False
+    assert unknown_operation["status"] != unknown_operation["latest_run_status"]
+    assert client.get("/customers/customer_001/background-operation").status_code == 404
+    assert client.get("/customers/unknown/background-operation").status_code == 404
+    assert client.post("/customers/customer_003/background-operation").status_code == 405
+    assert client.get("/customers/customer_003/background-operation").json() == retry_operation
+
+
+def test_platform_status_service_is_limited_to_known_features():
+    assert client.get("/platform-status?service=report_exports").json()["service"] == "report_exports"
+    assert client.get("/platform-status?service=unknown").status_code == 422

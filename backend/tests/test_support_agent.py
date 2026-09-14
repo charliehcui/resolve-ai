@@ -18,6 +18,7 @@ def test_support_agent_only_has_read_tools() -> None:
         "get_customer_account",
         "get_event_notification_deliveries",
         "get_platform_status",
+        "get_background_operation",
     ]
 
 
@@ -54,13 +55,14 @@ def test_support_agent_returns_result_and_actual_tools(monkeypatch: pytest.Monke
     )
 
     class FakeSupportAgent:
-        def invoke(self, agent_input: dict[str, object], config: dict[str, object]) -> dict[str, object]:
+        def invoke(self, agent_input: dict[str, object], config: dict[str, object], *, context: dict[str, object]) -> dict[str, object]:
             assert "Structured handoff" in str(agent_input)
             assert config == {"recursion_limit": 10}
+            assert context == {"customer_id": "customer_001"}
             return {
                 "messages": [
-                    ToolMessage(content="delivery result", tool_call_id="call_1", name="get_event_notification_deliveries"),
-                    ToolMessage(content="platform result", tool_call_id="call_2", name="get_platform_status"),
+                    ToolMessage(content='[{"response_status": 401}]', tool_call_id="call_1", name="get_event_notification_deliveries"),
+                    ToolMessage(content='{"status": "operational"}', tool_call_id="call_2", name="get_platform_status"),
                     ToolMessage(content="structured result", tool_call_id="call_3", name="SupportInvestigationResult"),
                 ],
                 "structured_response": expected_result,
@@ -74,3 +76,20 @@ def test_support_agent_returns_result_and_actual_tools(monkeypatch: pytest.Monke
         result=expected_result,
         tools_used=["get_event_notification_deliveries", "get_platform_status"],
     )
+
+
+@pytest.mark.parametrize("tool_content", ['{"status": "error", "error": {"code": "http_error"}}', "[]", "invalid JSON"])
+def test_support_agent_cannot_claim_resolution_without_successful_tool_data(monkeypatch, tool_content):
+    handoff = SupportHandoff(support_session_id="session_001", customer_id="customer_001", issue_summary="Notifications are unavailable.", affected_feature="order notifications", customer_impact="The customer cannot receive notifications.", environment_snapshot={}, collected_facts=[], attempted_steps=[], citation_ids=[], remaining_questions=[], handoff_reason="Customer guidance is insufficient.")
+    ticket = TicketContext(id=1, support_session_id="session_001", handoff=handoff, status=TicketStatus.OPEN)
+
+    class UnsupportedSupportAgent:
+        def invoke(self, agent_input, config, *, context):
+            return {"messages": [ToolMessage(content=tool_content, name="get_platform_status", tool_call_id="failed_call")], "structured_response": SupportInvestigationResult(conclusion="Unsupported resolution claim.", supporting_facts=["Invented success."], customer_explanation="问题已经解决。", outcome="resolution")}
+
+    monkeypatch.setattr(support_agent, "support_investigation_agent", UnsupportedSupportAgent())
+    investigation = support_agent.investigate_support_ticket(ticket)
+
+    assert investigation.result.outcome == "engineer_escalation"
+    assert investigation.result.supporting_facts == []
+    assert investigation.tools_used == ["get_platform_status"]

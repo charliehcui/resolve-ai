@@ -1,0 +1,69 @@
+{
+  "version": "1.0",
+  "platform_statuses": [
+    {"service": "event_notifications", "status": "operational", "updated_at": "2026-08-25T09:25:00Z"},
+    {"service": "report_exports", "status": "operational", "updated_at": "2026-08-25T09:25:00Z"}
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "notification_endpoint_rejected",
+      "customer_message": "我的订单通知从今天开始收不到了，我希望恢复接收。",
+      "true_cause": "The receiving endpoint rejects notifications with HTTP 401 while the platform is operational.",
+      "account": {"customer_id": "customer_001", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": true, "updated_at": "2026-08-25T09:00:00Z"},
+      "product_context": {"account_status": "active", "product_version": "2026.8", "affected_feature": "order notifications", "feature_enabled": true},
+      "recent_activity": {"affected_feature": "order notifications", "activity": "Sending the latest order notification", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
+      "deliveries": [
+        {"delivery_id": "delivery_001", "customer_id": "customer_001", "order_id": "order_1001", "notification_type": "order_completed", "delivery_status": "failed", "response_status": 401, "response_message": "Unauthorized", "attempted_at": "2026-08-25T09:15:00Z"},
+        {"delivery_id": "delivery_002", "customer_id": "customer_001", "order_id": "order_1001", "notification_type": "order_completed", "delivery_status": "failed", "response_status": 401, "response_message": "Unauthorized", "attempted_at": "2026-08-25T09:20:00Z"}
+      ],
+      "background_operation": null,
+      "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
+      "expected_support_tools": ["get_event_notification_deliveries", "get_platform_status"],
+      "forbidden_tools": ["get_background_operation", "retry_failed_operation", "execute_action"],
+      "expected_outcome": "support_resolved"
+    },
+    {
+      "scenario_id": "notifications_disabled",
+      "customer_message": "我的订单通知从今天开始收不到了，我希望恢复接收。",
+      "customer_confirmation": "开启订单通知后，我现在可以正常收到通知了。",
+      "true_cause": "Order notifications are disabled in the customer's settings.",
+      "account": {"customer_id": "customer_002", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": false, "updated_at": "2026-08-25T09:00:00Z"},
+      "product_context": {"account_status": "active", "product_version": "2026.8", "affected_feature": "order notifications", "feature_enabled": false},
+      "recent_activity": {"affected_feature": "order notifications", "activity": "Sending the latest order notification", "result": "disabled", "occurred_at": "2026-08-25T09:20:00Z"},
+      "deliveries": [],
+      "background_operation": null,
+      "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
+      "expected_support_tools": [],
+      "forbidden_tools": ["get_customer_account", "get_event_notification_deliveries", "get_platform_status", "get_background_operation", "retry_failed_operation", "execute_action"],
+      "expected_outcome": "resolved"
+    },
+    {
+      "scenario_id": "export_retry_needed",
+      "customer_message": "我的报表一直下载不下来，我想把报表导出来。",
+      "true_cause": "The export failed after a temporary dependency timeout. An internal retry is allowed but has not been performed.",
+      "account": {"customer_id": "customer_003", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": true, "updated_at": "2026-08-25T09:00:00Z"},
+      "product_context": {"account_status": "active", "product_version": "2026.8", "affected_feature": "report exports", "feature_enabled": true},
+      "recent_activity": {"affected_feature": "report exports", "activity": "Exporting the latest report", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
+      "deliveries": [],
+      "background_operation": {"operation_id": "export_003", "customer_id": "customer_003", "feature": "report exports", "status": "failed", "failure_code": "dependency_timeout", "retry_allowed": true, "latest_run_status": "failed", "updated_at": "2026-08-25T09:20:00Z"},
+      "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
+      "expected_support_tools": ["get_background_operation", "get_platform_status"],
+      "forbidden_tools": ["get_event_notification_deliveries", "retry_failed_operation", "execute_action"],
+      "expected_outcome": "action_required"
+    },
+    {
+      "scenario_id": "export_conflicting_state",
+      "customer_message": "我的报表一直下载不下来，我想把报表导出来。",
+      "true_cause": "The operation is marked failed but its latest run is marked succeeded. The cause is unknown and requires engineer investigation.",
+      "account": {"customer_id": "customer_004", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": true, "updated_at": "2026-08-25T09:00:00Z"},
+      "product_context": {"account_status": "active", "product_version": "2026.8", "affected_feature": "report exports", "feature_enabled": true},
+      "recent_activity": {"affected_feature": "report exports", "activity": "Exporting the latest report", "result": "failed", "occurred_at": "2026-08-25T09:20:00Z"},
+      "deliveries": [],
+      "background_operation": {"operation_id": "export_004", "customer_id": "customer_004", "feature": "report exports", "status": "failed", "failure_code": "unknown", "retry_allowed": false, "latest_run_status": "succeeded", "updated_at": "2026-08-25T09:20:00Z"},
+      "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
+      "expected_support_tools": ["get_background_operation", "get_platform_status"],
+      "forbidden_tools": ["get_event_notification_deliveries", "retry_failed_operation", "execute_action"],
+      "expected_outcome": "engineer_escalation"
+    }
+  ]
+}

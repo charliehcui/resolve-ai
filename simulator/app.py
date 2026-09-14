@@ -1,4 +1,7 @@
+import json
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -46,45 +49,42 @@ class CustomerRecentActivity(BaseModel):
     occurred_at: datetime
 
 
-customer_accounts = {
-    "customer_001": CustomerAccount(
-        customer_id="customer_001",
-        status="active",
-        plan="pro",
-        product_version="2026.8",
-        event_notifications_enabled=True,
-        updated_at="2026-08-25T09:00:00Z",
-    )
-}
+class BackgroundOperation(BaseModel):
+    operation_id: str
+    customer_id: str
+    feature: str
+    status: str
+    failure_code: str
+    retry_allowed: bool
+    latest_run_status: str
+    updated_at: datetime
 
-event_notification_deliveries = [
-    EventNotificationDelivery(
-        delivery_id="delivery_001",
-        customer_id="customer_001",
-        order_id="order_1001",
-        notification_type="order_completed",
-        delivery_status="failed",
-        response_status=401,
-        response_message="Unauthorized",
-        attempted_at="2026-08-25T09:15:00Z",
-    ),
-    EventNotificationDelivery(
-        delivery_id="delivery_002",
-        customer_id="customer_001",
-        order_id="order_1001",
-        notification_type="order_completed",
-        delivery_status="failed",
-        response_status=401,
-        response_message="Unauthorized",
-        attempted_at="2026-08-25T09:20:00Z",
-    ),
-]
 
-platform_status = PlatformStatus(
-    service="event_notifications",
-    status="operational",
-    updated_at="2026-08-25T09:25:00Z",
-)
+scenario_file = Path(__file__).parent / "scenarios" / "v1.json"
+scenario_data = json.loads(scenario_file.read_text(encoding="utf-8"))
+customer_accounts: dict[str, CustomerAccount] = {}
+customer_product_contexts: dict[str, CustomerProductContext] = {}
+customer_recent_activities: dict[str, CustomerRecentActivity] = {}
+event_notification_deliveries: list[EventNotificationDelivery] = []
+background_operations: dict[str, BackgroundOperation] = {}
+
+for scenario in scenario_data["scenarios"]:
+    account = CustomerAccount.model_validate(scenario["account"])
+    customer_accounts[account.customer_id] = account
+    customer_product_contexts[account.customer_id] = CustomerProductContext.model_validate(scenario["product_context"])
+    customer_recent_activities[account.customer_id] = CustomerRecentActivity.model_validate(scenario["recent_activity"])
+
+    for delivery in scenario["deliveries"]:
+        event_notification_deliveries.append(EventNotificationDelivery.model_validate(delivery))
+
+    if scenario["background_operation"] is not None:
+        background_operations[account.customer_id] = BackgroundOperation.model_validate(scenario["background_operation"])
+
+platform_statuses: dict[str, PlatformStatus] = {}
+
+for status_data in scenario_data["platform_statuses"]:
+    platform_status = PlatformStatus.model_validate(status_data)
+    platform_statuses[platform_status.service] = platform_status
 
 
 @app.get("/health")
@@ -109,32 +109,17 @@ def get_customer_product_context(customer_id: str) -> CustomerProductContext:
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer account not found")
 
-    return CustomerProductContext(
-        account_status=customer.status,
-        product_version=customer.product_version,
-        affected_feature="order notifications",
-        feature_enabled=customer.event_notifications_enabled,
-    )
+    return customer_product_contexts[customer_id]
 
 
 @app.get("/customers/{customer_id}/recent-activity", response_model=CustomerRecentActivity)
 def get_customer_recent_activity(customer_id: str) -> CustomerRecentActivity:
-    recent_delivery = None
+    activity = customer_recent_activities.get(customer_id)
 
-    for delivery in event_notification_deliveries:
-        if delivery.customer_id == customer_id:
-            if recent_delivery is None or delivery.attempted_at > recent_delivery.attempted_at:
-                recent_delivery = delivery
-
-    if recent_delivery is None:
+    if activity is None:
         raise HTTPException(status_code=404, detail="Recent customer activity not found")
 
-    return CustomerRecentActivity(
-        affected_feature="order notifications",
-        activity="Sending the latest order notification",
-        result=recent_delivery.delivery_status,
-        occurred_at=recent_delivery.attempted_at,
-    )
+    return activity
 
 
 @app.get("/customers/{customer_id}/event-notification-deliveries", response_model=list[EventNotificationDelivery])
@@ -152,5 +137,15 @@ def get_event_notification_deliveries(customer_id: str) -> list[EventNotificatio
 
 
 @app.get("/platform-status", response_model=PlatformStatus)
-def get_platform_status() -> PlatformStatus:
-    return platform_status
+def get_platform_status(service: Literal["event_notifications", "report_exports"] = "event_notifications") -> PlatformStatus:
+    return platform_statuses[service]
+
+
+@app.get("/customers/{customer_id}/background-operation", response_model=BackgroundOperation)
+def get_background_operation(customer_id: str) -> BackgroundOperation:
+    operation = background_operations.get(customer_id)
+
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Customer background operation not found")
+
+    return operation

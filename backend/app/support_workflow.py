@@ -113,6 +113,9 @@ def save_support_result(ticket_id: int, investigation_result: SupportInvestigati
         if investigation_result.outcome == "resolution":
             ticket.status = TicketStatus.RESOLVED.value
             session_status = "support_resolved"
+        elif investigation_result.outcome == "action_required":
+            ticket.status = TicketStatus.ACTION_REQUIRED.value
+            session_status = "action_required"
         else:
             ticket.status = TicketStatus.ENGINEER_ESCALATION.value
             session_status = "engineer_escalation"
