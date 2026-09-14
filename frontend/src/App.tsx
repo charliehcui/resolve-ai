@@ -170,6 +170,27 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
                   <p className="mt-2 text-sm leading-6 text-slate-200">{investigation.conclusion}</p>
                 </div>
                 <div>
+                  <p className="text-xs text-slate-500">Root cause</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">{investigation.root_cause ?? "Not confirmed"}</p>
+                  <p className="mt-2 text-xs text-slate-400">Confidence: {investigation.confidence_band}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Resolution</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{investigation.resolution ?? "No safe resolution confirmed"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Supporting evidence IDs</p>
+                  <p className="mt-2 break-all text-xs leading-6 text-cyan-300">{investigation.supporting_evidence_ids.join(", ") || "None"}</p>
+                  <p className="mt-3 text-xs text-slate-500">Contradicting evidence IDs</p>
+                  <p className="mt-2 break-all text-xs leading-6 text-amber-300">{investigation.contradicting_evidence_ids.join(", ") || "None"}</p>
+                </div>
+                {investigation.escalation_reason !== null && (
+                  <div>
+                    <p className="text-xs text-slate-500">Escalation reason</p>
+                    <p className="mt-2 text-sm leading-6 text-amber-200">{investigation.escalation_reason}</p>
+                  </div>
+                )}
+                <div>
                   <p className="text-xs text-slate-500">Supporting facts</p>
                   {investigation.supporting_facts.length === 0 ? (
                     <p className="mt-2 text-sm text-slate-400">No supporting tool facts were recorded.</p>
@@ -186,6 +207,63 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
               </div>
             )}
           </section>
+
+          {investigation !== null && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+              <h2 className="text-lg font-semibold">Validated evidence</h2>
+              <p className="mt-2 text-xs leading-6 text-slate-400">Internal source summaries only. Raw logs and hidden reasoning are not displayed.</p>
+              {investigation.evidence.length === 0 ? (
+                <p className="mt-4 text-sm text-slate-400">No valid source evidence is attached to this result.</p>
+              ) : (
+                <ul className="mt-4 space-y-3">
+                  {investigation.evidence.map((item) => (
+                    <li key={item.evidence_id} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                      <p className="break-all text-xs text-cyan-300">{item.evidence_id}</p>
+                      <p className="mt-2 break-all text-xs text-slate-400">Source: {item.source_reference}</p>
+                      <p className="mt-1 text-xs text-slate-500">Observed at: {item.observed_at} · {item.customer_visibility}</p>
+                      <p className="mt-3 text-sm leading-6 text-slate-300">{item.summary}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {investigation.validation_errors.length > 0 && (
+                <div className="mt-5">
+                  <h3 className="text-sm font-medium text-amber-200">Validation gaps</h3>
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-6 text-slate-400">
+                    {investigation.validation_errors.map((error) => <li key={error}>{error}</li>)}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+
+          {investigation?.escalation_package != null && (
+            <section className="rounded-2xl border border-amber-900 bg-slate-900 p-6">
+              <h2 className="text-lg font-semibold">Engineer escalation package</h2>
+              <p className="mt-4 text-sm leading-6 text-slate-200">{investigation.escalation_package.issue_summary}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">Impact: {investigation.escalation_package.customer_impact}</p>
+              <p className="mt-3 text-xs leading-6 text-slate-400">{investigation.escalation_package.customer_diagnosis === null ? "No customer diagnosis was attached. Recover the missing handoff before continuing." : "The customer handoff is retained with its environment, facts, attempted steps, citations, and remaining questions. Continue from the Customer handoff shown alongside this result."}</p>
+              <p className="mt-3 text-sm leading-6 text-amber-200">{investigation.escalation_package.escalation_reason}</p>
+              <div className="mt-5 space-y-4 text-sm">
+                <div>
+                  <p className="text-xs text-slate-500">Excluded causes</p>
+                  {investigation.escalation_package.excluded_causes.length === 0 ? <p className="mt-2 text-slate-400">None confirmed</p> : <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-300">{investigation.escalation_package.excluded_causes.map((cause) => <li key={cause}>{cause}</li>)}</ul>}
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Possible causes</p>
+                  {investigation.escalation_package.possible_causes.length === 0 ? <p className="mt-2 text-slate-400">Unknown</p> : <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-300">{investigation.escalation_package.possible_causes.map((cause) => <li key={cause}>{cause}</li>)}</ul>}
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Unanswered questions</p>
+                  <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-300">{investigation.escalation_package.unanswered_questions.map((question) => <li key={question}>{question}</li>)}</ul>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Suggested next checks</p>
+                  <ol className="mt-2 list-decimal space-y-2 pl-5 text-slate-300">{investigation.escalation_package.next_checks.map((check) => <li key={check}>{check}</li>)}</ol>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>
@@ -413,7 +491,7 @@ function App() {
                   <p className="mt-3 leading-7 text-slate-400">
                     请先说明你原本想做什么，以及实际发生了什么。
                   </p>
-                  <button type="button" disabled={isSending} onClick={() => setMessage("我的订单通知从今天开始收不到了，我希望恢复接收。")} className="mt-6 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300 transition hover:border-cyan-700 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-cyan-400 disabled:opacity-50">
+                  <button type="button" disabled={isSending} onClick={() => setMessage("我的订单通知收不到了，我希望恢复接收。")} className="mt-6 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300 transition hover:border-cyan-700 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-cyan-400 disabled:opacity-50">
                     我的订单通知收不到了
                   </button>
                 </div>

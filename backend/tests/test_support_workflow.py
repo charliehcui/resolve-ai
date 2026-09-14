@@ -8,6 +8,7 @@ from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoff
 from app.support_agent import SupportInvestigationRun
+from app.support_evidence import create_tool_evidence
 from app.support_results import SupportInvestigationResult
 from app.tickets import TicketContext, TicketStatus
 
@@ -30,10 +31,10 @@ def build_ticket(test_session, missing_information: list[str]) -> int:
         support_session_id="session_001",
         customer_id="customer_001",
         issue_summary="Order notifications return HTTP 401.",
-        affected_feature="event notifications",
+        affected_feature="order notifications",
         customer_impact="The customer cannot receive order notifications.",
         approximate_start_time=None,
-        environment_snapshot={},
+        environment_snapshot={"recent_activity": {"occurred_at": "2026-08-25T09:20:00Z"}},
         collected_facts=[],
         attempted_steps=[],
         citation_ids=[],
@@ -66,16 +67,23 @@ def build_ticket(test_session, missing_information: list[str]) -> int:
 
 def test_support_workflow_investigates_complete_ticket(monkeypatch: pytest.MonkeyPatch, test_database) -> None:
     ticket_id = build_ticket(test_database, [])
+    evidence = create_tool_evidence(ticket_id, "customer_001", "get_event_notification_deliveries", [{"customer_id": "customer_001", "delivery_id": "delivery_001", "delivery_status": "failed", "response_status": 401, "attempted_at": "2026-08-25T09:20:00Z"}])
+    evidence.extend(create_tool_evidence(ticket_id, "customer_001", "get_platform_status", {"service": "event_notifications", "status": "operational", "updated_at": "2026-08-25T09:25:00Z"}))
     expected_result = SupportInvestigationResult(
         conclusion="The customer endpoint returns HTTP 401 while the platform remains operational.",
-        supporting_facts=["Two deliveries returned HTTP 401.", "The platform status is operational."],
+        root_cause="The receiving endpoint rejected the notifications.",
+        supporting_evidence_ids=[item.evidence_id for item in evidence],
+        confidence_band="high",
+        resolution="Check the receiving endpoint access settings.",
+        evidence=evidence,
+        supporting_facts=[item.summary for item in evidence],
         customer_explanation="通知已发出，但接收地址拒绝了请求。请检查接收端的访问设置。",
         outcome="resolution",
     )
 
     def fake_investigate_support_ticket(ticket_context: TicketContext) -> SupportInvestigationRun:
         assert ticket_context.id == ticket_id
-        return SupportInvestigationRun(result=expected_result, tools_used=["get_event_notification_deliveries", "get_platform_status"])
+        return SupportInvestigationRun(result=expected_result, evidence=evidence, tools_used=["get_event_notification_deliveries", "get_platform_status"])
 
     monkeypatch.setattr(support_workflow, "investigate_support_ticket", fake_investigate_support_ticket)
 

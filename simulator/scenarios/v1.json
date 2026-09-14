@@ -7,7 +7,7 @@
   "scenarios": [
     {
       "scenario_id": "notification_endpoint_rejected",
-      "customer_message": "我的订单通知从今天开始收不到了，我希望恢复接收。",
+      "customer_message": "我的订单通知收不到了，我希望恢复接收。",
       "true_cause": "The receiving endpoint rejects notifications with HTTP 401 while the platform is operational.",
       "account": {"customer_id": "customer_001", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": true, "updated_at": "2026-08-25T09:00:00Z"},
       "product_context": {"account_status": "active", "product_version": "2026.8", "affected_feature": "order notifications", "feature_enabled": true},
@@ -24,7 +24,7 @@
     },
     {
       "scenario_id": "notifications_disabled",
-      "customer_message": "我的订单通知从今天开始收不到了，我希望恢复接收。",
+      "customer_message": "我的订单通知收不到了，我希望恢复接收。",
       "customer_confirmation": "开启订单通知后，我现在可以正常收到通知了。",
       "true_cause": "Order notifications are disabled in the customer's settings.",
       "account": {"customer_id": "customer_002", "status": "active", "plan": "pro", "product_version": "2026.8", "event_notifications_enabled": false, "updated_at": "2026-08-25T09:00:00Z"},

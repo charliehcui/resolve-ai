@@ -40,6 +40,7 @@ class TicketContext(BaseModel):
     support_session_id: str | None
     handoff: SupportHandoff | None
     status: TicketStatus
+    created_at: datetime | None = None
 
 
 def build_ticket_context(ticket: Ticket) -> TicketContext:

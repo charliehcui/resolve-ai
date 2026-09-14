@@ -8,7 +8,7 @@ from app.customer_agent import CUSTOMER_QUESTION_PROMPT, CUSTOMER_RESOLUTION_PRO
 from app.customer_question_retrieval import retrieve_documents_for_customer_question
 from app.handoff import SUPPORT_HANDOFF_SYSTEM_PROMPT, SupportHandoffSummary
 from app.support_agent import SUPPORT_INVESTIGATION_SYSTEM_PROMPT, SupportInvestigationRun, support_investigation_tools
-from app.support_results import SupportInvestigationResult
+from app.support_results import EngineerEscalationPackage, EvidenceItem, SupportDiagnosis, SupportInvestigationResult
 
 
 @pytest.mark.parametrize("prompt", [CLASSIFICATION_SYSTEM_PROMPT, CUSTOMER_SYSTEM_PROMPT, CUSTOMER_QUESTION_PROMPT, CUSTOMER_SIDE_DATA_DECISION_PROMPT, CUSTOMER_RESOLUTION_PROMPT, CUSTOMER_VERIFICATION_PROMPT, SUPPORT_HANDOFF_SYSTEM_PROMPT, SUPPORT_INVESTIGATION_SYSTEM_PROMPT])
@@ -26,7 +26,7 @@ def test_prompts_limit_simplified_chinese_to_customer_visible_output() -> None:
     assert "customer_explanation is customer-visible" in SUPPORT_INVESTIGATION_SYSTEM_PROMPT
 
 
-@pytest.mark.parametrize("output_model", [ClassificationResult, ProblemDetails, CustomerQuestion, CustomerSideDataDecision, CustomerResolution, CustomerVerification, SupportHandoffSummary, SupportInvestigationResult, SupportInvestigationRun])
+@pytest.mark.parametrize("output_model", [ClassificationResult, ProblemDetails, CustomerQuestion, CustomerSideDataDecision, CustomerResolution, CustomerVerification, SupportHandoffSummary, SupportDiagnosis, EvidenceItem, EngineerEscalationPackage, SupportInvestigationResult, SupportInvestigationRun])
 def test_structured_output_descriptions_are_english(output_model: type) -> None:
     schema_text = json.dumps(output_model.model_json_schema(), ensure_ascii=False)
 

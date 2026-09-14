@@ -55,9 +55,46 @@ export type SupportHandoff = {
   handoff_reason: string;
 };
 
+export type EvidenceItem = {
+  evidence_id: string;
+  ticket_id: number;
+  customer_id: string;
+  source_type: "tool";
+  source_reference: string;
+  observed_at: string;
+  summary: string;
+  customer_visibility: "INTERNAL";
+  feature: string;
+  facts: Record<string, string | number | boolean>;
+};
+
+export type EngineerEscalationPackage = {
+  ticket_id: number;
+  customer_id: string | null;
+  issue_summary: string;
+  customer_impact: string;
+  customer_diagnosis: SupportHandoff | null;
+  internal_evidence_ids: string[];
+  tools_used: string[];
+  excluded_causes: string[];
+  possible_causes: string[];
+  unanswered_questions: string[];
+  escalation_reason: string;
+  next_checks: string[];
+};
+
 export type SupportInvestigationResult = {
   conclusion: string;
+  root_cause: string | null;
+  supporting_evidence_ids: string[];
+  contradicting_evidence_ids: string[];
+  confidence_band: "low" | "medium" | "high";
+  resolution: string | null;
+  escalation_reason: string | null;
   supporting_facts: string[];
+  evidence: EvidenceItem[];
+  validation_errors: string[];
+  escalation_package: EngineerEscalationPackage | null;
   customer_explanation: string;
   outcome: "resolution" | "action_required" | "engineer_escalation";
 };

@@ -19,7 +19,7 @@ from app.customer_document_ingestion import load_customer_document
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
-from app.support_results import SupportInvestigationResult
+from app.support_results import SupportDiagnosis
 from simulator.app import app as simulator_app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -49,35 +49,35 @@ class ScenarioSupportModel(BaseChatModel):
             output = AIMessage(content="", tool_calls=calls)
         else:
             data = {message.name: json.loads(message.content) for message in tool_messages}
-            platform = data["get_platform_status"]
-            operation = data.get("get_background_operation")
-            deliveries = data.get("get_event_notification_deliveries")
+            evidence = []
+            for value in data.values():
+                evidence.extend(value.get("evidence", []))
+            platform = next((item["facts"] for item in evidence if item["source_reference"].startswith("get_platform_status:")), {})
+            operation = next((item["facts"] for item in evidence if item["facts"].get("record_type") == "operation"), None)
+            latest_run = next((item["facts"] for item in evidence if item["facts"].get("record_type") == "latest_run"), None)
+            deliveries = [item["facts"] for item in evidence if item["source_reference"].startswith("get_event_notification_deliveries:")]
 
             if any(isinstance(value, dict) and value.get("status") == "error" for value in data.values()):
                 outcome = "engineer_escalation"
                 conclusion = "Required internal data is unavailable."
                 explanation = "我们暂时无法取得足够的信息，已经交给工程师继续检查。"
-                facts = []
-            elif operation is not None and operation["status"] != operation["latest_run_status"]:
+            elif operation is not None and latest_run is not None and operation["status"] != latest_run["status"]:
                 outcome = "engineer_escalation"
                 conclusion = "The failed operation conflicts with its successful latest run."
                 explanation = "目前的信息不一致，已经交给工程师继续检查。"
-                facts = [f"Operation status is {operation['status']}; latest run status is {operation['latest_run_status']}."]
             elif operation is not None and operation["failure_code"] == "dependency_timeout" and operation["retry_allowed"] and platform["status"] == "operational":
                 outcome = "action_required"
                 conclusion = "The export needs a human-controlled internal retry; no action has been executed."
                 explanation = "报表导出暂时未完成，需要技术人员进一步处理。目前没有执行任何更改。"
-                facts = ["The export failed with dependency_timeout and retry_allowed is true.", "The report_exports platform is operational."]
             elif deliveries and all(delivery["response_status"] == 401 for delivery in deliveries) and platform["status"] == "operational":
                 outcome = "resolution"
                 conclusion = "The receiving endpoint rejected notifications while the platform was operational."
                 explanation = "通知已发出，但接收地址拒绝了请求。请检查接收端的访问设置后再试。"
-                facts = ["The latest notification deliveries returned HTTP 401.", "The event_notifications platform is operational."]
             else:
                 raise AssertionError("Unexpected simulator state")
 
-            result = SupportInvestigationResult(conclusion=conclusion, supporting_facts=facts, customer_explanation=explanation, outcome=outcome)
-            output = AIMessage(content="", tool_calls=[{"name": "SupportInvestigationResult", "args": result.model_dump(), "id": "result_call"}])
+            result = SupportDiagnosis(conclusion=conclusion, root_cause=conclusion if outcome != "engineer_escalation" else None, supporting_evidence_ids=[item["evidence_id"] for item in evidence], contradicting_evidence_ids=[item["evidence_id"] for item in evidence if item["facts"].get("record_type") in ("operation", "latest_run")] if outcome == "engineer_escalation" and operation is not None else [], confidence_band="high" if outcome != "engineer_escalation" else "low", resolution=conclusion if outcome != "engineer_escalation" else None, escalation_reason=conclusion if outcome == "engineer_escalation" else None, customer_explanation=explanation, outcome=outcome)
+            output = AIMessage(content="", tool_calls=[{"name": "SupportDiagnosis", "args": result.model_dump(), "id": "result_call"}])
 
         return ChatResult(generations=[ChatGeneration(message=output)])
 
@@ -129,7 +129,7 @@ def scenario_environment(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(customer_workflow, "create_customer_resolution_from_documents", resolve_customer)
     monkeypatch.setattr(customer_workflow, "create_support_handoff_summary", lambda problem, messages: SupportHandoffSummary(issue_summary=problem.problem, customer_impact="The customer cannot complete the requested operation.", approximate_start_time=None))
     monkeypatch.setattr(customer_workflow, "verify_customer_resolution", lambda problem, resolution, message: CustomerVerification(result="resolved", supporting_text=message))
-    agent = create_agent(model=ScenarioSupportModel(), tools=support_agent.support_investigation_tools, system_prompt=support_agent.SUPPORT_INVESTIGATION_SYSTEM_PROMPT, response_format=ToolStrategy(SupportInvestigationResult), middleware=[support_agent.bind_support_tool_customer], context_schema=support_agent.SupportToolContext)
+    agent = create_agent(model=ScenarioSupportModel(), tools=support_agent.support_investigation_tools, system_prompt=support_agent.SUPPORT_INVESTIGATION_SYSTEM_PROMPT, response_format=ToolStrategy(SupportDiagnosis), middleware=[support_agent.bind_support_tool_customer], context_schema=support_agent.SupportToolContext)
     monkeypatch.setattr(support_agent, "support_investigation_agent", agent)
 
     with TestClient(main.app) as client:
@@ -176,20 +176,31 @@ def test_representative_paths_use_actual_simulator_and_both_graphs(case, scenari
             ticket = ticket_response.json()
             assert ticket["handoff"]["customer_id"] == customer_id
             assert ticket["handoff"]["remaining_questions"] == []
-            assert ticket["investigation_tools"] == scenario["expected_support_tools"]
+            assert set(ticket["investigation_tools"]) == set(scenario["expected_support_tools"])
+            assert len(ticket["investigation_tools"]) == len(scenario["expected_support_tools"])
+            assert ticket["investigation_result"]["evidence"]
+            evidence_ids = {item["evidence_id"] for item in ticket["investigation_result"]["evidence"]}
+            assert set(ticket["investigation_result"]["supporting_evidence_ids"]).issubset(evidence_ids)
+            assert "evidence" not in result
+            assert "escalation_package" not in result
             assert set(ticket["investigation_tools"]).isdisjoint(scenario["forbidden_tools"])
             assert session.customer_result == result["customer_response"]
 
             if result["status"] == "action_required":
                 assert ticket["status"] == "ACTION_REQUIRED"
                 assert "没有执行" in result["customer_response"]
+            elif result["status"] == "engineer_escalation":
+                package = ticket["investigation_result"]["escalation_package"]
+                assert package["customer_diagnosis"] == ticket["handoff"]
+                assert package["tools_used"] == ticket["investigation_tools"]
+                assert package["internal_evidence_ids"] == [item["evidence_id"] for item in ticket["investigation_result"]["evidence"]]
 
             repeat = client.post(f"/api/v1/support-sessions/{result['session_id']}/messages", json={"message": "请继续。"})
             assert repeat.json()["ticket_id"] == result["ticket_id"]
             assert database.scalar(select(func.count()).select_from(Ticket)) == 1
 
 
-@pytest.mark.parametrize("failed_path, expected_status", [("/product-context", "engineer_escalation"), ("/recent-activity", "action_required"), ("/background-operation", "engineer_escalation"), ("/platform-status", "engineer_escalation")])
+@pytest.mark.parametrize("failed_path, expected_status", [("/product-context", "engineer_escalation"), ("/recent-activity", "engineer_escalation"), ("/background-operation", "engineer_escalation"), ("/platform-status", "engineer_escalation")])
 def test_tool_failure_uses_alternative_evidence_or_escalates(failed_path, expected_status, scenario_environment, monkeypatch):
     client, database_session, urls = scenario_environment
     original_get = resolvelab.httpx.get
@@ -211,6 +222,9 @@ def test_tool_failure_uses_alternative_evidence_or_escalates(failed_path, expect
 
     if failed_path in ("/product-context", "/recent-activity"):
         assert "tool_errors" in ticket["handoff"]["environment_snapshot"]
+
+    if failed_path == "/recent-activity":
+        assert any("time window" in error for error in ticket["investigation_result"]["validation_errors"])
 
 
 def test_versioned_cases_reference_all_four_valid_scenarios():

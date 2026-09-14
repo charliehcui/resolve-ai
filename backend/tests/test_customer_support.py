@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
 from app.support_agent import SupportInvestigationRun
+from app.support_evidence import create_tool_evidence
 from app.support_results import SupportInvestigationResult
 from app.support_workflow import SupportInvestigationResponse
 from app.tickets import TicketContext
@@ -495,6 +497,9 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
         supporting_facts=["The platform status is operational.", "The two latest notifications returned HTTP 401."],
         customer_explanation="我们确认通知已经发出，但你的接收地址拒绝了请求。请检查接收端的访问设置后再试。",
         outcome="resolution",
+        root_cause="The receiving endpoint rejected the notifications.",
+        confidence_band="high",
+        resolution="Check the receiving endpoint access settings.",
     )
 
     def fake_update_customer_problem(customer_messages: list[str], current_problem_details: ProblemDetails | None) -> ProblemDetails:
@@ -515,9 +520,16 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
         assert ticket_context.handoff is not None
         assert ticket_context.handoff.issue_summary == "Order notifications have not been delivered since today."
         assert ticket_context.handoff.customer_id == "customer_001"
+        observed_at = datetime.now(timezone.utc).isoformat()
+        evidence = create_tool_evidence(ticket_context.id, "customer_001", "get_event_notification_deliveries", [{"customer_id": "customer_001", "delivery_id": "delivery_001", "delivery_status": "failed", "response_status": 401, "attempted_at": observed_at}])
+        evidence.extend(create_tool_evidence(ticket_context.id, "customer_001", "get_platform_status", {"service": "event_notifications", "status": "operational", "updated_at": observed_at}))
+        expected_result.evidence = evidence
+        expected_result.supporting_evidence_ids = [item.evidence_id for item in evidence]
+        expected_result.supporting_facts = [item.summary for item in evidence]
         return SupportInvestigationRun(
             result=expected_result,
             tools_used=["get_event_notification_deliveries", "get_platform_status"],
+            evidence=evidence,
         )
 
     monkeypatch.setattr(customer_workflow, "update_customer_problem", fake_update_customer_problem)
