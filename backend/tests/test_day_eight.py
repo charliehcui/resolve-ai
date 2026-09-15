@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import customer_workflow, main, resolvelab, support_agent, support_sessions, support_workflow, tickets
+from app import customer_workflow, knowledge_retrieval, main, resolvelab, support_agent, support_sessions, support_workflow, tickets
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails
-from app.customer_document_ingestion import load_customer_document
+from app.customer_document_ingestion import load_customer_document, load_internal_document
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
@@ -42,9 +42,9 @@ class ScenarioSupportModel(BaseChatModel):
             handoff = json.loads(messages[-1].content.split("Structured handoff:\n", 1)[1])
 
             if handoff["affected_feature"] == "order notifications":
-                calls = [{"name": "get_event_notification_deliveries", "args": {"customer_id": "customer_999"}, "id": "delivery_call"}, {"name": "get_platform_status", "args": {}, "id": "platform_call"}]
+                calls = [{"name": "get_event_notification_deliveries", "args": {"customer_id": "customer_999"}, "id": "delivery_call"}, {"name": "get_platform_status", "args": {}, "id": "platform_call"}, {"name": "search_internal_knowledge", "args": {"query": "notification response 401", "version": "2026.7", "feature": "security test"}, "id": "knowledge_call"}]
             else:
-                calls = [{"name": "get_background_operation", "args": {"customer_id": "customer_999"}, "id": "operation_call"}, {"name": "get_platform_status", "args": {"service": "report_exports"}, "id": "platform_call"}]
+                calls = [{"name": "get_background_operation", "args": {"customer_id": "customer_999"}, "id": "operation_call"}, {"name": "get_platform_status", "args": {"service": "report_exports"}, "id": "platform_call"}, {"name": "search_internal_knowledge", "args": {"query": "report export dependency timeout", "version": "2026.7", "feature": "security test"}, "id": "knowledge_call"}]
 
             output = AIMessage(content="", tool_calls=calls)
         else:
@@ -101,6 +101,19 @@ def scenario_environment(monkeypatch: pytest.MonkeyPatch):
         return simulator.get(url.removeprefix(resolvelab.settings.resolvelab_base_url))
 
     monkeypatch.setattr(resolvelab.httpx, "get", read_simulator)
+
+    class InternalKnowledgeSearch:
+        def similarity_search_with_relevance_scores(self, query: str, k: int, filter: dict[str, object]):
+            assert {"visibility": {"$eq": "INTERNAL"}} in filter["$and"]
+            assert {"version": {"$eq": "2026.8"}} in filter["$and"]
+            feature_rules = next(rule for rule in filter["$and"] if isinstance(rule, dict) and "$or" in rule and any("feature" in item for item in rule["$or"]))
+            feature = feature_rules["$or"][0]["feature"]["$eq"]
+            source = "docs/internal/event-notification-401.md" if feature == "order notifications" else "docs/internal/report-export-timeout.md"
+            document = load_internal_document(PROJECT_ROOT / source)
+            document.id = f"{source}:0"
+            return [(document, 0.92)]
+
+    monkeypatch.setattr(knowledge_retrieval, "get_knowledge_database_client", lambda: InternalKnowledgeSearch())
 
     def understand_problem(messages: list[str], current: ProblemDetails | None):
         return ProblemDetails(summary="当前操作无法正常完成。", affected_feature="unknown", problem="The requested operation does not complete.", customer_goal="恢复正常使用。", missing_information=["affected feature"])
@@ -181,6 +194,10 @@ def test_representative_paths_use_actual_simulator_and_both_graphs(case, scenari
             assert ticket["investigation_result"]["evidence"]
             evidence_ids = {item["evidence_id"] for item in ticket["investigation_result"]["evidence"]}
             assert set(ticket["investigation_result"]["supporting_evidence_ids"]).issubset(evidence_ids)
+            assert ticket["investigation_result"]["internal_citation_ids"]
+            assert all(citation_id.startswith("docs/internal/") for citation_id in ticket["investigation_result"]["internal_citation_ids"])
+            assert "dependency_timeout" not in result["customer_response"]
+            assert "HTTP 401 runbook" not in result["customer_response"]
             assert "evidence" not in result
             assert "escalation_package" not in result
             assert set(ticket["investigation_tools"]).isdisjoint(scenario["forbidden_tools"])

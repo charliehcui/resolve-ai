@@ -59,7 +59,7 @@ export type EvidenceItem = {
   evidence_id: string;
   ticket_id: number;
   customer_id: string;
-  source_type: "tool";
+  source_type: "tool" | "document";
   source_reference: string;
   observed_at: string;
   summary: string;
@@ -92,6 +92,7 @@ export type SupportInvestigationResult = {
   resolution: string | null;
   escalation_reason: string | null;
   supporting_facts: string[];
+  internal_citation_ids: string[];
   evidence: EvidenceItem[];
   validation_errors: string[];
   escalation_package: EngineerEscalationPackage | null;

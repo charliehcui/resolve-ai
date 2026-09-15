@@ -1,6 +1,7 @@
 ---
 title: Recover a failed report export
 visibility: CUSTOMER
+product: ResolveLab
 feature: report exports
 version: 2026.8
 source_uri: docs/customer/report-exports.md

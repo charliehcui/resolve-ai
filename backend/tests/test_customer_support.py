@@ -13,7 +13,7 @@ from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
 from app.support_agent import SupportInvestigationRun
-from app.support_evidence import create_tool_evidence
+from app.support_evidence import create_internal_knowledge_evidence, create_tool_evidence
 from app.support_results import SupportInvestigationResult
 from app.support_workflow import SupportInvestigationResponse
 from app.tickets import TicketContext
@@ -523,12 +523,15 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
         observed_at = datetime.now(timezone.utc).isoformat()
         evidence = create_tool_evidence(ticket_context.id, "customer_001", "get_event_notification_deliveries", [{"customer_id": "customer_001", "delivery_id": "delivery_001", "delivery_status": "failed", "response_status": 401, "attempted_at": observed_at}])
         evidence.extend(create_tool_evidence(ticket_context.id, "customer_001", "get_platform_status", {"service": "event_notifications", "status": "operational", "updated_at": observed_at}))
+        document = {"chunk_id": "docs/internal/event-notification-401.md:0", "source_uri": "docs/internal/event-notification-401.md", "version": "2026.8", "content": "HTTP 401 means the receiving endpoint rejected authentication.", "score": 0.9, "visibility": "INTERNAL", "feature": "order notifications", "effective_from": "2026-08-01", "effective_to": None}
+        evidence.extend(create_internal_knowledge_evidence(ticket_context.id, "customer_001", "2026.8", "order notifications", [document]))
         expected_result.evidence = evidence
         expected_result.supporting_evidence_ids = [item.evidence_id for item in evidence]
         expected_result.supporting_facts = [item.summary for item in evidence]
+        expected_result.internal_citation_ids = ["docs/internal/event-notification-401.md:0"]
         return SupportInvestigationRun(
             result=expected_result,
-            tools_used=["get_event_notification_deliveries", "get_platform_status"],
+            tools_used=["get_event_notification_deliveries", "get_platform_status", "search_internal_knowledge"],
             evidence=evidence,
         )
 
@@ -557,7 +560,7 @@ def test_day_seven_customer_ticket_support_graph_and_safe_result(monkeypatch: py
     assert ticket_data["status"] == "RESOLVED"
     assert ticket_data["handoff"]["issue_summary"] == "Order notifications have not been delivered since today."
     assert ticket_data["investigation_result"] == expected_result.model_dump(mode="json")
-    assert ticket_data["investigation_tools"] == ["get_event_notification_deliveries", "get_platform_status"]
+    assert ticket_data["investigation_tools"] == ["get_event_notification_deliveries", "get_platform_status", "search_internal_knowledge"]
 
     with support_sessions.SessionLocal() as database:
         saved_session = database.get(SupportSession, response_data["session_id"])

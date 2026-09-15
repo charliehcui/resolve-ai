@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -8,6 +8,22 @@ from app.support_results import EngineerEscalationPackage, EvidenceItem, Support
 from app.tickets import TicketContext
 
 TOOL_NAMES = {"get_customer_account", "get_event_notification_deliveries", "get_platform_status", "get_background_operation"}
+INTERNAL_KNOWLEDGE_TOOL_NAME = "search_internal_knowledge"
+
+
+def get_handoff_product_version(ticket: TicketContext) -> str | None:
+    if ticket.handoff is None:
+        return None
+
+    direct_version = ticket.handoff.environment_snapshot.get("product_version")
+    if direct_version is not None:
+        return str(direct_version)
+
+    current_product_context = ticket.handoff.environment_snapshot.get("current_product_context")
+    if isinstance(current_product_context, dict) and current_product_context.get("product_version") is not None:
+        return str(current_product_context["product_version"])
+
+    return None
 
 
 def create_tool_evidence(ticket_id: int, customer_id: str, tool_name: str, data: object) -> list[EvidenceItem]:
@@ -56,6 +72,44 @@ def create_tool_evidence(ticket_id: int, customer_id: str, tool_name: str, data:
     return evidence
 
 
+def create_internal_knowledge_evidence(ticket_id: int, customer_id: str, version: str | None, feature: str, data: object) -> list[EvidenceItem]:
+    if not isinstance(data, list):
+        return []
+
+    evidence: list[EvidenceItem] = []
+    current_date = date.today()
+
+    for record in data[:3]:
+        if not isinstance(record, dict):
+            continue
+        if record.get("visibility") != "INTERNAL" or record.get("feature") not in (feature, "all"):
+            continue
+        if version is not None and record.get("version") != version:
+            continue
+        if not isinstance(record.get("chunk_id"), str) or not isinstance(record.get("source_uri"), str) or not isinstance(record.get("content"), str):
+            continue
+        if not record["chunk_id"].strip() or not record["source_uri"].startswith("docs/internal/") or not record["content"].strip():
+            continue
+        if isinstance(record.get("score"), bool) or not isinstance(record.get("score"), (int, float)):
+            continue
+
+        try:
+            effective_from = date.fromisoformat(str(record["effective_from"]))
+            effective_to = date.fromisoformat(str(record["effective_to"])) if record.get("effective_to") is not None else None
+        except (KeyError, ValueError):
+            continue
+
+        if effective_from > current_date or effective_to is not None and effective_to < current_date:
+            continue
+
+        observed_at = datetime.combine(effective_from, time.min, tzinfo=timezone.utc)
+        facts: dict[str, str | int | float | bool] = {"chunk_id": record["chunk_id"], "source_uri": record["source_uri"], "version": str(record["version"]), "visibility": "INTERNAL", "effective_from": effective_from.isoformat(), "effective_to": effective_to.isoformat() if effective_to is not None else "", "score": float(record["score"])}
+        item = EvidenceItem(evidence_id=f"ticket_{ticket_id}:document_{record['chunk_id']}", ticket_id=ticket_id, customer_id=customer_id, source_type="document", source_reference=f"{INTERNAL_KNOWLEDGE_TOOL_NAME}:{record['chunk_id']}", observed_at=observed_at, summary=record["content"][:1000], feature=str(record["feature"]), facts=facts)
+        evidence.append(item)
+
+    return evidence
+
+
 def parse_source_time(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
@@ -97,15 +151,27 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
     errors: list[str] = []
     valid_evidence: dict[str, EvidenceItem] = {}
     time_window = problem_time_window(ticket)
+    product_version = get_handoff_product_version(ticket)
 
     for item in evidence:
+        source_name = item.source_reference.split(":", 1)[0]
         if ticket.handoff is None or item.ticket_id != ticket.id or item.customer_id != ticket.handoff.customer_id:
             errors.append("Evidence does not belong to the current customer and ticket.")
-        elif item.source_reference.split(":", 1)[0] not in TOOL_NAMES:
+        elif item.source_type == "tool" and source_name not in TOOL_NAMES:
             errors.append("Evidence has an unapproved source.")
-        elif time_window is None:
+        elif item.source_type == "document" and source_name != INTERNAL_KNOWLEDGE_TOOL_NAME:
+            errors.append("Internal knowledge evidence has an unapproved source.")
+        elif item.source_type == "document" and item.facts.get("visibility") != "INTERNAL":
+            errors.append("Internal knowledge evidence has the wrong visibility.")
+        elif item.source_type == "document" and item.source_reference != f"{INTERNAL_KNOWLEDGE_TOOL_NAME}:{item.facts.get('chunk_id')}":
+            errors.append("Internal knowledge evidence does not match its document chunk.")
+        elif item.source_type == "document" and product_version is not None and item.facts.get("version") != product_version:
+            errors.append("Internal knowledge evidence has the wrong product version.")
+        elif item.source_type == "document" and not internal_document_is_current(item):
+            errors.append("Internal knowledge evidence is not currently effective.")
+        elif item.source_type == "tool" and time_window is None:
             errors.append("The issue time window is unknown; evidence timing cannot be confirmed.")
-        elif not time_window[0] <= item.observed_at <= time_window[1]:
+        elif item.source_type == "tool" and time_window is not None and not time_window[0] <= item.observed_at <= time_window[1]:
             errors.append("Evidence is outside the current issue time window.")
         elif item.feature not in (ticket.handoff.affected_feature, "account"):
             errors.append("Evidence concerns a different product feature.")
@@ -159,6 +225,8 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
         errors.append("The diagnosis has no valid supporting evidence.")
 
     if diagnosis.outcome != "engineer_escalation":
+        if product_version is None:
+            errors.append("A definite outcome requires a confirmed product version for internal knowledge validation.")
         if not diagnosis.root_cause or not diagnosis.root_cause.strip() or not diagnosis.resolution or not diagnosis.resolution.strip() or diagnosis.confidence_band == "low":
             errors.append("A definite outcome requires a supported cause, resolution, and at least medium confidence.")
 
@@ -166,6 +234,8 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
         primary_source = "get_background_operation" if ticket.handoff is not None and ticket.handoff.affected_feature == "report exports" else "get_event_notification_deliveries"
         if not {primary_source, "get_platform_status"}.issubset(cited_sources):
             errors.append("The outcome is missing required primary-state or platform evidence.")
+        if INTERNAL_KNOWLEDGE_TOOL_NAME not in cited_sources:
+            errors.append("The outcome is missing a current internal knowledge citation.")
 
         if diagnosis.outcome == "action_required":
             retry_supported = False
@@ -189,9 +259,22 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
     elif diagnosis.outcome == "engineer_escalation" and not diagnosis.escalation_reason:
         values["escalation_reason"] = "The available evidence does not support a safe resolution."
 
-    result = SupportInvestigationResult(**values, supporting_facts=[valid_evidence[evidence_id].summary for evidence_id in supporting_ids], evidence=list(valid_evidence.values()), validation_errors=errors)
+    internal_citation_ids = [str(valid_evidence[evidence_id].facts["chunk_id"]) for evidence_id in supporting_ids if valid_evidence[evidence_id].source_type == "document"]
+    result = SupportInvestigationResult(**values, supporting_facts=[valid_evidence[evidence_id].summary for evidence_id in supporting_ids], internal_citation_ids=internal_citation_ids, evidence=list(valid_evidence.values()), validation_errors=errors)
 
     return result
+
+
+def internal_document_is_current(item: EvidenceItem) -> bool:
+    try:
+        effective_from = date.fromisoformat(str(item.facts["effective_from"]))
+        effective_to_text = str(item.facts["effective_to"])
+        effective_to = date.fromisoformat(effective_to_text) if effective_to_text else None
+    except (KeyError, ValueError):
+        return False
+
+    current_date = date.today()
+    return effective_from <= current_date and (effective_to is None or effective_to >= current_date)
 
 
 def build_engineer_escalation_package(ticket: TicketContext, result: SupportInvestigationResult, tool_errors: list[str], tools_used: list[str]) -> EngineerEscalationPackage:

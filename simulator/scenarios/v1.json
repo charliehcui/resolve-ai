@@ -18,7 +18,7 @@
       ],
       "background_operation": null,
       "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
-      "expected_support_tools": ["get_event_notification_deliveries", "get_platform_status"],
+      "expected_support_tools": ["get_event_notification_deliveries", "get_platform_status", "search_internal_knowledge"],
       "forbidden_tools": ["get_background_operation", "retry_failed_operation", "execute_action"],
       "expected_outcome": "support_resolved"
     },
@@ -34,7 +34,7 @@
       "background_operation": null,
       "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
       "expected_support_tools": [],
-      "forbidden_tools": ["get_customer_account", "get_event_notification_deliveries", "get_platform_status", "get_background_operation", "retry_failed_operation", "execute_action"],
+      "forbidden_tools": ["get_customer_account", "get_event_notification_deliveries", "get_platform_status", "get_background_operation", "search_internal_knowledge", "retry_failed_operation", "execute_action"],
       "expected_outcome": "resolved"
     },
     {
@@ -47,7 +47,7 @@
       "deliveries": [],
       "background_operation": {"operation_id": "export_003", "customer_id": "customer_003", "feature": "report exports", "status": "failed", "failure_code": "dependency_timeout", "retry_allowed": true, "latest_run_status": "failed", "updated_at": "2026-08-25T09:20:00Z"},
       "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
-      "expected_support_tools": ["get_background_operation", "get_platform_status"],
+      "expected_support_tools": ["get_background_operation", "get_platform_status", "search_internal_knowledge"],
       "forbidden_tools": ["get_event_notification_deliveries", "retry_failed_operation", "execute_action"],
       "expected_outcome": "action_required"
     },
@@ -61,7 +61,7 @@
       "deliveries": [],
       "background_operation": {"operation_id": "export_004", "customer_id": "customer_004", "feature": "report exports", "status": "failed", "failure_code": "unknown", "retry_allowed": false, "latest_run_status": "succeeded", "updated_at": "2026-08-25T09:20:00Z"},
       "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
-      "expected_support_tools": ["get_background_operation", "get_platform_status"],
+      "expected_support_tools": ["get_background_operation", "get_platform_status", "search_internal_knowledge"],
       "forbidden_tools": ["get_event_notification_deliveries", "retry_failed_operation", "execute_action"],
       "expected_outcome": "engineer_escalation"
     }

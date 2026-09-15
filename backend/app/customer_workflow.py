@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails, create_customer_question, create_customer_resolution_from_documents, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data, verify_customer_resolution
-from app.customer_question_retrieval import retrieve_documents_for_customer_question
+from app.knowledge_retrieval import retrieve_documents_for_customer_question
 from app.customer_tools import get_current_product_context, get_recent_customer_activity
 from app.handoff import SupportFact, SupportHandoff, create_support_handoff_summary
 from app.support_sessions import create_support_session_record, save_support_session_progress

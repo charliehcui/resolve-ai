@@ -9,10 +9,11 @@ from app.core.config import settings
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_VECTOR_SIZE = 384
-CUSTOMER_KNOWLEDGE_TABLE_NAME = "customer_documents"
+KNOWLEDGE_TABLE_NAME = "customer_documents"
 
-CUSTOMER_KNOWLEDGE_METADATA_COLUMNS = [
+KNOWLEDGE_METADATA_COLUMNS = [
     Column("visibility", "VARCHAR", nullable=False),
+    Column("product", "VARCHAR", nullable=False),
     Column("feature", "VARCHAR", nullable=False),
     Column("version", "VARCHAR", nullable=False),
     Column("source_uri", "VARCHAR", nullable=False),
@@ -20,7 +21,7 @@ CUSTOMER_KNOWLEDGE_METADATA_COLUMNS = [
     Column("effective_to", "DATE", nullable=True),
 ]
 
-CUSTOMER_KNOWLEDGE_METADATA_FIELDS = [column.name for column in CUSTOMER_KNOWLEDGE_METADATA_COLUMNS]
+KNOWLEDGE_METADATA_FIELDS = [column.name for column in KNOWLEDGE_METADATA_COLUMNS]
 
 embedding_model: HuggingFaceEmbeddings | None = None
 knowledge_database_engine: PGEngine | None = None
@@ -36,7 +37,7 @@ def get_embedding_model() -> HuggingFaceEmbeddings:
     return embedding_model
 
 
-def get_customer_knowledge_database_engine() -> PGEngine:
+def get_knowledge_database_engine() -> PGEngine:
     global knowledge_database_engine
 
     if knowledge_database_engine is None:
@@ -48,20 +49,16 @@ def get_customer_knowledge_database_engine() -> PGEngine:
     return knowledge_database_engine
 
 
-def reset_customer_knowledge_table() -> None:
-    database_engine = get_customer_knowledge_database_engine()
-
-    # Recreates the PostgreSQL table used to store customer document chunks and vectors.
-    database_engine.init_vectorstore_table(table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME, vector_size=EMBEDDING_VECTOR_SIZE, metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_COLUMNS, id_column=Column("chunk_id", "VARCHAR", nullable=False), overwrite_existing=True)
+def reset_knowledge_table() -> None:
+    database_engine = get_knowledge_database_engine()
+    database_engine.init_vectorstore_table(table_name=KNOWLEDGE_TABLE_NAME, vector_size=EMBEDDING_VECTOR_SIZE, metadata_columns=KNOWLEDGE_METADATA_COLUMNS, id_column=Column("chunk_id", "VARCHAR", nullable=False), overwrite_existing=True)
 
 
-def get_customer_knowledge_database_client() -> PGVectorStore:
+def get_knowledge_database_client() -> PGVectorStore:
     global knowledge_database_client
 
     if knowledge_database_client is None:
-        database_engine = get_customer_knowledge_database_engine()
-
-        # Creates a Python object for reading and writing the existing customer knowledge table.
-        knowledge_database_client = PGVectorStore.create_sync(engine=database_engine, table_name=CUSTOMER_KNOWLEDGE_TABLE_NAME, embedding_service=get_embedding_model(), metadata_columns=CUSTOMER_KNOWLEDGE_METADATA_FIELDS, id_column="chunk_id")
+        database_engine = get_knowledge_database_engine()
+        knowledge_database_client = PGVectorStore.create_sync(engine=database_engine, table_name=KNOWLEDGE_TABLE_NAME, embedding_service=get_embedding_model(), metadata_columns=KNOWLEDGE_METADATA_FIELDS, id_column="chunk_id")
 
     return knowledge_database_client

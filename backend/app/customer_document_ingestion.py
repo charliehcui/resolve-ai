@@ -5,17 +5,18 @@ import yaml
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.customer_knowledge_database import get_customer_knowledge_database_client, reset_customer_knowledge_table
+from app.knowledge_database import get_knowledge_database_client, reset_knowledge_table
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CUSTOMER_DOCUMENTS_DIRECTORY = PROJECT_ROOT / "docs" / "customer"
+INTERNAL_DOCUMENTS_DIRECTORY = PROJECT_ROOT / "docs" / "internal"
 
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 
 
-def load_customer_document(document_path: Path) -> Document:
+def load_knowledge_document(document_path: Path, expected_visibility: str) -> Document:
     document_text = document_path.read_text(encoding="utf-8")
     document_parts = document_text.split("---", 2)
 
@@ -29,14 +30,14 @@ def load_customer_document(document_path: Path) -> Document:
     if isinstance(metadata_values, dict) is False:
         raise ValueError(f"Document metadata is invalid: {document_path}")
 
-    required_fields = ["title", "visibility", "feature", "version", "source_uri", "effective_from"]
+    required_fields = ["title", "visibility", "product", "feature", "version", "source_uri", "effective_from"]
 
     for required_field in required_fields:
         if metadata_values.get(required_field) is None:
             raise ValueError(f"Document field is missing: {required_field}")
 
-    if metadata_values["visibility"] != "CUSTOMER":
-        raise ValueError(f"Customer document must use CUSTOMER visibility: {document_path}")
+    if metadata_values["visibility"] != expected_visibility:
+        raise ValueError(f"Document must use {expected_visibility} visibility: {document_path}")
 
     effective_from = date.fromisoformat(str(metadata_values["effective_from"]))
 
@@ -47,7 +48,8 @@ def load_customer_document(document_path: Path) -> Document:
 
     metadata = {
         "title": str(metadata_values["title"]),
-        "visibility": "CUSTOMER",
+        "visibility": expected_visibility,
+        "product": str(metadata_values["product"]),
         "feature": str(metadata_values["feature"]),
         "version": str(metadata_values["version"]),
         "source_uri": str(metadata_values["source_uri"]),
@@ -58,15 +60,24 @@ def load_customer_document(document_path: Path) -> Document:
     return Document(page_content=document_content, metadata=metadata)
 
 
-def load_all_customer_documents() -> list[Document]:
-    customer_documents: list[Document] = []
-    document_paths = sorted(CUSTOMER_DOCUMENTS_DIRECTORY.glob("*.md"))
+def load_customer_document(document_path: Path) -> Document:
+    return load_knowledge_document(document_path, "CUSTOMER")
 
-    for document_path in document_paths:
-        customer_document = load_customer_document(document_path)
-        customer_documents.append(customer_document)
 
-    return customer_documents
+def load_internal_document(document_path: Path) -> Document:
+    return load_knowledge_document(document_path, "INTERNAL")
+
+
+def load_all_knowledge_documents() -> list[Document]:
+    knowledge_documents: list[Document] = []
+    document_paths = [(path, "CUSTOMER") for path in sorted(CUSTOMER_DOCUMENTS_DIRECTORY.glob("*.md"))]
+    document_paths.extend((path, "INTERNAL") for path in sorted(INTERNAL_DOCUMENTS_DIRECTORY.glob("*.md")))
+
+    for document_path, visibility in document_paths:
+        knowledge_document = load_knowledge_document(document_path, visibility)
+        knowledge_documents.append(knowledge_document)
+
+    return knowledge_documents
 
 
 def create_chunk_ids(document_chunks: list[Document]) -> list[str]:
@@ -84,24 +95,24 @@ def create_chunk_ids(document_chunks: list[Document]) -> list[str]:
     return chunk_ids
 
 
-def import_customer_documents() -> int:
-    customer_documents = load_all_customer_documents()
+def import_knowledge_documents() -> int:
+    knowledge_documents = load_all_knowledge_documents()
 
-    if len(customer_documents) == 0:
-        raise ValueError("No customer documents were found")
+    if len(knowledge_documents) == 0:
+        raise ValueError("No knowledge documents were found")
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    document_chunks = text_splitter.split_documents(customer_documents)
+    document_chunks = text_splitter.split_documents(knowledge_documents)
     chunk_ids = create_chunk_ids(document_chunks)
 
-    reset_customer_knowledge_table()
+    reset_knowledge_table()
 
-    knowledge_database = get_customer_knowledge_database_client()
+    knowledge_database = get_knowledge_database_client()
     knowledge_database.add_documents(documents=document_chunks, ids=chunk_ids)
 
     return len(document_chunks)
 
 
 if __name__ == "__main__":
-    imported_chunk_count = import_customer_documents()
-    print(f"Imported {imported_chunk_count} customer document chunks.")
+    imported_chunk_count = import_knowledge_documents()
+    print(f"Imported {imported_chunk_count} knowledge document chunks.")

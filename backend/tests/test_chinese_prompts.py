@@ -5,7 +5,7 @@ import pytest
 
 from app.classification import CLASSIFICATION_SYSTEM_PROMPT, ClassificationResult
 from app.customer_agent import CUSTOMER_QUESTION_PROMPT, CUSTOMER_RESOLUTION_PROMPT, CUSTOMER_SIDE_DATA_DECISION_PROMPT, CUSTOMER_SYSTEM_PROMPT, CUSTOMER_VERIFICATION_PROMPT, CustomerQuestion, CustomerResolution, CustomerSideDataDecision, CustomerVerification, ProblemDetails
-from app.customer_question_retrieval import retrieve_documents_for_customer_question
+from app.knowledge_retrieval import retrieve_documents_for_customer_question
 from app.handoff import SUPPORT_HANDOFF_SYSTEM_PROMPT, SupportHandoffSummary
 from app.support_agent import SUPPORT_INVESTIGATION_SYSTEM_PROMPT, SupportInvestigationRun, support_investigation_tools
 from app.support_results import EngineerEscalationPackage, EvidenceItem, SupportDiagnosis, SupportInvestigationResult
@@ -22,7 +22,7 @@ def test_prompts_limit_simplified_chinese_to_customer_visible_output() -> None:
     assert "affected_feature, problem, and missing_information are internal workflow data and must use English" in CUSTOMER_SYSTEM_PROMPT
     assert "question is customer-visible" in CUSTOMER_QUESTION_PROMPT
     assert "explanation and steps are customer-visible" in CUSTOMER_RESOLUTION_PROMPT
-    assert "conclusion and supporting_facts are internal technical output and must use English" in SUPPORT_INVESTIGATION_SYSTEM_PROMPT
+    assert "Server-generated supporting_facts must also use English" in SUPPORT_INVESTIGATION_SYSTEM_PROMPT
     assert "customer_explanation is customer-visible" in SUPPORT_INVESTIGATION_SYSTEM_PROMPT
 
 

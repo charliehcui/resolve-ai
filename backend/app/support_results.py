@@ -11,13 +11,13 @@ class EvidenceItem(BaseModel):
     evidence_id: str = Field(min_length=1, description="An evidence ID assigned by server code, never by the model")
     ticket_id: int = Field(gt=0, description="The ticket that owns this evidence")
     customer_id: str = Field(min_length=1, max_length=100, description="The customer bound by the server to the current ticket")
-    source_type: Literal["tool"] = Field(default="tool", description="The actual source type; only read-only tool evidence is supported")
+    source_type: Literal["tool", "document"] = Field(default="tool", description="Whether the source is a read-only system record or a validated internal document chunk")
     source_reference: str = Field(min_length=1, max_length=300, description="The tool name and the observed record reference")
     observed_at: AwareDatetime = Field(description="The timestamp supplied by the observed source record")
     summary: str = Field(min_length=1, max_length=1000, description="A bounded factual source summary in English, created by server code")
     customer_visibility: Literal["INTERNAL"] = Field(default="INTERNAL", description="Internal evidence is never returned in customer-facing responses")
     feature: str = Field(max_length=100, description="The feature associated with the observed record")
-    facts: dict[str, str | int | bool] = Field(description="Only the bounded source fields needed for validation; excludes raw logs and response messages")
+    facts: dict[str, str | int | float | bool] = Field(description="Only the bounded source fields needed for validation; excludes raw logs and response messages")
 
 
 class SupportDiagnosis(BaseModel):
@@ -53,6 +53,7 @@ class EngineerEscalationPackage(BaseModel):
 
 class SupportInvestigationResult(SupportDiagnosis):
     supporting_facts: list[str] = Field(default_factory=list, description="Internal English source summaries derived by the server from the cited evidence")
+    internal_citation_ids: list[str] = Field(default_factory=list, description="Validated internal document chunk IDs supporting the result")
     evidence: list[EvidenceItem] = Field(default_factory=list, max_length=10, description="Server-created evidence retained with the saved ticket investigation")
     validation_errors: list[str] = Field(default_factory=list, description="Internal English validation failures; never exposed to the customer")
     escalation_package: EngineerEscalationPackage | None = Field(default=None, description="The server-built engineer handoff when the outcome requires escalation")

@@ -181,6 +181,8 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
                 <div>
                   <p className="text-xs text-slate-500">Supporting evidence IDs</p>
                   <p className="mt-2 break-all text-xs leading-6 text-cyan-300">{investigation.supporting_evidence_ids.join(", ") || "None"}</p>
+                  <p className="mt-3 text-xs text-slate-500">Internal document citations</p>
+                  <p className="mt-2 break-all text-xs leading-6 text-cyan-300">{investigation.internal_citation_ids.join(", ") || "None"}</p>
                   <p className="mt-3 text-xs text-slate-500">Contradicting evidence IDs</p>
                   <p className="mt-2 break-all text-xs leading-6 text-amber-300">{investigation.contradicting_evidence_ids.join(", ") || "None"}</p>
                 </div>
@@ -220,7 +222,7 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
                     <li key={item.evidence_id} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
                       <p className="break-all text-xs text-cyan-300">{item.evidence_id}</p>
                       <p className="mt-2 break-all text-xs text-slate-400">Source: {item.source_reference}</p>
-                      <p className="mt-1 text-xs text-slate-500">Observed at: {item.observed_at} · {item.customer_visibility}</p>
+                      <p className="mt-1 text-xs text-slate-500">{item.source_type === "document" ? "Effective from" : "Observed at"}: {item.observed_at} · {item.customer_visibility}</p>
                       <p className="mt-3 text-sm leading-6 text-slate-300">{item.summary}</p>
                     </li>
                   ))}

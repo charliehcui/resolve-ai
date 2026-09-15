@@ -1,6 +1,7 @@
 ---
 title: Order notifications overview
 visibility: CUSTOMER
+product: ResolveLab
 feature: order notifications
 version: 2026.8
 source_uri: docs/customer/overview.md
