@@ -1,0 +1,34 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Local build plan
+ResolveAI_V2_Zero_to_One_Build_Plan.md
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Frontend
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Runtime files
+artifacts/
+logs/
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
