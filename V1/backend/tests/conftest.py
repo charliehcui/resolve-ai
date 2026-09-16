@@ -2,13 +2,15 @@ from contextlib import contextmanager
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from app import checkpointing
 
 
 @pytest.fixture(autouse=True)
 def use_test_checkpointer(monkeypatch: pytest.MonkeyPatch):
-    checkpointer = InMemorySaver()
+    serializer = JsonPlusSerializer(allowed_msgpack_modules=checkpointing.ALLOWED_CHECKPOINT_TYPES)
+    checkpointer = InMemorySaver(serde=serializer)
 
     @contextmanager
     def open_test_checkpointer():

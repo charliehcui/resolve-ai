@@ -11,6 +11,7 @@ class CustomerQuestionRetrievalResult(BaseModel):
     source_uri: str
     version: str
     content: str
+    score: float
 
 
 class InternalKnowledgeResult(BaseModel):
@@ -70,15 +71,15 @@ def retrieve_documents_for_customer_question(customer_question: str, version: st
     """Retrieve current customer-visible documents related to a customer question."""
     document_filter = current_document_filter("CUSTOMER", version=version)
     knowledge_database = get_knowledge_database_client()
-    retrieved_documents = knowledge_database.similarity_search(query=customer_question, k=3, filter=document_filter)
+    retrieved_documents = knowledge_database.similarity_search_with_relevance_scores(query=customer_question, k=3, filter=document_filter)
     results: list[dict[str, object]] = []
 
-    for retrieved_document in retrieved_documents:
+    for retrieved_document, score in retrieved_documents:
         if not document_is_current(retrieved_document.metadata, "CUSTOMER", version):
             continue
         if not str(retrieved_document.metadata.get("source_uri", "")).startswith("docs/customer/"):
             continue
-        result = CustomerQuestionRetrievalResult(chunk_id=str(retrieved_document.id), source_uri=str(retrieved_document.metadata["source_uri"]), version=str(retrieved_document.metadata["version"]), content=retrieved_document.page_content)
+        result = CustomerQuestionRetrievalResult(chunk_id=str(retrieved_document.id), source_uri=str(retrieved_document.metadata["source_uri"]), version=str(retrieved_document.metadata["version"]), content=retrieved_document.page_content, score=score)
         results.append(result.model_dump())
 
     return results

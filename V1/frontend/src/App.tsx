@@ -4,7 +4,10 @@ import type { FormEvent } from "react";
 import { getBackendHealth, getSupportSession, getTicket, sendCustomerMessage, submitApproval } from "./lib/backend";
 import type { CustomerConversationMessage, SupportResponse, TicketResponse } from "./lib/backend";
 
-const savedSessionKey = "resolveai_support_session_id";
+const allowedDemoCustomerIds = new Set(["customer_001", "customer_002", "customer_003", "customer_004"]);
+const requestedDemoCustomerId = new URLSearchParams(window.location.search).get("customer") ?? "customer_001";
+const demoCustomerId = allowedDemoCustomerIds.has(requestedDemoCustomerId) ? requestedDemoCustomerId : "customer_001";
+const savedSessionKey = `resolveai_support_session_id:${demoCustomerId}`;
 
 const statusLabels: Record<SupportResponse["status"], string> = {
   started: "正在了解问题",
@@ -405,7 +408,7 @@ function App() {
         }
       } catch (error) {
         if (active && error instanceof Error) {
-          setErrorMessage(error.message);
+          setErrorMessage(error instanceof TypeError ? "暂时无法连接服务，请稍后重试。" : error.message);
         }
       } finally {
         if (active) {
@@ -488,7 +491,7 @@ function App() {
     setErrorMessage("");
 
     try {
-      const response = await sendCustomerMessage(sessionId, customerMessage);
+      const response = await sendCustomerMessage(sessionId, customerMessage, demoCustomerId);
 
       window.localStorage.setItem(savedSessionKey, response.session_id);
       setMessages(response.messages);
@@ -516,7 +519,7 @@ function App() {
       }
     } catch (error) {
       if (error instanceof Error) {
-        setErrorMessage(error.message);
+        setErrorMessage(error instanceof TypeError ? "暂时无法连接服务，请稍后重试。" : error.message);
       } else {
         setErrorMessage("消息发送失败，请重试。");
       }

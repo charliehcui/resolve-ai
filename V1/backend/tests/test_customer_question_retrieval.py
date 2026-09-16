@@ -12,11 +12,12 @@ class FakeCustomerDocumentDatabase:
         self.search_query = ""
         self.result_count = 0
 
-    def similarity_search(self, query: str, k: int, filter: dict[str, object]) -> list[Document]:
+    def similarity_search_with_relevance_scores(self, query: str, k: int, filter: dict[str, object]) -> list[tuple[Document, float]]:
         self.search_query = query
         self.result_count = k
         self.search_filter = filter
-        return [Document(id="docs/customer/FAQ.md:0", page_content="Check the saved account credentials.", metadata={"source_uri": "docs/customer/FAQ.md", "visibility": "CUSTOMER", "version": "2026.8", "effective_from": date(2026, 8, 1), "effective_to": None})]
+        document = Document(id="docs/customer/FAQ.md:0", page_content="Check the saved account credentials.", metadata={"source_uri": "docs/customer/FAQ.md", "visibility": "CUSTOMER", "version": "2026.8", "effective_from": date(2026, 8, 1), "effective_to": None})
+        return [(document, 0.87)]
 
 
 def test_customer_document_search_does_not_filter_by_feature(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,7 +34,7 @@ def test_customer_document_search_does_not_filter_by_feature(monkeypatch: pytest
     assert {"effective_from": {"$lte": date.today()}} in filter_rules
     assert {"$or": [{"effective_to": {"$exists": False}}, {"effective_to": {"$gte": date.today()}}]} in filter_rules
     assert "feature" not in str(customer_document_database.search_filter)
-    assert results == [{"chunk_id": "docs/customer/FAQ.md:0", "source_uri": "docs/customer/FAQ.md", "version": "2026.8", "content": "Check the saved account credentials."}]
+    assert results == [{"chunk_id": "docs/customer/FAQ.md:0", "source_uri": "docs/customer/FAQ.md", "version": "2026.8", "content": "Check the saved account credentials.", "score": 0.87}]
 
 
 def test_customer_document_search_skips_version_filter_when_version_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:

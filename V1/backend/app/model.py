@@ -9,5 +9,5 @@ def create_chat_model(temperature: float) -> ChatGroq:
         api_key=settings.groq_api_key,
         temperature=temperature,
         timeout=20,
-        max_retries=1,
+        max_retries=2,
     )

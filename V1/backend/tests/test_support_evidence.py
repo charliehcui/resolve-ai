@@ -36,6 +36,15 @@ def test_valid_evidence_supports_diagnosis_and_server_derived_facts(evidence_cas
     assert "response_message" not in result.model_dump_json()
 
 
+def test_current_generic_internal_document_can_support_any_feature(evidence_case):
+    ticket, diagnosis, evidence = evidence_case
+    evidence[2] = evidence[2].model_copy(update={"feature": "all"})
+    result = validate_support_evidence(ticket, diagnosis, evidence)
+
+    assert result.outcome == "resolution"
+    assert result.validation_errors == []
+
+
 def test_fabricated_evidence_id_is_rejected(evidence_case):
     ticket, diagnosis, evidence = evidence_case
     diagnosis = diagnosis.model_copy(update={"supporting_evidence_ids": [evidence[0].evidence_id, "invented_evidence"]})

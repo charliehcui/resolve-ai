@@ -1,0 +1,450 @@
+{
+  "report_version": "1.0",
+  "dataset_version": "1.0",
+  "generated_at": "2026-09-16T07:44:40.824661+00:00",
+  "model": "openai/gpt-oss-20b",
+  "summary": {
+    "case_count": 1,
+    "passed_count": 1,
+    "failed_count": 0,
+    "pass_rate": 1.0,
+    "unnecessary_question_count": 0,
+    "known_information_repeat_rate": 0.0,
+    "forbidden_tool_call_count": 0,
+    "approval_bypass_count": 0,
+    "idempotency_failure_count": 0,
+    "latency_ms": 108510.55,
+    "model_calls": 10,
+    "input_tokens": 15480,
+    "output_tokens": 3377,
+    "estimated_cost_usd": 0.002174
+  },
+  "langsmith": {
+    "status": "not_requested"
+  },
+  "results": [
+    {
+      "case_id": "agent_007",
+      "scenario_id": "notification_endpoint_rejected",
+      "passed": true,
+      "metrics": {
+        "problem_schema_valid": true,
+        "understanding_accurate": true,
+        "question_expectations_met": true,
+        "unnecessary_question_count": 0,
+        "repeated_known_information_count": 0,
+        "customer_citations_valid": true,
+        "handoff_complete": true,
+        "required_tools_used": true,
+        "forbidden_tool_call_count": 0,
+        "forbidden_tool_calls": [],
+        "evidence_coverage_valid": true,
+        "outcome_correct": true,
+        "customer_binding_valid": true,
+        "unsafe_output_found": false,
+        "approval_bypass_count": 0,
+        "idempotency_valid": true
+      },
+      "actual": {
+        "session_id": "80c23470-f0cb-40b4-ba86-cfa3f4aa7e44",
+        "ticket_id": 8,
+        "expected_customer_id": "customer_001",
+        "final_outcome": "support_resolved",
+        "problem_details": {
+          "summary": "订单通知无法收到",
+          "affected_feature": "order notifications",
+          "problem": "Order notifications not received",
+          "customer_goal": "我想收到订单通知",
+          "missing_information": []
+        },
+        "questions": [],
+        "customer_graph_path": [
+          "save_customer_message",
+          "update_problem_details",
+          "get_customer_side_data",
+          "update_problem_with_customer_side_data",
+          "retrieve_customer_documents",
+          "prepare_customer_resolution",
+          "offer_customer_resolution",
+          "save_customer_message",
+          "wait_for_customer_verification",
+          "finalize_customer_resolution",
+          "build_support_handoff",
+          "create_support_ticket"
+        ],
+        "support_graph_path": [
+          "load_handoff",
+          "investigate",
+          "validate_evidence",
+          "finalize_support_result"
+        ],
+        "customer_tools": [
+          "get_current_product_context",
+          "get_recent_customer_activity",
+          "retrieve_documents_for_customer_question"
+        ],
+        "support_tools": [
+          "get_event_notification_deliveries",
+          "get_platform_status",
+          "search_internal_knowledge"
+        ],
+        "customer_citation_ids": [
+          "docs/customer/FAQ.md:0",
+          "docs/customer/overview.md:0",
+          "docs/customer/quick-checks.md:0"
+        ],
+        "resolution_citation_ids": [
+          "docs/customer/FAQ.md:0",
+          "docs/customer/overview.md:0",
+          "docs/customer/quick-checks.md:0"
+        ],
+        "handoff": {
+          "support_session_id": "80c23470-f0cb-40b4-ba86-cfa3f4aa7e44",
+          "customer_id": "customer_001",
+          "issue_summary": "Order notifications not received; last notification failed; customer verified address and test notification still fails.",
+          "affected_feature": "order notifications",
+          "customer_impact": "Customer did not state an impact",
+          "approximate_start_time": null,
+          "environment_snapshot": {
+            "current_product_context": {
+              "account_status": "active",
+              "product_version": "2026.8",
+              "affected_feature": "order notifications",
+              "feature_enabled": true
+            },
+            "recent_activity": {
+              "affected_feature": "order notifications",
+              "activity": "Sending the latest order notification",
+              "result": "failed",
+              "occurred_at": "2026-08-25T09:20:00Z"
+            }
+          },
+          "collected_facts": [
+            {
+              "name": "account_status",
+              "value": "active",
+              "source": "ResolveLab customer product context"
+            },
+            {
+              "name": "product_version",
+              "value": "2026.8",
+              "source": "ResolveLab customer product context"
+            },
+            {
+              "name": "affected_feature",
+              "value": "order notifications",
+              "source": "ResolveLab customer product context"
+            },
+            {
+              "name": "feature_enabled",
+              "value": "True",
+              "source": "ResolveLab customer product context"
+            },
+            {
+              "name": "affected_feature",
+              "value": "order notifications",
+              "source": "ResolveLab recent customer activity"
+            },
+            {
+              "name": "activity",
+              "value": "Sending the latest order notification",
+              "source": "ResolveLab recent customer activity"
+            },
+            {
+              "name": "result",
+              "value": "failed",
+              "source": "ResolveLab recent customer activity"
+            },
+            {
+              "name": "occurred_at",
+              "value": "2026-08-25T09:20:00Z",
+              "source": "ResolveLab recent customer activity"
+            }
+          ],
+          "attempted_steps": [
+            "在设置中确认订单通知已启用。",
+            "检查并确认目的地址是否正确。",
+            "发送测试通知并查看结果；若仍失败，请联系支持。"
+          ],
+          "citation_ids": [
+            "docs/customer/FAQ.md:0",
+            "docs/customer/overview.md:0",
+            "docs/customer/quick-checks.md:0"
+          ],
+          "remaining_questions": [],
+          "handoff_reason": "The customer confirmed that the proposed steps did not resolve the problem."
+        },
+        "evidence": [
+          {
+            "evidence_id": "ticket_8:evidence_ebfa10d1f46e4066828964d4d0d26a12",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "tool",
+            "source_reference": "get_event_notification_deliveries:delivery_001",
+            "observed_at": "2026-08-25T09:15:00Z",
+            "summary": "delivery_001: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+            "customer_visibility": "INTERNAL",
+            "feature": "order notifications",
+            "facts": {
+              "delivery_status": "failed",
+              "response_status": 401
+            }
+          },
+          {
+            "evidence_id": "ticket_8:evidence_ee66ec3073be4114b428759bab5be5b1",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "tool",
+            "source_reference": "get_event_notification_deliveries:delivery_002",
+            "observed_at": "2026-08-25T09:20:00Z",
+            "summary": "delivery_002: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+            "customer_visibility": "INTERNAL",
+            "feature": "order notifications",
+            "facts": {
+              "delivery_status": "failed",
+              "response_status": 401
+            }
+          },
+          {
+            "evidence_id": "ticket_8:evidence_9158d98031b94484bb4619c84e46557f",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "tool",
+            "source_reference": "get_platform_status:event_notifications",
+            "observed_at": "2026-08-25T09:25:00Z",
+            "summary": "event_notifications: {\"service\": \"event_notifications\", \"status\": \"operational\"}",
+            "customer_visibility": "INTERNAL",
+            "feature": "order notifications",
+            "facts": {
+              "service": "event_notifications",
+              "status": "operational"
+            }
+          },
+          {
+            "evidence_id": "ticket_8:document_docs/internal/event-notification-401.md:0",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "document",
+            "source_reference": "search_internal_knowledge:docs/internal/event-notification-401.md:0",
+            "observed_at": "2026-08-01T00:00:00Z",
+            "summary": "# Event notification HTTP 401 runbook\n\nWhen recent delivery records consistently show response status 401 while the event notification platform is operational, the receiving endpoint rejected ResolveLab authentication.\n\nConfirm that the records belong to the current customer and problem time. The safe resolution is for the customer to check the receiving endpoint access settings and then send one test notification. Do not claim that an operational platform snapshot proves delivery success.",
+            "customer_visibility": "INTERNAL",
+            "feature": "order notifications",
+            "facts": {
+              "chunk_id": "docs/internal/event-notification-401.md:0",
+              "source_uri": "docs/internal/event-notification-401.md",
+              "version": "2026.8",
+              "visibility": "INTERNAL",
+              "effective_from": "2026-08-01",
+              "effective_to": "",
+              "score": 0.31873559951782227
+            }
+          },
+          {
+            "evidence_id": "ticket_8:document_docs/internal/version-2026-8-known-issues.md:0",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "document",
+            "source_reference": "search_internal_knowledge:docs/internal/version-2026-8-known-issues.md:0",
+            "observed_at": "2026-08-01T00:00:00Z",
+            "summary": "# Version 2026.8 known issues\n\nThere is no general known issue in version 2026.8 that proves all notification or export failures have the same cause. Diagnose each ticket from its current source records.\n\nDo not use guidance from a different version when the ticket has a confirmed product version.",
+            "customer_visibility": "INTERNAL",
+            "feature": "all",
+            "facts": {
+              "chunk_id": "docs/internal/version-2026-8-known-issues.md:0",
+              "source_uri": "docs/internal/version-2026-8-known-issues.md",
+              "version": "2026.8",
+              "visibility": "INTERNAL",
+              "effective_from": "2026-08-01",
+              "effective_to": "",
+              "score": 0.06376813336990717
+            }
+          },
+          {
+            "evidence_id": "ticket_8:document_docs/internal/platform-outage-triage.md:0",
+            "ticket_id": 8,
+            "customer_id": "customer_001",
+            "source_type": "document",
+            "source_reference": "search_internal_knowledge:docs/internal/platform-outage-triage.md:0",
+            "observed_at": "2026-08-01T00:00:00Z",
+            "summary": "# Platform outage triage\n\nUse the status record for the affected service and the problem time. An operational snapshot can rule out a reported platform outage only at that observed time. It cannot prove that an individual customer operation succeeded.\n\nWhen service state is unavailable or outside the problem time, do not make a definite platform claim.",
+            "customer_visibility": "INTERNAL",
+            "feature": "all",
+            "facts": {
+              "chunk_id": "docs/internal/platform-outage-triage.md:0",
+              "source_uri": "docs/internal/platform-outage-triage.md",
+              "version": "2026.8",
+              "visibility": "INTERNAL",
+              "effective_from": "2026-08-01",
+              "effective_to": "",
+              "score": 0.03676510602235794
+            }
+          }
+        ],
+        "supporting_evidence_ids": [
+          "ticket_8:evidence_ebfa10d1f46e4066828964d4d0d26a12",
+          "ticket_8:evidence_ee66ec3073be4114b428759bab5be5b1",
+          "ticket_8:evidence_9158d98031b94484bb4619c84e46557f",
+          "ticket_8:document_docs/internal/event-notification-401.md:0"
+        ],
+        "investigation_result": {
+          "conclusion": "The order notifications are failing due to a 401 Unauthorized response from the customer’s receiving endpoint, indicating that ResolveLab authentication is not accepted. The event notifications platform is operational, so the issue lies on the customer side. The customer should verify the access settings of their receiving endpoint and then resend a test notification.",
+          "root_cause": "Receiving endpoint rejected ResolveLab authentication (HTTP 401).",
+          "supporting_evidence_ids": [
+            "ticket_8:evidence_ebfa10d1f46e4066828964d4d0d26a12",
+            "ticket_8:evidence_ee66ec3073be4114b428759bab5be5b1",
+            "ticket_8:evidence_9158d98031b94484bb4619c84e46557f",
+            "ticket_8:document_docs/internal/event-notification-401.md:0"
+          ],
+          "contradicting_evidence_ids": [],
+          "confidence_band": "high",
+          "resolution": "Ask the customer to check the receiving endpoint’s access settings (e.g., API key, authentication method) and then send a test notification.",
+          "escalation_reason": null,
+          "action_proposal": null,
+          "customer_explanation": "订单通知未收到，原因是您的接收端点拒绝了 ResolveLab 的身份验证，返回了 401 错误。请检查接收端点的访问设置（如 API 密钥或身份验证方式），然后重新发送一次测试通知。",
+          "outcome": "resolution",
+          "supporting_facts": [
+            "delivery_001: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+            "delivery_002: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+            "event_notifications: {\"service\": \"event_notifications\", \"status\": \"operational\"}",
+            "# Event notification HTTP 401 runbook\n\nWhen recent delivery records consistently show response status 401 while the event notification platform is operational, the receiving endpoint rejected ResolveLab authentication.\n\nConfirm that the records belong to the current customer and problem time. The safe resolution is for the customer to check the receiving endpoint access settings and then send one test notification. Do not claim that an operational platform snapshot proves delivery success."
+          ],
+          "internal_citation_ids": [
+            "docs/internal/event-notification-401.md:0"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "ticket_8:evidence_ebfa10d1f46e4066828964d4d0d26a12",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "tool",
+              "source_reference": "get_event_notification_deliveries:delivery_001",
+              "observed_at": "2026-08-25T09:15:00Z",
+              "summary": "delivery_001: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+              "customer_visibility": "INTERNAL",
+              "feature": "order notifications",
+              "facts": {
+                "delivery_status": "failed",
+                "response_status": 401
+              }
+            },
+            {
+              "evidence_id": "ticket_8:evidence_ee66ec3073be4114b428759bab5be5b1",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "tool",
+              "source_reference": "get_event_notification_deliveries:delivery_002",
+              "observed_at": "2026-08-25T09:20:00Z",
+              "summary": "delivery_002: {\"delivery_status\": \"failed\", \"response_status\": 401}",
+              "customer_visibility": "INTERNAL",
+              "feature": "order notifications",
+              "facts": {
+                "delivery_status": "failed",
+                "response_status": 401
+              }
+            },
+            {
+              "evidence_id": "ticket_8:evidence_9158d98031b94484bb4619c84e46557f",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "tool",
+              "source_reference": "get_platform_status:event_notifications",
+              "observed_at": "2026-08-25T09:25:00Z",
+              "summary": "event_notifications: {\"service\": \"event_notifications\", \"status\": \"operational\"}",
+              "customer_visibility": "INTERNAL",
+              "feature": "order notifications",
+              "facts": {
+                "service": "event_notifications",
+                "status": "operational"
+              }
+            },
+            {
+              "evidence_id": "ticket_8:document_docs/internal/event-notification-401.md:0",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "document",
+              "source_reference": "search_internal_knowledge:docs/internal/event-notification-401.md:0",
+              "observed_at": "2026-08-01T00:00:00Z",
+              "summary": "# Event notification HTTP 401 runbook\n\nWhen recent delivery records consistently show response status 401 while the event notification platform is operational, the receiving endpoint rejected ResolveLab authentication.\n\nConfirm that the records belong to the current customer and problem time. The safe resolution is for the customer to check the receiving endpoint access settings and then send one test notification. Do not claim that an operational platform snapshot proves delivery success.",
+              "customer_visibility": "INTERNAL",
+              "feature": "order notifications",
+              "facts": {
+                "chunk_id": "docs/internal/event-notification-401.md:0",
+                "source_uri": "docs/internal/event-notification-401.md",
+                "version": "2026.8",
+                "visibility": "INTERNAL",
+                "effective_from": "2026-08-01",
+                "effective_to": "",
+                "score": 0.31873559951782227
+              }
+            },
+            {
+              "evidence_id": "ticket_8:document_docs/internal/version-2026-8-known-issues.md:0",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "document",
+              "source_reference": "search_internal_knowledge:docs/internal/version-2026-8-known-issues.md:0",
+              "observed_at": "2026-08-01T00:00:00Z",
+              "summary": "# Version 2026.8 known issues\n\nThere is no general known issue in version 2026.8 that proves all notification or export failures have the same cause. Diagnose each ticket from its current source records.\n\nDo not use guidance from a different version when the ticket has a confirmed product version.",
+              "customer_visibility": "INTERNAL",
+              "feature": "all",
+              "facts": {
+                "chunk_id": "docs/internal/version-2026-8-known-issues.md:0",
+                "source_uri": "docs/internal/version-2026-8-known-issues.md",
+                "version": "2026.8",
+                "visibility": "INTERNAL",
+                "effective_from": "2026-08-01",
+                "effective_to": "",
+                "score": 0.06376813336990717
+              }
+            },
+            {
+              "evidence_id": "ticket_8:document_docs/internal/platform-outage-triage.md:0",
+              "ticket_id": 8,
+              "customer_id": "customer_001",
+              "source_type": "document",
+              "source_reference": "search_internal_knowledge:docs/internal/platform-outage-triage.md:0",
+              "observed_at": "2026-08-01T00:00:00Z",
+              "summary": "# Platform outage triage\n\nUse the status record for the affected service and the problem time. An operational snapshot can rule out a reported platform outage only at that observed time. It cannot prove that an individual customer operation succeeded.\n\nWhen service state is unavailable or outside the problem time, do not make a definite platform claim.",
+              "customer_visibility": "INTERNAL",
+              "feature": "all",
+              "facts": {
+                "chunk_id": "docs/internal/platform-outage-triage.md:0",
+                "source_uri": "docs/internal/platform-outage-triage.md",
+                "version": "2026.8",
+                "visibility": "INTERNAL",
+                "effective_from": "2026-08-01",
+                "effective_to": "",
+                "score": 0.03676510602235794
+              }
+            }
+          ],
+          "validation_errors": [],
+          "escalation_package": null
+        },
+        "customer_text": [
+          "已确认账户活跃且订单通知功能已开启，但最近一次通知发送失败。可能原因包括目的地址错误或目的地未接受请求。\n\n1. 在设置中确认订单通知已启用。\n2. 检查并确认目的地址是否正确。\n3. 发送测试通知并查看结果；若仍失败，请联系支持。\n\n完成以上步骤后，请告诉我问题是否已经解决。",
+          "订单通知未收到，原因是您的接收端点拒绝了 ResolveLab 的身份验证，返回了 401 错误。请检查接收端点的访问设置（如 API 密钥或身份验证方式），然后重新发送一次测试通知。"
+        ],
+        "approval": null,
+        "action_execution": null,
+        "approval_bypass_count": 0,
+        "write_execution_count": 0,
+        "repeated_approval_same_result": true,
+        "simulator_requests": [
+          "/customers/customer_001/product-context",
+          "/customers/customer_001/recent-activity",
+          "/customers/customer_001/event-notification-deliveries",
+          "/platform-status?service=event_notifications"
+        ],
+        "latency_ms": 108510.55,
+        "error": null,
+        "model_calls": 10,
+        "input_tokens": 15480,
+        "output_tokens": 3377,
+        "estimated_cost_usd": 0.0021741,
+        "cost_note": "Estimate from configured per-token list prices; cached-token discounts are not included."
+      }
+    }
+  ]
+}

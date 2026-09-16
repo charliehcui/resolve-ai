@@ -173,7 +173,7 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
             errors.append("The issue time window is unknown; evidence timing cannot be confirmed.")
         elif item.source_type == "tool" and time_window is not None and not time_window[0] <= item.observed_at <= time_window[1]:
             errors.append("Evidence is outside the current issue time window.")
-        elif item.feature not in (ticket.handoff.affected_feature, "account"):
+        elif item.feature not in (ticket.handoff.affected_feature, "account") and not (item.source_type == "document" and item.feature == "all"):
             errors.append("Evidence concerns a different product feature.")
         elif item.evidence_id in valid_evidence:
             errors.append("Evidence IDs must be unique within the investigation.")

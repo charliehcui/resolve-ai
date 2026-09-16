@@ -201,9 +201,9 @@ export async function getBackendHealth(): Promise<BackendHealth> {
   }
 }
 
-export async function sendCustomerMessage(sessionId: string | null, message: string): Promise<SupportResponse> {
+export async function sendCustomerMessage(sessionId: string | null, message: string, customerId: string): Promise<SupportResponse> {
   let url = `${backendUrl}/api/v1/support-sessions`;
-  let requestBody = JSON.stringify({ customer_id: "customer_001", message: message });
+  let requestBody = JSON.stringify({ customer_id: customerId, message: message });
 
   if (sessionId !== null) {
     url = `${backendUrl}/api/v1/support-sessions/${encodeURIComponent(sessionId)}/messages`;

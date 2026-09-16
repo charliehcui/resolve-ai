@@ -2,15 +2,97 @@ services:
   db:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-resolveai}
+      POSTGRES_USER: ${POSTGRES_USER:-resolveai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resolveai}
     ports:
       - "5432:5432"
     volumes:
       - resolveai_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-resolveai} -d ${POSTGRES_DB:-resolveai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-resolveai}:${POSTGRES_PASSWORD:-resolveai}@db:5432/${POSTGRES_DB:-resolveai}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      RESOLVELAB_BASE_URL: http://simulator:8001
+      FRONTEND_ORIGIN: http://127.0.0.1:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+
+  ingest:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-resolveai}:${POSTGRES_PASSWORD:-resolveai}@db:5432/${POSTGRES_DB:-resolveai}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      RESOLVELAB_BASE_URL: http://simulator:8001
+      FRONTEND_ORIGIN: http://127.0.0.1:3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.customer_document_ingestion"]
+
+  simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-resolveai}:${POSTGRES_PASSWORD:-resolveai}@db:5432/${POSTGRES_DB:-resolveai}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      RESOLVELAB_BASE_URL: http://simulator:8001
+      FRONTEND_ORIGIN: http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      ingest:
+        condition: service_completed_successfully
+      simulator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_BACKEND_URL: http://127.0.0.1:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/health | grep -q ok"]
       interval: 5s
       timeout: 5s
       retries: 10

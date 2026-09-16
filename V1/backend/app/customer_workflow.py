@@ -131,6 +131,57 @@ def get_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
         return {"status": "error", "error": str(error)}
 
 
+def normalize_problem_with_customer_data(problem_details: ProblemDetails, available_data: dict[str, object]) -> ProblemDetails:
+    current_product_context = available_data.get("current_product_context")
+    recent_activity = available_data.get("recent_activity")
+    affected_feature = None
+
+    if isinstance(current_product_context, dict) and isinstance(current_product_context.get("affected_feature"), str):
+        affected_feature = current_product_context["affected_feature"]
+
+    filtered_missing_information: list[str] = []
+
+    for missing_item in problem_details.missing_information:
+        missing_item_lower = missing_item.strip().lower()
+        information_is_known = False
+
+        if isinstance(current_product_context, dict):
+            if problem_details.affected_feature != "unknown" and isinstance(affected_feature, str) and "feature" in missing_item_lower:
+                information_is_known = True
+            elif current_product_context.get("product_version") is not None and ("version" in missing_item_lower or "app" in missing_item_lower):
+                information_is_known = True
+            elif current_product_context.get("account_status") is not None and ("account" in missing_item_lower or "customer id" in missing_item_lower):
+                information_is_known = True
+            elif isinstance(current_product_context.get("feature_enabled"), bool) and ("setting" in missing_item_lower or "enabled" in missing_item_lower or "notification" in missing_item_lower):
+                information_is_known = True
+            elif affected_feature in ("order notifications", "report exports") and any(text in missing_item_lower for text in ("device", "error message", "error detail", "report type", "type of report", "report format", "specific report", "which report", "order id", "order number", "transaction id", "operation id")):
+                information_is_known = True
+
+        if isinstance(recent_activity, dict) and any(word in missing_item_lower for word in ("when", "time", "start", "recent activity")):
+            information_is_known = True
+
+        if information_is_known is False:
+            filtered_missing_information.append(missing_item)
+
+    updates: dict[str, object] = {"missing_information": filtered_missing_information}
+
+    customer_visible_text = f"{problem_details.summary} {problem_details.customer_goal}".lower()
+    unsafe_customer_goal_terms = ("customer_", "内部日志", "其他客户", "别的客户", "系统提示", "提示词", "internal log", "other customer", "system prompt")
+
+    if any(term in customer_visible_text for term in unsafe_customer_goal_terms):
+        if affected_feature == "order notifications":
+            updates["summary"] = "订单通知未正常送达。"
+            updates["customer_goal"] = "恢复接收订单通知。"
+        elif affected_feature == "report exports":
+            updates["summary"] = "报表导出未正常完成。"
+            updates["customer_goal"] = "正常导出并下载报表。"
+
+    if isinstance(affected_feature, str) and problem_details.affected_feature.strip().lower() == affected_feature.lower():
+        updates["affected_feature"] = affected_feature
+
+    return problem_details.model_copy(update=updates)
+
+
 def update_problem_with_customer_side_data(state: CustomerSupportState) -> dict[str, object]:
     if state["error"] is not None:
         return {}
@@ -148,6 +199,7 @@ def update_problem_with_customer_side_data(state: CustomerSupportState) -> dict[
             return {}
 
         updated_problem_details = update_customer_problem_with_customer_side_data(problem_details, available_data)
+        updated_problem_details = normalize_problem_with_customer_data(updated_problem_details, available_data)
         return {"problem_details": updated_problem_details, "missing_information": updated_problem_details.missing_information}
     except Exception as error:
         return {"status": "error", "error": str(error)}
@@ -246,6 +298,13 @@ def prepare_customer_resolution(state: CustomerSupportState) -> dict[str, object
 
     if problem_details is None:
         return {"status": "error", "error": "Problem details are missing"}
+
+    current_product_context = state["customer_side_data"].get("current_product_context")
+    recent_activity = state["customer_side_data"].get("recent_activity")
+
+    if isinstance(current_product_context, dict) and isinstance(recent_activity, dict):
+        if current_product_context.get("affected_feature") == "report exports" and current_product_context.get("feature_enabled") is True and recent_activity.get("result") == "failed":
+            return {"resolution": None, "citations": []}
 
     try:
         resolution = create_customer_resolution_from_documents(problem_details, state["customer_side_data"], state["retrieved_customer_documents"])

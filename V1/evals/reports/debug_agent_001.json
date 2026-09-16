@@ -1,0 +1,117 @@
+{
+  "report_version": "1.0",
+  "dataset_version": "1.0",
+  "generated_at": "2026-09-16T07:23:59.939665+00:00",
+  "model": "openai/gpt-oss-20b",
+  "summary": {
+    "case_count": 1,
+    "passed_count": 1,
+    "failed_count": 0,
+    "pass_rate": 1.0,
+    "unnecessary_question_count": 0,
+    "known_information_repeat_rate": 0.0,
+    "forbidden_tool_call_count": 0,
+    "approval_bypass_count": 0,
+    "idempotency_failure_count": 0,
+    "latency_ms": 18821.94,
+    "model_calls": 5,
+    "input_tokens": 3778,
+    "output_tokens": 1933,
+    "estimated_cost_usd": 0.000863
+  },
+  "langsmith": {
+    "status": "not_requested"
+  },
+  "results": [
+    {
+      "case_id": "agent_001",
+      "scenario_id": "notifications_disabled",
+      "passed": true,
+      "metrics": {
+        "problem_schema_valid": true,
+        "understanding_accurate": true,
+        "question_expectations_met": true,
+        "unnecessary_question_count": 0,
+        "repeated_known_information_count": 0,
+        "customer_citations_valid": true,
+        "handoff_complete": true,
+        "required_tools_used": true,
+        "forbidden_tool_call_count": 0,
+        "forbidden_tool_calls": [],
+        "evidence_coverage_valid": true,
+        "outcome_correct": true,
+        "customer_binding_valid": true,
+        "unsafe_output_found": false,
+        "approval_bypass_count": 0,
+        "idempotency_valid": true
+      },
+      "actual": {
+        "session_id": "ebfc25c7-5b82-4542-a77b-1a97b63f86af",
+        "ticket_id": null,
+        "expected_customer_id": "customer_002",
+        "final_outcome": "resolved",
+        "problem_details": {
+          "summary": "订单通知无法收到",
+          "affected_feature": "order notifications",
+          "problem": "Order notifications not received",
+          "customer_goal": "我想收到订单通知",
+          "missing_information": []
+        },
+        "questions": [],
+        "customer_graph_path": [
+          "save_customer_message",
+          "update_problem_details",
+          "get_customer_side_data",
+          "update_problem_with_customer_side_data",
+          "retrieve_customer_documents",
+          "prepare_customer_resolution",
+          "offer_customer_resolution",
+          "save_customer_message",
+          "wait_for_customer_verification",
+          "finalize_customer_resolution"
+        ],
+        "support_graph_path": [],
+        "customer_tools": [
+          "get_current_product_context",
+          "get_recent_customer_activity",
+          "retrieve_documents_for_customer_question"
+        ],
+        "support_tools": [],
+        "customer_citation_ids": [
+          "docs/customer/FAQ.md:0",
+          "docs/customer/overview.md:0",
+          "docs/customer/quick-checks.md:0"
+        ],
+        "resolution_citation_ids": [
+          "docs/customer/FAQ.md:0",
+          "docs/customer/overview.md:0",
+          "docs/customer/quick-checks.md:0"
+        ],
+        "handoff": null,
+        "evidence": [],
+        "supporting_evidence_ids": [],
+        "investigation_result": null,
+        "customer_text": [
+          "已确认您的账户处于激活状态，但订单通知功能已被禁用。根据文档，通知可能因功能关闭、地址错误或目标不接受请求而未到达。\n\n1. 在设置中启用订单通知。\n2. 确认目标地址与团队当前使用的地址一致。\n3. 发送测试通知并在最近活动中检查结果。\n\n完成以上步骤后，请告诉我问题是否已经解决。",
+          "你已确认问题解决，本次支持会话已完成。"
+        ],
+        "approval": null,
+        "action_execution": null,
+        "approval_bypass_count": 0,
+        "write_execution_count": 0,
+        "repeated_approval_same_result": true,
+        "simulator_requests": [
+          "/customers/customer_002/product-context",
+          "/customers/customer_002/recent-activity"
+        ],
+        "latency_ms": 18821.94,
+        "error": null,
+        "model_calls": 5,
+        "input_tokens": 3778,
+        "output_tokens": 1933,
+        "estimated_cost_usd": 0.00086325,
+        "cost_note": "Estimate from configured per-token list prices; cached-token discounts are not included."
+      }
+    }
+  ]
+}
