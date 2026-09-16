@@ -1,17 +1,17 @@
 from typing import Literal, TypedDict
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
+from app import checkpointing
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails, create_customer_question, create_customer_resolution_from_documents, should_get_recent_customer_activity, update_customer_problem, update_customer_problem_with_customer_side_data, verify_customer_resolution
 from app.knowledge_retrieval import retrieve_documents_for_customer_question
 from app.customer_tools import get_current_product_context, get_recent_customer_activity
 from app.handoff import SupportFact, SupportHandoff, create_support_handoff_summary
-from app.support_sessions import create_support_session_record, save_support_session_progress
+from app.support_sessions import create_support_session_record, get_support_session_result, get_support_session_thread_id, save_support_session_progress
 from app.support_workflow import run_support_investigation
-from app.tickets import create_ticket_from_handoff
+from app.tickets import TicketStatus, create_ticket_from_handoff, get_ticket_id_for_support_session
 
 
 class CustomerDocumentCitation(BaseModel):
@@ -57,8 +57,14 @@ class CustomerMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
 
 
+class CustomerConversationMessage(BaseModel):
+    role: Literal["customer", "assistant"]
+    content: str
+
+
 class SupportResponse(BaseModel):
     session_id: str
+    messages: list[CustomerConversationMessage]
     problem_details: ProblemDetails
     customer_response: str
     customer_facts: list[str]
@@ -547,7 +553,9 @@ def create_support_ticket(state: CustomerSupportState) -> dict[str, object]:
     messages = state["messages"].copy()
     messages.append(f"Agent: {customer_response}")
 
-    if investigation.result.outcome == "resolution":
+    if investigation.status == TicketStatus.AWAITING_APPROVAL:
+        status = "waiting_for_approval"
+    elif investigation.result.outcome == "resolution":
         status = "support_resolved"
     elif investigation.result.outcome == "action_required":
         status = "action_required"
@@ -589,7 +597,17 @@ customer_support_graph_builder.add_conditional_edges("finalize_customer_resoluti
 customer_support_graph_builder.add_conditional_edges("build_support_handoff", choose_step_after_handoff, {"create_support_ticket": "create_support_ticket", "error": END})
 customer_support_graph_builder.add_edge("create_support_ticket", END)
 
-customer_support_graph = customer_support_graph_builder.compile(checkpointer=InMemorySaver())
+def build_customer_support_graph(checkpointer):
+    return customer_support_graph_builder.compile(checkpointer=checkpointer)
+
+
+def get_customer_support_snapshot(session_id: str):
+    thread_id = get_support_session_thread_id(session_id)
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 16}
+
+    with checkpointing.open_postgres_checkpointer() as checkpointer:
+        customer_graph = build_customer_support_graph(checkpointer)
+        return customer_graph.get_state(config)
 
 
 def build_support_response(state: CustomerSupportState) -> SupportResponse:
@@ -598,6 +616,25 @@ def build_support_response(state: CustomerSupportState) -> SupportResponse:
 
     if state["problem_details"] is None or state["customer_response"] is None:
         raise RuntimeError("Customer support did not produce a response")
+
+    messages: list[CustomerConversationMessage] = []
+
+    for saved_message in state["messages"]:
+        if saved_message.startswith("Customer: "):
+            messages.append(CustomerConversationMessage(role="customer", content=saved_message.removeprefix("Customer: ")))
+        elif saved_message.startswith("Agent: "):
+            messages.append(CustomerConversationMessage(role="assistant", content=saved_message.removeprefix("Agent: ")))
+
+    response_status = state["status"]
+    customer_response = state["customer_response"]
+    saved_status, saved_customer_result = get_support_session_result(state["session_id"])
+
+    if saved_status in ("waiting_for_approval", "support_resolved", "action_required", "engineer_escalation") and saved_customer_result is not None:
+        response_status = saved_status
+        customer_response = saved_customer_result
+
+        if len(messages) == 0 or messages[-1].role != "assistant" or messages[-1].content != saved_customer_result:
+            messages.append(CustomerConversationMessage(role="assistant", content=saved_customer_result))
 
     customer_facts: list[str] = []
     customer_side_data = state["customer_side_data"]
@@ -641,7 +678,8 @@ def build_support_response(state: CustomerSupportState) -> SupportResponse:
             activity_text = {"sending the latest order notification": "发送最近一条订单通知", "sending an order notification": "发送订单通知", "exporting the latest report": "导出最近一份报表"}.get(activity.strip().lower(), "最近一次操作")
             customer_facts.append(f"最近活动：{activity_text}。结果：{result_text}。记录时间：{occurred_at}。")
 
-    return SupportResponse(session_id=state["session_id"], problem_details=state["problem_details"], customer_response=state["customer_response"], customer_facts=customer_facts, citations=state["citations"], resolution=state["resolution"], verification_result=state["verification_result"], verification_source=state["verification_source"], ticket_id=state["ticket_id"], status=state["status"])
+    ticket_id = get_ticket_id_for_support_session(state["session_id"])
+    return SupportResponse(session_id=state["session_id"], messages=messages, problem_details=state["problem_details"], customer_response=customer_response, customer_facts=customer_facts, citations=state["citations"], resolution=state["resolution"], verification_result=state["verification_result"], verification_source=state["verification_source"], ticket_id=ticket_id, status=response_status)
 
 
 def persist_customer_support_state(state: CustomerSupportState) -> None:
@@ -650,7 +688,7 @@ def persist_customer_support_state(state: CustomerSupportState) -> None:
     if state["problem_details"] is not None:
         problem_details = state["problem_details"].model_dump(mode="json")
 
-    save_support_session_progress(state["session_id"], state["status"], problem_details)
+    save_support_session_progress(state["session_id"], state["status"], problem_details, state["customer_response"])
 
 
 def start_customer_support(customer_id: str, customer_message: str) -> SupportResponse:
@@ -681,24 +719,45 @@ def start_customer_support(customer_id: str, customer_message: str) -> SupportRe
         "error": None,
     }
 
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 16}
-    final_state = customer_support_graph.invoke(initial_state, config)
+    thread_id = get_support_session_thread_id(session_id)
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 16}
+
+    with checkpointing.open_postgres_checkpointer() as checkpointer:
+        customer_graph = build_customer_support_graph(checkpointer)
+        final_state = customer_graph.invoke(initial_state, config)
+
     persist_customer_support_state(final_state)
 
     return build_support_response(final_state)
 
 
-def continue_customer_support(session_id: str, customer_message: str) -> SupportResponse:
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 16}
-    saved_state = customer_support_graph.get_state(config)
+def read_customer_support(session_id: str) -> SupportResponse:
+    saved_state = get_customer_support_snapshot(session_id)
 
     if len(saved_state.values) == 0:
-        raise ValueError("Support session not found")
+        raise RuntimeError("Support session state not found")
 
-    if saved_state.values["status"] in ("resolved", "unresolved", "needs_assistance", "support_resolved", "action_required", "engineer_escalation"):
-        return build_support_response(saved_state.values)
+    return build_support_response(saved_state.values)
 
-    final_state = customer_support_graph.invoke({"customer_message": customer_message, "error": None}, config)
+
+def continue_customer_support(session_id: str, customer_message: str) -> SupportResponse:
+    thread_id = get_support_session_thread_id(session_id)
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 16}
+
+    with checkpointing.open_postgres_checkpointer() as checkpointer:
+        customer_graph = build_customer_support_graph(checkpointer)
+        saved_state = customer_graph.get_state(config)
+
+        if len(saved_state.values) == 0:
+            raise RuntimeError("Support session state not found")
+
+        if len(saved_state.next) > 0:
+            final_state = customer_graph.invoke(None, config)
+        elif saved_state.values["status"] in ("resolved", "unresolved", "needs_assistance", "support_resolved", "action_required", "waiting_for_approval", "engineer_escalation"):
+            return build_support_response(saved_state.values)
+        else:
+            final_state = customer_graph.invoke({"customer_message": customer_message, "error": None}, config)
+
     persist_customer_support_state(final_state)
 
     return build_support_response(final_state)

@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import main, support_sessions, tickets
+from app import actions, main, support_sessions, tickets
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoff
@@ -18,7 +18,7 @@ def test_database(monkeypatch: pytest.MonkeyPatch):
     test_session = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
 
-    monkeypatch.setattr(main, "SessionLocal", test_session)
+    monkeypatch.setattr(actions, "SessionLocal", test_session)
     monkeypatch.setattr(support_sessions, "SessionLocal", test_session)
     monkeypatch.setattr(tickets, "SessionLocal", test_session)
 

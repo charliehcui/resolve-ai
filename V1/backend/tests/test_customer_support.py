@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import customer_agent, customer_workflow, main, support_sessions, support_workflow, tickets
+from app import actions, customer_agent, customer_workflow, main, support_sessions, support_workflow, tickets
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
@@ -56,7 +56,7 @@ def set_default_customer_side_data(monkeypatch: pytest.MonkeyPatch):
         support_workflow.save_support_result(ticket_id, result, [])
         return SupportInvestigationResponse(ticket_id=ticket_id, result=result, tools_used=[])
 
-    monkeypatch.setattr(main, "SessionLocal", test_session)
+    monkeypatch.setattr(actions, "SessionLocal", test_session)
     monkeypatch.setattr(support_sessions, "SessionLocal", test_session)
     monkeypatch.setattr(support_workflow, "SessionLocal", test_session)
     monkeypatch.setattr(tickets, "SessionLocal", test_session)
@@ -134,7 +134,7 @@ def test_start_support_session_asks_one_question(monkeypatch: pytest.MonkeyPatch
     response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "This feature has not worked all day."})
     response_data = response.json()
     session_id = response_data["session_id"]
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert response.status_code == 201
     assert response_data["problem_details"] == problem_details.model_dump(mode="json")
@@ -189,7 +189,7 @@ def test_continue_support_session_updates_the_same_problem(monkeypatch: pytest.M
     session_id = first_response.json()["session_id"]
     second_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "It is the invoice export feature."})
     second_response_data = second_response.json()
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert first_response.status_code == 201
     assert second_response.status_code == 200
@@ -234,7 +234,7 @@ def test_support_session_stops_after_three_questions(monkeypatch: pytest.MonkeyP
     client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "I am not sure."})
     client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "I still do not know."})
     final_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "I cannot provide more details."})
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert final_response.status_code == 200
     assert final_response.json()["status"] == "engineer_escalation"
@@ -265,7 +265,7 @@ def test_support_session_does_not_repeat_a_question(monkeypatch: pytest.MonkeyPa
     first_response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "It does not work."})
     session_id = first_response.json()["session_id"]
     second_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "I do not know."})
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert second_response.status_code == 200
     assert second_response.json()["status"] == "engineer_escalation"
@@ -391,7 +391,7 @@ def test_support_session_does_not_ask_for_known_product_version(monkeypatch: pyt
     response = client.post("/api/v1/support-sessions", json={"customer_id": "customer_001", "message": "My order notifications are not arriving."})
     response_data = response.json()
     session_id = response_data["session_id"]
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert response.status_code == 201
     assert response_data["customer_response"] == "When did this problem start? This will help me understand what may have changed."
@@ -425,7 +425,7 @@ def test_customer_completes_the_day_five_self_service_path(monkeypatch: pytest.M
     session_id = first_response_data["session_id"]
     final_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": customer_confirmation})
     final_response_data = final_response.json()
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert final_response.status_code == 200
     assert final_response_data["status"] == "resolved"
@@ -679,7 +679,7 @@ def test_real_customer_conversation() -> None:
     session_id = first_response_data["session_id"]
     second_response = client.post(f"/api/v1/support-sessions/{session_id}/messages", json={"message": "It is the billing page, and nothing happens when I press the download button."})
     second_response_data = second_response.json()
-    saved_state = customer_workflow.customer_support_graph.get_state({"configurable": {"thread_id": session_id}})
+    saved_state = customer_workflow.get_customer_support_snapshot(session_id)
 
     assert second_response.status_code == 200
     assert second_response_data["session_id"] == session_id

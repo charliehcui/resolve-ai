@@ -13,13 +13,13 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import customer_workflow, knowledge_retrieval, main, resolvelab, support_agent, support_sessions, support_workflow, tickets
+from app import actions, customer_workflow, knowledge_retrieval, main, resolvelab, support_agent, support_sessions, support_workflow, tickets
 from app.customer_agent import CustomerResolution, CustomerVerification, ProblemDetails
 from app.customer_document_ingestion import load_customer_document, load_internal_document
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoffSummary
-from app.support_results import SupportDiagnosis
+from app.support_results import ActionProposal, SupportDiagnosis
 from simulator.app import app as simulator_app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -76,7 +76,13 @@ class ScenarioSupportModel(BaseChatModel):
             else:
                 raise AssertionError("Unexpected simulator state")
 
-            result = SupportDiagnosis(conclusion=conclusion, root_cause=conclusion if outcome != "engineer_escalation" else None, supporting_evidence_ids=[item["evidence_id"] for item in evidence], contradicting_evidence_ids=[item["evidence_id"] for item in evidence if item["facts"].get("record_type") in ("operation", "latest_run")] if outcome == "engineer_escalation" and operation is not None else [], confidence_band="high" if outcome != "engineer_escalation" else "low", resolution=conclusion if outcome != "engineer_escalation" else None, escalation_reason=conclusion if outcome == "engineer_escalation" else None, customer_explanation=explanation, outcome=outcome)
+            evidence_ids = [item["evidence_id"] for item in evidence]
+            proposal = None
+
+            if outcome == "action_required" and operation is not None:
+                proposal = ActionProposal(action_name="retry_failed_operation", reason="The failed export is eligible for a controlled retry.", supporting_evidence_ids=evidence_ids, intended_target_reference=str(operation["operation_id"]), expected_result="The report export operation reaches a succeeded state.", verification_method="read_background_operation")
+
+            result = SupportDiagnosis(conclusion=conclusion, root_cause=conclusion if outcome != "engineer_escalation" else None, supporting_evidence_ids=evidence_ids, contradicting_evidence_ids=[item["evidence_id"] for item in evidence if item["facts"].get("record_type") in ("operation", "latest_run")] if outcome == "engineer_escalation" and operation is not None else [], confidence_band="high" if outcome != "engineer_escalation" else "low", resolution=conclusion if outcome != "engineer_escalation" else None, escalation_reason=conclusion if outcome == "engineer_escalation" else None, action_proposal=proposal, customer_explanation=explanation, outcome=outcome)
             output = AIMessage(content="", tool_calls=[{"name": "SupportDiagnosis", "args": result.model_dump(), "id": "result_call"}])
 
         return ChatResult(generations=[ChatGeneration(message=output)])
@@ -88,7 +94,7 @@ def scenario_environment(monkeypatch: pytest.MonkeyPatch):
     database_session = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
 
-    for module in (main, support_sessions, support_workflow, tickets):
+    for module in (actions, support_sessions, support_workflow, tickets):
         monkeypatch.setattr(module, "SessionLocal", database_session)
 
     simulator = TestClient(simulator_app)
@@ -203,9 +209,9 @@ def test_representative_paths_use_actual_simulator_and_both_graphs(case, scenari
             assert set(ticket["investigation_tools"]).isdisjoint(scenario["forbidden_tools"])
             assert session.customer_result == result["customer_response"]
 
-            if result["status"] == "action_required":
-                assert ticket["status"] == "ACTION_REQUIRED"
-                assert "没有执行" in result["customer_response"]
+            if result["status"] == "waiting_for_approval":
+                assert ticket["status"] == "AWAITING_APPROVAL"
+                assert "没有进行任何更改" in result["customer_response"]
             elif result["status"] == "engineer_escalation":
                 package = ticket["investigation_result"]["escalation_package"]
                 assert package["customer_diagnosis"] == ticket["handoff"]
@@ -248,4 +254,4 @@ def test_versioned_cases_reference_all_four_valid_scenarios():
     assert len(CASES) == 12
     assert len({case["case_id"] for case in CASES}) == 12
     assert {case["scenario_id"] for case in CASES} == {scenario["scenario_id"] for scenario in SCENARIOS}
-    assert {scenario["expected_outcome"] for scenario in SCENARIOS} == {"resolved", "support_resolved", "action_required", "engineer_escalation"}
+    assert {scenario["expected_outcome"] for scenario in SCENARIOS} == {"resolved", "support_resolved", "waiting_for_approval", "engineer_escalation"}

@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import support_workflow
+from app import actions, support_workflow
 from app.db.database import Base
 from app.db.models import SupportSession, Ticket
 from app.handoff import SupportHandoff
@@ -18,6 +18,7 @@ def test_database(monkeypatch: pytest.MonkeyPatch):
     engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     test_session = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
+    monkeypatch.setattr(actions, "SessionLocal", test_session)
     monkeypatch.setattr(support_workflow, "SessionLocal", test_session)
 
     yield test_session

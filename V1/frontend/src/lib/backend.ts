@@ -34,6 +34,11 @@ export type CustomerVerification = {
   supporting_text: string;
 };
 
+export type CustomerConversationMessage = {
+  role: "customer" | "assistant";
+  content: string;
+};
+
 export type SupportFact = {
   name: string;
   value: string;
@@ -68,6 +73,47 @@ export type EvidenceItem = {
   facts: Record<string, string | number | boolean>;
 };
 
+export type ActionProposal = {
+  action_name: string;
+  reason: string;
+  supporting_evidence_ids: string[];
+  intended_target_reference: string;
+  expected_result: string;
+  verification_method: "read_background_operation";
+};
+
+export type ActionProposalResponse = {
+  id: number;
+  ticket_id: number;
+  proposal: ActionProposal;
+  status: string;
+  policy_reason: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApprovalResponse = {
+  id: number;
+  proposal_id: number;
+  decision: "approve" | "reject";
+  reviewer_role: "demo_approver";
+  created_at: string;
+};
+
+export type ActionExecutionResponse = {
+  id: number;
+  proposal_id: number;
+  idempotency_key: string;
+  status: string;
+  request: Record<string, unknown>;
+  before_state: Record<string, unknown> | null;
+  after_state: Record<string, unknown> | null;
+  external_reference: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type EngineerEscalationPackage = {
   ticket_id: number;
   customer_id: string | null;
@@ -91,6 +137,7 @@ export type SupportInvestigationResult = {
   confidence_band: "low" | "medium" | "high";
   resolution: string | null;
   escalation_reason: string | null;
+  action_proposal: ActionProposal | null;
   supporting_facts: string[];
   internal_citation_ids: string[];
   evidence: EvidenceItem[];
@@ -106,13 +153,17 @@ export type TicketResponse = {
   handoff: SupportHandoff | null;
   investigation_result: SupportInvestigationResult | null;
   investigation_tools: string[] | null;
-  status: "OPEN" | "CLASSIFIED" | "WAITING_CUSTOMER" | "RESOLVED" | "ACTION_REQUIRED" | "ENGINEER_ESCALATION";
+  action_proposal: ActionProposalResponse | null;
+  approval: ApprovalResponse | null;
+  action_execution: ActionExecutionResponse | null;
+  status: "OPEN" | "CLASSIFIED" | "WAITING_CUSTOMER" | "RESOLVED" | "ACTION_REQUIRED" | "AWAITING_APPROVAL" | "ENGINEER_ESCALATION";
   created_at: string;
   updated_at: string;
 };
 
 export type SupportResponse = {
   session_id: string;
+  messages: CustomerConversationMessage[];
   problem_details: ProblemDetails;
   customer_response: string;
   customer_facts: string[];
@@ -121,7 +172,7 @@ export type SupportResponse = {
   verification_result: CustomerVerification | null;
   verification_source: "customer_confirmation" | "tool_verification" | null;
   ticket_id: number | null;
-  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance" | "support_resolved" | "action_required" | "engineer_escalation";
+  status: "started" | "waiting_for_customer" | "waiting_for_verification" | "resolved" | "unresolved" | "needs_assistance" | "support_resolved" | "action_required" | "waiting_for_approval" | "engineer_escalation";
 };
 
 let backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8000";
@@ -180,6 +231,20 @@ export async function sendCustomerMessage(sessionId: string | null, message: str
   return (await response.json()) as SupportResponse;
 }
 
+export async function getSupportSession(sessionId: string): Promise<SupportResponse> {
+  const response = await fetch(`${backendUrl}/api/v1/support-sessions/${encodeURIComponent(sessionId)}`);
+
+  if (response.status === 404) {
+    throw new Error("当前会话已不可用，请开始新的会话。");
+  }
+
+  if (!response.ok) {
+    throw new Error("暂时无法恢复当前会话，请刷新页面重试。");
+  }
+
+  return (await response.json()) as SupportResponse;
+}
+
 export async function getTicket(ticketId: number): Promise<TicketResponse> {
   const response = await fetch(`${backendUrl}/api/v1/tickets/${ticketId}`);
 
@@ -192,4 +257,24 @@ export async function getTicket(ticketId: number): Promise<TicketResponse> {
   }
 
   return (await response.json()) as TicketResponse;
+}
+
+export async function submitApproval(proposalId: number, decision: "approve" | "reject"): Promise<void> {
+  const response = await fetch(`${backendUrl}/api/v1/action-proposals/${proposalId}/approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision: decision, reviewer_role: "demo_approver" }),
+  });
+
+  if (response.status === 404) {
+    throw new Error("Action proposal not found.");
+  }
+
+  if (response.status === 409) {
+    throw new Error("The action proposal cannot be resumed in its current state.");
+  }
+
+  if (!response.ok) {
+    throw new Error("The approval decision could not be completed. Please try again.");
+  }
 }

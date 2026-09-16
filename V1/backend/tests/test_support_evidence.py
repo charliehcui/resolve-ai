@@ -4,7 +4,7 @@ import pytest
 
 from app.handoff import SupportFact, SupportHandoff
 from app.support_evidence import build_engineer_escalation_package, create_internal_knowledge_evidence, create_tool_evidence, validate_support_evidence
-from app.support_results import SupportDiagnosis
+from app.support_results import ActionProposal, SupportDiagnosis
 from app.tickets import TicketContext, TicketStatus
 
 
@@ -137,7 +137,9 @@ def test_safe_retry_requires_cited_retry_eligibility_and_latest_run(evidence_cas
     evidence.extend(create_tool_evidence(ticket.id, "customer_003", "get_platform_status", {"service": "report_exports", "status": "operational", "updated_at": "2026-08-25T09:25:00Z"}))
     document = {"chunk_id": "docs/internal/report-export-timeout.md:0", "source_uri": "docs/internal/report-export-timeout.md", "version": "2026.8", "content": "A dependency timeout with retry allowed is eligible for a human-controlled retry.", "score": 0.95, "visibility": "INTERNAL", "feature": "report exports", "effective_from": "2026-08-01", "effective_to": None}
     evidence.extend(create_internal_knowledge_evidence(ticket.id, "customer_003", "2026.8", "report exports", [document]))
-    diagnosis = diagnosis.model_copy(update={"outcome": "action_required", "supporting_evidence_ids": [item.evidence_id for item in evidence], "root_cause": "The export failed after a temporary dependency timeout.", "resolution": "A human-controlled internal retry is needed; no operation has been executed.", "customer_explanation": "需要技术人员进一步处理，目前没有执行任何更改。"})
+    evidence_ids = [item.evidence_id for item in evidence]
+    proposal = ActionProposal(action_name="retry_failed_operation", reason="The failed export is eligible for a controlled retry.", supporting_evidence_ids=evidence_ids, intended_target_reference="export_003", expected_result="The report export operation reaches a succeeded state.", verification_method="read_background_operation")
+    diagnosis = diagnosis.model_copy(update={"outcome": "action_required", "supporting_evidence_ids": evidence_ids, "root_cause": "The export failed after a temporary dependency timeout.", "resolution": "A human-controlled internal retry is needed; no operation has been executed.", "action_proposal": proposal, "customer_explanation": "需要技术人员进一步处理，目前没有执行任何更改。"})
     assert validate_support_evidence(ticket, diagnosis, evidence).outcome == "action_required"
     diagnosis.supporting_evidence_ids.remove(evidence[1].evidence_id)
     assert validate_support_evidence(ticket, diagnosis, evidence).outcome == "engineer_escalation"

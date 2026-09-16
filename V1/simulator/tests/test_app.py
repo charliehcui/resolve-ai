@@ -1,9 +1,14 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from simulator.app import app
+import simulator.app as simulator
 
-client = TestClient(app)
+client = TestClient(simulator.app)
+
+
+@pytest.fixture(autouse=True)
+def reset_action_state() -> None:
+    simulator.reset_action_state()
 
 
 def test_get_customer_account() -> None:
@@ -100,3 +105,19 @@ def test_export_operations_are_customer_scoped_and_read_only():
 def test_platform_status_service_is_limited_to_known_features():
     assert client.get("/platform-status?service=report_exports").json()["service"] == "report_exports"
     assert client.get("/platform-status?service=unknown").status_code == 422
+
+
+def test_retry_background_operation_uses_idempotency_key_once() -> None:
+    request = {"idempotency_key": "ticket-3:retry_failed_operation:export_003"}
+    first_response = client.post("/customers/customer_003/background-operations/export_003/retry", json=request)
+    second_response = client.post("/customers/customer_003/background-operations/export_003/retry", json=request)
+    different_key_response = client.post("/customers/customer_003/background-operations/export_003/retry", json={"idempotency_key": "different-key"})
+    wrong_target_response = client.post("/customers/customer_004/background-operations/export_004/retry", json=request)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json() == first_response.json()
+    assert first_response.json()["operation"]["status"] == "succeeded"
+    assert simulator.retry_execution_counts[request["idempotency_key"]] == 1
+    assert different_key_response.status_code == 409
+    assert wrong_target_response.status_code == 409

@@ -40,3 +40,44 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String(30))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class ActionProposalRecord(Base):
+    __tablename__ = "action_proposals"
+    __table_args__ = (UniqueConstraint("ticket_id", name="uq_action_proposals_ticket_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", name="fk_action_proposals_ticket_id"))
+    proposal: Mapped[dict[str, object]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30))
+    policy_reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class ApprovalRecord(Base):
+    __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("proposal_id", name="uq_approvals_proposal_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("action_proposals.id", name="fk_approvals_proposal_id"))
+    decision: Mapped[str] = mapped_column(String(20))
+    reviewer_role: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ActionExecutionRecord(Base):
+    __tablename__ = "action_executions"
+    __table_args__ = (UniqueConstraint("proposal_id", name="uq_action_executions_proposal_id"), UniqueConstraint("idempotency_key", name="uq_action_executions_idempotency_key"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(ForeignKey("action_proposals.id", name="fk_action_executions_proposal_id"))
+    idempotency_key: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(30))
+    request: Mapped[dict[str, object]] = mapped_column(JSON)
+    before_state: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    after_state: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    external_reference: Mapped[str | None] = mapped_column(String(200))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

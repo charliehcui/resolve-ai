@@ -20,6 +20,17 @@ class EvidenceItem(BaseModel):
     facts: dict[str, str | int | float | bool] = Field(description="Only the bounded source fields needed for validation; excludes raw logs and response messages")
 
 
+class ActionProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    action_name: str = Field(min_length=1, max_length=100, description="The requested internal action name in English; the server policy decides whether it is allowed")
+    reason: str = Field(min_length=1, max_length=1000, description="A short internal reason in English supported by the cited evidence")
+    supporting_evidence_ids: list[str] = Field(min_length=1, max_length=10, description="Existing server-assigned evidence IDs supporting the proposed action")
+    intended_target_reference: str = Field(min_length=1, max_length=200, description="The existing source record reference the action is intended to affect")
+    expected_result: str = Field(min_length=1, max_length=500, description="The expected internal result in English without claiming that execution already occurred")
+    verification_method: Literal["read_background_operation"] = Field(description="The fixed read-only check required after execution")
+
+
 class SupportDiagnosis(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -30,6 +41,7 @@ class SupportDiagnosis(BaseModel):
     confidence_band: Literal["low", "medium", "high"] = Field(default="low", description="Confidence in the diagnosis; low confidence cannot justify a definite resolution")
     resolution: str | None = Field(default=None, description="A short evidence-supported internal resolution in English; null when no safe resolution is supported")
     escalation_reason: str | None = Field(default=None, description="Why engineer investigation is required, in English; null for a supported non-escalation outcome")
+    action_proposal: ActionProposal | None = Field(default=None, description="A bounded internal action proposal for action_required outcomes; null for all other outcomes")
     customer_explanation: str = Field(min_length=1, description="A simple, safe customer-visible explanation in Simplified Chinese")
     outcome: Literal["resolution", "action_required", "engineer_escalation"] = Field(description="Whether the investigation produced a resolution, identified a safe internal operation requiring human handling without execution, or requires engineer escalation")
 

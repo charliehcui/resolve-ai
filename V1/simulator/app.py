@@ -1,10 +1,10 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="ResolveLab Simulator", version="0.1.0")
 
@@ -60,6 +60,16 @@ class BackgroundOperation(BaseModel):
     updated_at: datetime
 
 
+class RetryOperationRequest(BaseModel):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class RetryOperationResponse(BaseModel):
+    status: Literal["accepted"]
+    external_reference: str
+    operation: BackgroundOperation
+
+
 scenario_file = Path(__file__).parent / "scenarios" / "v1.json"
 scenario_data = json.loads(scenario_file.read_text(encoding="utf-8"))
 customer_accounts: dict[str, CustomerAccount] = {}
@@ -79,6 +89,10 @@ for scenario in scenario_data["scenarios"]:
 
     if scenario["background_operation"] is not None:
         background_operations[account.customer_id] = BackgroundOperation.model_validate(scenario["background_operation"])
+
+initial_background_operations = {customer_id: operation.model_copy(deep=True) for customer_id, operation in background_operations.items()}
+retry_results: dict[str, RetryOperationResponse] = {}
+retry_execution_counts: dict[str, int] = {}
 
 platform_statuses: dict[str, PlatformStatus] = {}
 
@@ -149,3 +163,37 @@ def get_background_operation(customer_id: str) -> BackgroundOperation:
         raise HTTPException(status_code=404, detail="Customer background operation not found")
 
     return operation
+
+
+@app.post("/customers/{customer_id}/background-operations/{operation_id}/retry", response_model=RetryOperationResponse)
+def retry_background_operation(customer_id: str, operation_id: str, request: RetryOperationRequest) -> RetryOperationResponse:
+    saved_result = retry_results.get(request.idempotency_key)
+
+    if saved_result is not None:
+        if saved_result.operation.customer_id != customer_id or saved_result.operation.operation_id != operation_id:
+            raise HTTPException(status_code=409, detail="Idempotency key belongs to a different operation")
+        return saved_result
+
+    operation = background_operations.get(customer_id)
+
+    if operation is None or operation.operation_id != operation_id:
+        raise HTTPException(status_code=404, detail="Customer background operation not found")
+
+    if operation.status != "failed" or operation.latest_run_status != "failed" or operation.failure_code != "dependency_timeout" or operation.retry_allowed is False:
+        raise HTTPException(status_code=409, detail="Background operation is not eligible for retry")
+
+    operation.status = "succeeded"
+    operation.latest_run_status = "succeeded"
+    operation.retry_allowed = False
+    operation.updated_at = datetime.now(timezone.utc)
+    result = RetryOperationResponse(status="accepted", external_reference=f"retry-{operation.operation_id}", operation=operation.model_copy(deep=True))
+    retry_results[request.idempotency_key] = result
+    retry_execution_counts[request.idempotency_key] = retry_execution_counts.get(request.idempotency_key, 0) + 1
+    return result
+
+
+def reset_action_state() -> None:
+    background_operations.clear()
+    background_operations.update({customer_id: operation.model_copy(deep=True) for customer_id, operation in initial_background_operations.items()})
+    retry_results.clear()
+    retry_execution_counts.clear()

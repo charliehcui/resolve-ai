@@ -247,6 +247,12 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
             if not retry_supported or not platform_operational:
                 errors.append("The evidence does not support a safe internal retry requirement.")
 
+    if diagnosis.outcome == "action_required" and diagnosis.action_proposal is None:
+        errors.append("An action-required outcome must include a bounded action proposal.")
+
+    if diagnosis.outcome != "action_required" and diagnosis.action_proposal is not None:
+        errors.append("Only an action-required outcome can include an action proposal.")
+
     if not valid_evidence:
         errors.append("No valid internal evidence supports a reliable diagnosis.")
 
@@ -255,7 +261,7 @@ def validate_support_evidence(ticket: TicketContext, diagnosis: SupportDiagnosis
     errors = list(dict.fromkeys(errors))
 
     if errors:
-        values.update(conclusion="The investigation could not validate a reliable diagnosis.", root_cause=None, confidence_band="low", resolution=None, escalation_reason=" ".join(errors), customer_explanation="目前的信息还不足以确认问题原因，已经交给工程师继续检查。你不需要重复说明已经提供的信息。", outcome="engineer_escalation")
+        values.update(conclusion="The investigation could not validate a reliable diagnosis.", root_cause=None, confidence_band="low", resolution=None, escalation_reason=" ".join(errors), action_proposal=None, customer_explanation="目前的信息还不足以确认问题原因，已经交给工程师继续检查。你不需要重复说明已经提供的信息。", outcome="engineer_escalation")
     elif diagnosis.outcome == "engineer_escalation" and not diagnosis.escalation_reason:
         values["escalation_reason"] = "The available evidence does not support a safe resolution."
 

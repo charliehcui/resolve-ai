@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import { getBackendHealth, getTicket, sendCustomerMessage } from "./lib/backend";
-import type { SupportResponse, TicketResponse } from "./lib/backend";
+import { getBackendHealth, getSupportSession, getTicket, sendCustomerMessage, submitApproval } from "./lib/backend";
+import type { CustomerConversationMessage, SupportResponse, TicketResponse } from "./lib/backend";
 
-type ChatMessage = {
-  role: "customer" | "assistant";
-  content: string;
-};
+const savedSessionKey = "resolveai_support_session_id";
 
 const statusLabels: Record<SupportResponse["status"], string> = {
   started: "正在了解问题",
@@ -18,16 +15,19 @@ const statusLabels: Record<SupportResponse["status"], string> = {
   needs_assistance: "已转交技术支持",
   support_resolved: "技术支持已给出结论",
   action_required: "等待技术人员进一步处理",
+  waiting_for_approval: "正在等待技术人员确认",
   engineer_escalation: "工程师继续检查",
 };
 
 type SupportTicketViewProps = {
   ticket: TicketResponse | null;
   isLoading: boolean;
+  isDeciding: boolean;
   errorMessage: string;
+  onDecision: (decision: "approve" | "reject") => void;
 };
 
-function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketViewProps) {
+function SupportTicketView({ ticket, isLoading, isDeciding, errorMessage, onDecision }: SupportTicketViewProps) {
   if (isLoading) {
     return <p className="mt-10 text-sm text-slate-400">Loading support investigation result...</p>;
   }
@@ -142,6 +142,53 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
         </section>
 
         <div className="space-y-6">
+          {ticket.action_proposal !== null && (
+            <section className="rounded-2xl border border-amber-800 bg-slate-900 p-6">
+              <h2 className="text-lg font-semibold">Action approval</h2>
+              <p className="mt-2 text-xs text-slate-400">The action cannot run until the demo approver makes a decision.</p>
+              <div className="mt-5 space-y-4 text-sm">
+                <div>
+                  <p className="text-xs text-slate-500">Action</p>
+                  <p className="mt-2 text-cyan-300">{ticket.action_proposal.proposal.action_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Reason</p>
+                  <p className="mt-2 leading-6 text-slate-200">{ticket.action_proposal.proposal.reason}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Target</p>
+                  <p className="mt-2 break-all text-slate-300">{ticket.action_proposal.proposal.intended_target_reference}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Expected result</p>
+                  <p className="mt-2 leading-6 text-slate-300">{ticket.action_proposal.proposal.expected_result}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Policy status</p>
+                  <p className="mt-2 text-slate-300">{ticket.action_proposal.status}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">{ticket.action_proposal.policy_reason}</p>
+                </div>
+                {ticket.approval === null && ticket.action_proposal.status === "AWAITING_APPROVAL" && (
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <button type="button" disabled={isDeciding} onClick={() => onDecision("approve")} className="rounded-lg bg-emerald-500 px-4 py-2 font-medium text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">{isDeciding ? "Processing..." : "Approve"}</button>
+                    <button type="button" disabled={isDeciding} onClick={() => onDecision("reject")} className="rounded-lg border border-red-800 px-4 py-2 font-medium text-red-200 hover:bg-red-950 disabled:cursor-not-allowed disabled:opacity-50">Reject</button>
+                  </div>
+                )}
+                {ticket.approval !== null && (
+                  <p className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-slate-300">Decision: {ticket.approval.decision} · Role: {ticket.approval.reviewer_role}</p>
+                )}
+                {ticket.action_execution !== null && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                    <p className="text-xs text-slate-500">Execution status</p>
+                    <p className="mt-2 text-slate-200">{ticket.action_execution.status}</p>
+                    {ticket.action_execution.external_reference !== null && <p className="mt-2 break-all text-xs text-cyan-300">Reference: {ticket.action_execution.external_reference}</p>}
+                    {ticket.action_execution.error !== null && <p className="mt-2 text-xs text-red-300">{ticket.action_execution.error}</p>}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-lg font-semibold">Tools used</h2>
             {ticket.investigation_tools === null || ticket.investigation_tools.length === 0 ? (
@@ -275,13 +322,14 @@ function SupportTicketView({ ticket, isLoading, errorMessage }: SupportTicketVie
 function App() {
   const [healthLabel, setHealthLabel] = useState("正在检查连接");
   const [isReady, setIsReady] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<CustomerConversationMessage[]>([]);
   const [message, setMessage] = useState("");
   const [support, setSupport] = useState<SupportResponse | null>(null);
   const [view, setView] = useState<"customer" | "support">("customer");
   const [ticket, setTicket] = useState<TicketResponse | null>(null);
   const [isLoadingTicket, setIsLoadingTicket] = useState(false);
   const [ticketError, setTicketError] = useState("");
+  const [isDeciding, setIsDeciding] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const conversationEnd = useRef<HTMLDivElement>(null);
@@ -313,13 +361,74 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const savedSessionId = window.localStorage.getItem(savedSessionKey);
+
+    if (savedSessionId === null) {
+      return;
+    }
+
+    const sessionId = savedSessionId;
+    let active = true;
+    setIsSending(true);
+
+    async function restoreConversation() {
+      try {
+        const restoredSupport = await getSupportSession(sessionId);
+
+        if (!active) {
+          return;
+        }
+
+        setSupport(restoredSupport);
+        setMessages(restoredSupport.messages);
+        setIsReady(true);
+        setHealthLabel("连接正常");
+
+        if (restoredSupport.ticket_id !== null) {
+          setIsLoadingTicket(true);
+
+          try {
+            const savedTicket = await getTicket(restoredSupport.ticket_id);
+
+            if (active) {
+              setTicket(savedTicket);
+            }
+          } catch (ticketLoadError) {
+            if (active && ticketLoadError instanceof Error) {
+              setTicketError(ticketLoadError.message);
+            }
+          } finally {
+            if (active) {
+              setIsLoadingTicket(false);
+            }
+          }
+        }
+      } catch (error) {
+        if (active && error instanceof Error) {
+          setErrorMessage(error.message);
+        }
+      } finally {
+        if (active) {
+          setIsSending(false);
+        }
+      }
+    }
+
+    void restoreConversation();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     conversationEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isSending]);
 
   let sessionFinished = false;
 
   if (support !== null) {
-    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance" || support.status === "support_resolved" || support.status === "action_required" || support.status === "engineer_escalation";
+    sessionFinished = support.status === "resolved" || support.status === "unresolved" || support.status === "needs_assistance" || support.status === "support_resolved" || support.status === "action_required" || support.status === "waiting_for_approval" || support.status === "engineer_escalation";
   }
 
   let currentStatus = "可以开始咨询";
@@ -336,7 +445,7 @@ function App() {
 
   if (support?.status === "resolved" || support?.status === "support_resolved") {
     statusStyle = "border-emerald-800 bg-emerald-950 text-emerald-300";
-  } else if (support?.status === "unresolved" || support?.status === "needs_assistance" || support?.status === "action_required" || support?.status === "engineer_escalation") {
+  } else if (support?.status === "unresolved" || support?.status === "needs_assistance" || support?.status === "action_required" || support?.status === "waiting_for_approval" || support?.status === "engineer_escalation") {
     statusStyle = "border-amber-800 bg-amber-950 text-amber-300";
   } else if (isSending || support?.status === "waiting_for_verification") {
     statusStyle = "border-cyan-800 bg-cyan-950 text-cyan-300";
@@ -380,10 +489,9 @@ function App() {
 
     try {
       const response = await sendCustomerMessage(sessionId, customerMessage);
-      const customerEntry: ChatMessage = { role: "customer", content: customerMessage };
-      const assistantEntry: ChatMessage = { role: "assistant", content: response.customer_response };
 
-      setMessages((currentMessages) => [...currentMessages, customerEntry, assistantEntry]);
+      window.localStorage.setItem(savedSessionKey, response.session_id);
+      setMessages(response.messages);
       setSupport(response);
       setMessage("");
       setIsReady(true);
@@ -417,12 +525,46 @@ function App() {
     }
   }
 
+  async function handleApproval(decision: "approve" | "reject") {
+    if (ticket?.action_proposal === null || ticket?.action_proposal === undefined || isDeciding) {
+      return;
+    }
+
+    setIsDeciding(true);
+    setTicketError("");
+
+    try {
+      await submitApproval(ticket.action_proposal.id, decision);
+      const updatedTicket = await getTicket(ticket.id);
+      setTicket(updatedTicket);
+
+      if (updatedTicket.support_session_id !== null) {
+        try {
+          const updatedSupport = await getSupportSession(updatedTicket.support_session_id);
+          setSupport(updatedSupport);
+          setMessages(updatedSupport.messages);
+        } catch {
+          setTicketError("The result was saved, but the customer session could not be refreshed. Refresh the page and try again.");
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        setTicketError(error.message);
+      } else {
+        setTicketError("The approval decision could not be completed. Please try again.");
+      }
+    } finally {
+      setIsDeciding(false);
+    }
+  }
+
   function startNewConversation() {
     if (isSending) {
       return;
     }
 
     setMessages([]);
+    window.localStorage.removeItem(savedSessionKey);
     setMessage("");
     setSupport(null);
     setView("customer");
@@ -546,7 +688,7 @@ function App() {
 
               {sessionFinished ? (
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-slate-400">本次会话已结束。</p>
+                  <p className="text-sm text-slate-400">{support?.status === "waiting_for_approval" ? "正在等待技术人员确认，目前不需要你继续操作。" : "本次会话已结束。"}</p>
                   <button type="button" onClick={startNewConversation} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400">
                     开始新的会话
                   </button>
@@ -643,7 +785,7 @@ function App() {
         </div>
           </>
         ) : (
-          <SupportTicketView ticket={ticket} isLoading={isLoadingTicket} errorMessage={ticketError} />
+          <SupportTicketView ticket={ticket} isLoading={isLoadingTicket} isDeciding={isDeciding} errorMessage={ticketError} onDecision={handleApproval} />
         )}
       </div>
     </main>

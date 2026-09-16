@@ -49,7 +49,7 @@
       "expected_customer_tools": ["get_current_product_context", "get_recent_customer_activity", "retrieve_documents_for_customer_question"],
       "expected_support_tools": ["get_background_operation", "get_platform_status", "search_internal_knowledge"],
       "forbidden_tools": ["get_event_notification_deliveries", "retry_failed_operation", "execute_action"],
-      "expected_outcome": "action_required"
+      "expected_outcome": "waiting_for_approval"
     },
     {
       "scenario_id": "export_conflicting_state",

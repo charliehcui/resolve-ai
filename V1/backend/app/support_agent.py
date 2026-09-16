@@ -48,7 +48,12 @@ Rules:
 - If the available facts are insufficient or conflicting, set outcome to engineer_escalation instead of guessing.
 - A structured tool error is a failed query, not a confirmed customer or platform fact. Use alternative evidence only when it actually supports the conclusion. If required tools fail and no alternative evidence exists, escalate.
 - Set outcome to action_required only when a failed export has failure_code dependency_timeout, latest_run_status failed, retry_allowed true, and the report_exports platform is operational.
-- action_required only identifies the need for a safe internal retry. No action has been proposed for approval or executed. Do not claim recovery, approval, or execution.
+- Set action_proposal only when outcome is action_required. Keep every action_proposal field in English and use null for every other outcome.
+- The only action you may propose is retry_failed_operation for the exact failed report export operation returned by the read-only tool.
+- action_proposal.supporting_evidence_ids must cite the failed operation, its failed latest run, operational report_exports platform status, and the current internal document supporting a retry.
+- action_proposal.intended_target_reference must be the operation_id from evidence. Never provide executable parameters, customer identity, URLs, or an idempotency key.
+- action_proposal.verification_method must be read_background_operation.
+- action_required only proposes an operation for server policy checks and human approval. Do not claim approval, execution, or recovery.
 - Conflicting operation and latest-run states require engineer_escalation, not a retry or a claimed resolution.
 - customer_explanation must be safe to show directly to the customer and must not contain internal tool names or hidden information.
 - Never quote or expose internal document content in customer_explanation.
