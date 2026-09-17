@@ -1,0 +1,13 @@
+{"case_id":"qa-001","question":"如何开启订单同步？","expected_source":"docs/product/01-order-sync-switch.md"}
+{"case_id":"qa-002","question":"ORDER_SYNC_DISABLED 是什么意思？","expected_source":"docs/product/08-error-codes.md"}
+{"case_id":"qa-003","question":"平台订单已经付款但管理软件没有订单，先检查什么？","expected_source":"docs/product/02-order-eligibility.md"}
+{"case_id":"qa-004","question":"SKU_MAPPING_MISSING 应该怎么处理？","expected_source":"docs/product/03-sku-mapping.md"}
+{"case_id":"qa-005","question":"仓库已经发货为什么平台可能还是待发货？","expected_source":"docs/product/06-shipment-facts.md"}
+{"case_id":"qa-006","question":"这个系统能自动退款吗？","expected_source":"docs/product/12-unsupported-features.md"}
+{"case_id":"qa-007","question":"店铺的单子一直不进来怎么办？","expected_source":"docs/product/01-order-sync-switch.md"}
+{"case_id":"qa-008","question":"渠道 B 的订单为什么进不来？","expected_source":"docs/product/13-channel-differences.md"}
+{"case_id":"qa-009","question":"开启同步就能把所有历史订单都导入吗？","expected_source":"docs/product/01-order-sync-switch.md"}
+{"case_id":"qa-010","question":"旧版里的订单同步入口在哪里？","expected_behavior":"clarify_version"}
+{"case_id":"support-001","question":"订单 O-1002 在 shop-a 没有进入管理软件，我按资料检查后仍未解决。","expected_facts":["platform_order_exists","ORDER_SYNC_DISABLED"],"expected_role":"SUPPORT"}
+{"case_id":"support-002","question":"订单 O-1003 在 shop-a 没有进入管理软件。","expected_facts":["platform_order_exists","SKU_MAPPING_MISSING"],"expected_role":"SUPPORT"}
+{"case_id":"support-003","question":"订单 O-NOT-FOUND 在 shop-a 在哪里？","expected_behavior":"early_stop_not_found","expected_role":"SUPPORT"}

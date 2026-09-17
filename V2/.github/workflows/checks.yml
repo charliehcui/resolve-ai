@@ -1,0 +1,52 @@
+name: checks
+
+on:
+  push:
+    paths:
+      - "V2/**"
+  pull_request:
+    paths:
+      - "V2/**"
+
+jobs:
+  behavior:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: V2
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: resolveai
+          POSTGRES_USER: resolveai
+          POSTGRES_PASSWORD: resolveai-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U resolveai -d resolveai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://resolveai:resolveai-test@127.0.0.1:5432/resolveai
+      GROQ_API_KEY: test-only
+      GROQ_MODEL: test-only
+      GOOGLE_API_KEY: test-only
+      GOOGLE_MODEL: test-only
+      GOOGLE_EMBEDDING_MODEL: test-only
+      EMBEDDING_DIMENSION: "1024"
+      RERANK_MODEL: test-only
+      RETRIEVAL_MODE: vector_only
+      LANGSMITH_TRACING: "false"
+      LANGSMITH_PROJECT: resolveai-v2-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: V2/requirements.lock
+      - run: python -m pip install -r requirements.lock
+      - run: python -m pytest
+      - run: python -m ruff check app lab services tests

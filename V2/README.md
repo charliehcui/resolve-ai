@@ -1,248 +1,141 @@
 # ResolveAI V2
 
-ResolveAI V2 是一个面向电商商家管理软件的生产级 AI 技术支持系统。系统把客户自助、AI 调查、受控恢复、结果验证和人工工程师接手连接成一条完整流程。
+ResolveAI V2 是一个用于演示 AI Application Engineering 的电商商家管理软件支持系统。当前完成 Phase 3 / Task 04：除带引用的 Customer RAG 外，测试操作者还能创建平台订单，让订单经过真实 HTTP 事件、商家接收记录和后台任务进入商家订单，或由真实业务状态阻止处理。
 
-项目使用 React 前端、FastAPI 后端、LangGraph 持久化流程、PostgreSQL + pgvector，以及相互隔离的业务测试服务。所有组件通过 Docker Compose 运行，开发、测试和演示使用同一套环境。
-
-## 核心目标
-
-- 根据产品资料回答问题，并提供可核对的引用。
-- 使用真实服务数据调查订单、发货和库存问题。
-- 区分已确认事实、可能原因、冲突证据和未知信息。
-- 所有业务写操作必须先经过人工批准。
-- 根据最终业务状态验证结果，不信任模型结论或单次 HTTP 成功响应。
-- 在超时、重复请求、工作进程重启和响应丢失后安全恢复。
-- 把未解决问题和完整证据交给人工工程师。
-- 整个系统通过 Docker 运行，不依赖宿主机安装 Python、Node.js 或 PostgreSQL。
-
-## 支持架构
+## 当前真实数据流
 
 ```text
-Level 1 — Customer Self-Service
-Customer Agent
-├── Agentic RAG
-│   ├── Query Routing
-│   ├── Hybrid Search
-│   ├── Reranking
-│   └── Citation Validation
-└── Conversation
-        ↓
-     Handoff
-
-Level 2 — AI Investigation
-Support Agent
-├── Dynamic Tool Selection
-├── Evidence Collection
-├── Evidence Validation
-├── Diagnosis
-└── Action Proposal
-        ↓
-   ┌────┴────┐
-Resolution   Action Needed
-                  ↓
-           Human Approval
-                  ↓
-            Execute + Verify
-                  ↓
-            Still Unresolved
-                  ↓
-Level 3 — Human Engineer
+终端问题
+  → 本地 token 身份映射
+  → Groq 查询规划 / 最多一次 Query Rewrite / Clarification 或 Handoff Intent
+  → 公司、产品、版本、有效期过滤
+  → Google 1024 维 Vector Search
+  → 可选中文 BM25 + RRF + Qwen3 Reranking
+  → Groq 生成可核查 Claims
+  → 普通代码校验引用存在性、公司范围、版本与有效期
+  → Groq 检查 Claim Support；删除无依据结论
+  → 保存消息、检索记录、模型用量和 trace ID
+  → 终端显示回答与来源
 ```
 
-### Level 1 — Customer Self-Service
-
-客户智能体（Customer Agent）负责产品问答、必要追问、文档检索、引用和会话状态。它只能访问客户可见资料，不能读取内部业务记录，也不能请求写操作。
-
-代理式检索增强生成（Agentic RAG）包含：
-
-- 查询路由（Query Routing）：选择正确的资料范围，或把实际故障送入调查流程。
-- 混合检索（Hybrid Search）：结合向量检索和 PostgreSQL 全文检索。
-- 重排序（Reranking）：在生成回答前重新排列候选片段。
-- 引用验证（Citation Validation）：检查来源是否存在、是否对当前用户可见、是否匹配产品版本，以及能否支持对应结论。
-
-当问题需要业务数据时，交接（Handoff）会把问题摘要、已知编号、已完成检查和缺失信息传给支持智能体。
-
-### Level 2 — AI Investigation
-
-支持智能体（Support Agent）使用一组固定且受公司范围限制的工具调查具体问题：
-
-- 动态工具选择（Dynamic Tool Selection）：选择下一项必要的只读查询。
-- 证据收集（Evidence Collection）：读取平台、管理软件和仓库的真实记录。
-- 证据验证（Evidence Validation）：检查来源、权限、时间、版本和对象关系。
-- 诊断（Diagnosis）：把已确认事实、可能原因、相反证据和未知信息分开。
-- 动作提案（Action Proposal）：证据充分时创建有限恢复方案。
-
-支持智能体不能直接执行恢复。普通程序负责检查方案、记录批准、执行允许步骤和验证结果。
-
-### Level 3 — Human Engineer
-
-系统无法确认安全解决方案时，会创建包含调查时间线、已确认事实、失败请求、已有动作、证据、未知信息和下一项检查的工单。被分配的工程师可以查看案件，并在外部处理完成后使用相同验证规则重新检查。
-
-## 主要业务流程
-
-### 订单未进入管理软件
-
-平台保存有效订单并向管理软件发送事件。管理软件保存接收记录并创建后台任务。受控故障可以让订单停留在处理流程中，而没有进入管理软件订单表。
-
-支持智能体检查源订单、店铺状态、商品对应关系、接收事件和后台任务。满足条件时提出 `recover_order`。管理员批准后，执行器只处理指定订单，并检查两端的商品、数量、金额、版本和唯一性。
-
-### 发货状态未更新平台
-
-管理软件把订单发送到仓库。仓库必须先收到订单，才能创建发货事实。发货事件返回管理软件，再由管理软件更新平台。
-
-支持智能体检查仓库发货事实、管理软件记录、发送尝试、请求回执和平台状态。满足条件时提出 `recover_shipment`。执行器只补传已有发货事实，不会产生第二次仓库出库。
-
-### 库存差异
-
-库存调查只读。系统比较仓库实物数、占用数、安全保留数、管理软件规则、来源版本和平台数量，用于区分合理差异、正常处理延迟和未解决的更新失败。系统不提供库存写入工具。
-
-## 生产级系统设计
+订单业务切片：
 
 ```text
-Browser
-   ├── Frontend — React + TypeScript + Vite
-   └── Backend API — FastAPI + LangChain + LangGraph
-                         ├── Customer Agent
-                         ├── Support Agent
-                         ├── Approval and Action Service
-                         ├── Verification Service
-                         └── Ticket Service
-                                  ↓
-                         PostgreSQL + pgvector
-
-Backend and Worker
-        ↓ authenticated HTTP
-Merchant Service ↔ Platform Service
-        ↕
-Warehouse Service
+Lab CLI 创建已付款订单
+  → Platform HTTP API 校验账户公司并保存源订单
+  → Platform 通过 HTTP 发送订单事件
+  → Merchant 同一事务保存接收记录与 pending task
+  → 独立 Worker 读取任务并检查店铺开关、渠道连接、付款和 SKU 映射
+  → 条件满足：创建唯一商家订单并完成任务
+  → 条件不满足：保存 blocked/failed 状态和真实错误码，不创建商家订单
+  → Lab 分别查询平台、任务和商家订单事实
 ```
 
-Docker Compose 运行以下服务：
+当前只有 Handoff Intent，没有真正切换角色。项目没有 Support Agent、调查 Tools、Action、Approval、Ticket、发货/仓库模拟器、完整 API 或 React UI。这些能力不能从当前 README 推断为已经完成。
 
-| 容器 | 职责 |
-| --- | --- |
-| `frontend` | 构建并提供 React 页面 |
-| `backend` | 提供 Web API、智能体、批准、验证和工单功能 |
-| `worker` | 处理持久化后台任务 |
-| `merchant` | 保存管理软件订单、设置、事件、任务和发货记录 |
-| `platform` | 保存平台订单、发货状态、库存状态和请求回执 |
-| `warehouse` | 保存仓库订单、发货事实、库存事实和请求回执 |
-| `db` | 运行 PostgreSQL + pgvector，并使用持久化数据卷 |
-| `init` | 执行数据库迁移并创建本地账户 |
+## 环境要求
 
-前端和后端分别暴露本地端口。前端通过 `VITE_API_BASE_URL` 调用后端 API，后端只允许配置中的前端来源。数据库和三个业务服务只位于 Docker 内部网络，不向浏览器开放。
+- Python 3.11+
+- Docker Desktop
+- 已准备且被 Git 忽略的 `V2/.env`
+- Groq、Google 和 LangSmith 配置
 
-所有应用服务使用健康检查、明确的环境变量、独立数据库账户、结构化错误、请求编号和持久化数据卷。密钥不写入镜像、前端代码、日志或 Git。
+模型名称和 Key 只从 `.env` 读取。不要把 `.env`、`.local/test_tokens.json` 或任何 Secret 提交到 Git。
 
-## 技术栈
-
-| 层 | 技术 |
-| --- | --- |
-| 前端 | React、TypeScript、Vite、CSS |
-| 后端 | Python、FastAPI、Uvicorn、Pydantic |
-| AI 流程 | LangChain、LangGraph |
-| 聊天模型 | 通过 `GROQ_MODEL` 配置的 ChatGroq |
-| 数据 | PostgreSQL、pgvector、psycopg |
-| 检索 | 向量检索、PostgreSQL 全文检索、可配置重排序 |
-| 服务调用 | HTTPX |
-| 测试 | pytest、Ruff、Vitest、ESLint、TypeScript |
-| 运行环境 | Docker、Docker Compose |
-
-## 项目目录
-
-```text
-V2/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── db.py
-│   │   ├── auth.py
-│   │   ├── model.py
-│   │   ├── graph.py
-│   │   ├── customer_agent.py
-│   │   ├── support_agent.py
-│   │   ├── search_docs.py
-│   │   ├── citations.py
-│   │   ├── tools.py
-│   │   ├── evidence.py
-│   │   ├── actions.py
-│   │   ├── verify.py
-│   │   ├── tickets.py
-│   │   ├── runs.py
-│   │   └── reports.py
-│   ├── tests/
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   ├── Dockerfile
-│   └── package.json
-├── services/
-│   ├── common.py
-│   ├── merchant.py
-│   ├── platform.py
-│   ├── warehouse.py
-│   └── worker.py
-├── lab/
-│   ├── setup.py
-│   ├── scenarios.py
-│   └── checks.py
-├── db/
-├── docs/product/
-├── evals/
-├── compose.yaml
-├── .env.example
-├── .gitignore
-└── README.md
-```
-
-文件只在对应功能开始实现时创建，避免没有行为的空层和未使用的抽象。
-
-## Docker 运行
-
-根据 `.env.example` 创建 `.env` 并填写本地密钥，然后启动完整系统：
+## 安装与启动
 
 ```powershell
-docker compose up --build
+cd E:\AI_Engineer\Langchain\resolve-ai\V2
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.lock
+docker compose up -d db
+.\.venv\Scripts\python -m app.cli db init
+.\.venv\Scripts\python -m lab.bootstrap
+.\.venv\Scripts\python -m app.cli docs import
+.\.venv\Scripts\python -m app.cli doctor
+docker compose up -d --build merchant platform worker
 ```
 
-打开 `http://localhost:3000` 使用前端。后端 API 运行在 `http://localhost:8000`，PostgreSQL 数据保存在命名数据卷中。
+`lab.bootstrap` 会在被忽略的 `.local/test_tokens.json` 生成本机测试 token，不会把 token 写入文档或提示词。
 
-在相同容器环境运行全部自动检查：
+第一次运行 `hybrid_rerank` 会从 Hugging Face 下载 `RERANK_MODEL` 指定的 Qwen3 Reranker 权重；权重保存在用户缓存中，不进入仓库。
+
+## 终端问答
+
+PowerShell 示例：
 
 ```powershell
-docker compose run --rm tests
+$tokens = Get-Content .local\test_tokens.json | ConvertFrom-Json
+$env:RESOLVEAI_TOKEN = $tokens.'admin-a'
+.\.venv\Scripts\python -m app.cli chat "如何开启订单同步？"
 ```
 
-宿主机不需要安装 Python、Node.js、PostgreSQL 或 pgvector。
+选择检索模式：
 
-## 安全与可靠性规则
+```powershell
+.\.venv\Scripts\python -m app.cli chat "ORDER_SYNC_DISABLED 是什么意思？" --mode vector_only
+.\.venv\Scripts\python -m app.cli chat "ORDER_SYNC_DISABLED 是什么意思？" --mode hybrid
+.\.venv\Scripts\python -m app.cli chat "ORDER_SYNC_DISABLED 是什么意思？" --mode hybrid_rerank
+```
 
-- 服务器端令牌绑定账户、公司、角色和允许店铺。
-- 浏览器不能提供可信公司编号或服务地址。
-- 客户智能体不能访问调查工具。
-- 支持智能体只能使用固定只读工具和动作提案工具。
-- 模型不能执行 SQL、系统命令、文件操作或任意 HTTP 请求。
-- 恢复动作只允许 `recover_order` 和 `recover_shipment`。
-- 批准绑定动作、公司、目标、参数、证据、版本和方案摘要。
-- 每个写步骤使用稳定的幂等键（Idempotency Key）。
-- 超时在目标状态或回执完成检查前属于未知结果。
-- 确定性代码负责判断业务目标是否完成。
-- 跨公司访问、未批准写入、重复订单、重复出库和假成功都会阻止发布。
+当前默认是 `vector_only`。4 个 Phase 2 开发案例中三种模式均为 4/4 Top-5 命中；`vector_only` 平均延迟最低且预期资料排名最好。三种模式仍保留用于后续评估，不把小样本结论扩大为普遍结论。
 
-## 完成标准
+继续同一会话：
 
-- Level 1 可以提供有来源的回答，并把实际故障交给 Level 2。
-- Level 2 通过真实服务调用调查并保存经过验证的证据。
-- 订单和发货恢复都完成提案、批准、执行和验证。
-- 超时、响应丢失、重复请求和工作进程重启不会产生重复业务结果。
-- Level 3 收到完整工单，并使用相同规则重新验证。
-- 前端提供客户聊天、案件证据、动作批准、执行状态和工程师工单页面。
-- Docker 环境能够一致地启动完整系统并运行测试。
-- 评测报告保留失败、版本、调用量、延迟和测试边界。
+```powershell
+.\.venv\Scripts\python -m app.cli chat "这个开关会补回全部历史订单吗？" --conversation <conversation-id>
+```
 
-## 项目边界
+## 订单业务流
 
-ResolveAI V2 使用隔离的本地服务产生接近真实业务的数据和故障行为。项目不连接真实电商平台，不处理真实客户数据，不执行退款、支付、财务核算、真实仓库出库、库存写入或模型训练。在完成外部安全审查和负载验证前，不声称已经部署到生产环境。
+正常同步：
+
+```powershell
+.\.venv\Scripts\python -m lab.cli shop sync --shop shop-a --enabled true
+.\.venv\Scripts\python -m lab.cli order create --shop shop-a --order O-1001 --sku SKU-1 --qty 2 --amount-minor 20000
+```
+
+产生真实受阻任务：
+
+```powershell
+.\.venv\Scripts\python -m lab.cli shop sync --shop shop-a --enabled false
+.\.venv\Scripts\python -m lab.cli order create --shop shop-a --order O-1002 --sku SKU-1 --qty 1 --amount-minor 5000
+```
+
+第二条命令仍会留下平台订单、商家接收记录和 `ORDER_SYNC_DISABLED` 任务，但不会生成商家订单。重新发送完全相同的订单会复用稳定事件编号；内容变化则返回冲突。Phase 3 不提供自动恢复动作。
+
+## 订单恢复
+
+先由 Support case 创建一笔受限方案，再由同公司管理员批准：
+
+```powershell
+.\.venv\Scripts\python -m app.cli action propose <case-id>
+.\.venv\Scripts\python -m app.cli action decide <action-id> --decision approve
+.\.venv\Scripts\python -m app.cli action show <action-id>
+```
+
+如果方案需要同时开启店铺订单同步，必须在提案时显式增加 `--enable-order-sync`。批准有效期为十分钟。批准后程序重新检查公司、店铺、源订单版本和店铺版本，再通过 Merchant HTTP repair contract 创建幂等任务。Worker 完成后，独立 Verification 重新查询 Platform 与 Merchant，并核对事件、SKU、数量、金额、任务状态和唯一订单数。重复批准不会新增 receipt、decision 或业务订单。
+
+## 测试
+
+测试使用真实 PostgreSQL + pgvector；普通 unit、contract、graph 和 regression tests 使用确定性 mock/stub，并强制关闭 LangSmith tracing，不消耗 Groq/Google 调用：
+
+```powershell
+.\.venv\Scripts\python -m pytest
+```
+
+真实模型验收使用 `doctor`、`evals/dev.jsonl` 和三个 `--mode` 入口。模型用量不可获得时记录为 `unknown`，不记作零成本。
+
+## 当前限制
+
+- 当前资料集只有 14 个片段，检索质量对照只是小型开发验证，不代表大规模性能。
+- 本地 Qwen3 Reranker 真实可运行，但 CPU 延迟明显高于 Vector/Hybrid；默认模式会随后续真实数据重新评估。
+- Citation Validation 会降低无依据回答风险，但语义模型仍可能误判，不宣称保证答案正确。
+- Customer Agent 不读取任何真实订单、店铺、平台、仓库、日志或库存后台状态。
+- 订单模拟器只覆盖已付款单订单及必要拒绝状态；不连接真实平台，不做拆单或促销分摊。
+- Phase 3–5 的业务安全、批准、执行和验证由普通代码决定；LLM 不负责最终写入许可或成功判定。
+- Phase 3 的 Platform、Merchant 和 Worker Trace 已在 LangSmith `resolveai-v2` 项目中远端验证。
+- Phase 4 的完整真实调查与远端 Trace 因外部 503/429 标记为 `External Acceptance Deferred`，集中到 Phase 9/最终验收；本地 Evidence 和运行错误仍会保存。
+- Phase 5 已实现订单恢复，但完整 response-lost、worker crash、并发 lease 回收与两条恢复主线统一留到 Phase 6。
+- 产品规则属于本项目测试产品，不代表真实电商平台。
+- Docker 启动、模型地域和账户额度可能影响本机验收。
