@@ -1,13 +1,50 @@
-{"case_id":"qa-001","question":"如何开启订单同步？","expected_source":"docs/product/01-order-sync-switch.md"}
-{"case_id":"qa-002","question":"ORDER_SYNC_DISABLED 是什么意思？","expected_source":"docs/product/08-error-codes.md"}
-{"case_id":"qa-003","question":"平台订单已经付款但管理软件没有订单，先检查什么？","expected_source":"docs/product/02-order-eligibility.md"}
-{"case_id":"qa-004","question":"SKU_MAPPING_MISSING 应该怎么处理？","expected_source":"docs/product/03-sku-mapping.md"}
-{"case_id":"qa-005","question":"仓库已经发货为什么平台可能还是待发货？","expected_source":"docs/product/06-shipment-facts.md"}
-{"case_id":"qa-006","question":"这个系统能自动退款吗？","expected_source":"docs/product/12-unsupported-features.md"}
-{"case_id":"qa-007","question":"店铺的单子一直不进来怎么办？","expected_source":"docs/product/01-order-sync-switch.md"}
-{"case_id":"qa-008","question":"渠道 B 的订单为什么进不来？","expected_source":"docs/product/13-channel-differences.md"}
-{"case_id":"qa-009","question":"开启同步就能把所有历史订单都导入吗？","expected_source":"docs/product/01-order-sync-switch.md"}
-{"case_id":"qa-010","question":"旧版里的订单同步入口在哪里？","expected_behavior":"clarify_version"}
-{"case_id":"support-001","question":"订单 O-1002 在 shop-a 没有进入管理软件，我按资料检查后仍未解决。","expected_facts":["platform_order_exists","ORDER_SYNC_DISABLED"],"expected_role":"SUPPORT"}
-{"case_id":"support-002","question":"订单 O-1003 在 shop-a 没有进入管理软件。","expected_facts":["platform_order_exists","SKU_MAPPING_MISSING"],"expected_role":"SUPPORT"}
-{"case_id":"support-003","question":"订单 O-NOT-FOUND 在 shop-a 在哪里？","expected_behavior":"early_stop_not_found","expected_role":"SUPPORT"}
+{"case_id":"qa-001","category":"qa","question":"如何开启订单同步？","expected":{"source":"docs/product/01-order-sync-switch.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-002","category":"qa","question":"ORDER_SYNC_DISABLED 是什么意思？","expected":{"source":"docs/product/08-error-codes.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-003","category":"qa","question":"平台订单已付款但管理软件没有订单，先检查什么？","expected":{"source":"docs/product/02-order-eligibility.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-004","category":"qa","question":"SKU_MAPPING_MISSING 应该怎么处理？","expected":{"source":"docs/product/03-sku-mapping.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-005","category":"qa","question":"仓库已经发货，为什么平台可能还是待发货？","expected":{"source":"docs/product/06-shipment-facts.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-006","category":"qa","question":"这个系统能自动退款吗？","expected":{"source":"docs/product/12-unsupported-features.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-007","category":"qa","question":"店铺的单子一直不进来怎么办？","expected":{"source":"docs/product/01-order-sync-switch.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"qa-008","category":"qa","question":"渠道 B 的订单为什么进不来？","expected":{"source":"docs/product/13-channel-differences.md","behavior":"answer_with_citation"},"comparison_groups":["retrieval","roles"]}
+{"case_id":"order-001","category":"order","question":"订单 O-DEV-ORDER-1 在 shop-a 没有进入管理软件。","scenario":"order_sync_disabled","expected":{"facts":["platform_order_exists","ORDER_SYNC_DISABLED"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"order-002","category":"order","question":"订单 O-DEV-ORDER-2 在 shop-a 没有进入管理软件。","scenario":"sku_mapping_missing","expected":{"facts":["platform_order_exists","SKU_MAPPING_MISSING"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"order-003","category":"order","question":"订单 O-DEV-ORDER-3 在 shop-a 是否存在？","scenario":"order_not_found","expected":{"behavior":"early_stop_not_found","role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"order-004","category":"order","question":"shop-a 的订单 O-DEV-ORDER-4 为什么同步失败？","scenario":"connection_unauthorized","expected":{"facts":["platform_order_exists","CONNECTION_NOT_AUTHORIZED"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"order-005","category":"order","question":"shop-a 的订单 O-DEV-ORDER-5 为什么暂时无法同步？","scenario":"channel_rate_limited","expected":{"facts":["platform_order_exists","CHANNEL_RATE_LIMITED"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"order-006","category":"order","question":"shop-a 的订单 O-DEV-ORDER-6 调查时后台连续报错。","scenario":"error_budget","expected":{"behavior":"safe_stop_budget","role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-001","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-1 仓库还没出库，为什么平台没更新？","scenario":"warehouse_waiting","expected":{"facts":["warehouse_order_received","not_shipped"],"behavior":"normal_wait","role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-002","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-2 仓库已发货但管理软件没有记录。","scenario":"merchant_receipt_missing","expected":{"facts":["warehouse_shipped","merchant_receipt_missing"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-003","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-3 仓库已发货但平台没更新。","scenario":"platform_missing","expected":{"facts":["warehouse_shipped","merchant_received","platform_missing"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-004","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-4 发货同步开关关闭了吗？","scenario":"shipment_sync_disabled","expected":{"facts":["warehouse_shipped","SHIPMENT_SYNC_DISABLED"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-005","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-5 发货连接为什么被拒绝？","scenario":"shipment_connection_forbidden","expected":{"facts":["warehouse_shipped","CHANNEL_FORBIDDEN"],"role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"shipment-006","category":"shipment","question":"shop-a 的订单 O-DEV-SHIP-6 发货调查达到工具上限。","scenario":"tool_budget","expected":{"behavior":"safe_stop_budget","role":"SUPPORT"},"comparison_groups":["investigation","roles"]}
+{"case_id":"qa-009","category":"qa","question":"开启订单同步会自动补回所有历史订单吗？","expected":{"source":"docs/product/01-order-sync-switch.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-010","category":"qa","question":"旧版本里的订单同步入口在哪里？","expected":{"behavior":"clarify_version"},"comparison_groups":[]}
+{"case_id":"qa-011","category":"qa","question":"发货同步关闭后仓库还能出库吗？","expected":{"source":"docs/product/06-shipment-facts.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-012","category":"qa","question":"连接授权过期时应该先做什么？","expected":{"source":"docs/product/07-channel-errors.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-013","category":"qa","question":"库存发布数量是怎样计算的？","expected":{"source":"docs/product/08-stock-facts.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-014","category":"qa","question":"库存版本不同就一定代表发布失败吗？","expected":{"source":"docs/product/08-stock-facts.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-015","category":"qa","question":"为什么库存更新后需要等待传播窗口？","expected":{"source":"docs/product/08-stock-facts.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-016","category":"qa","question":"Support Agent 可以直接修改库存吗？","expected":{"source":"docs/product/12-unsupported-features.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-017","category":"qa","question":"订单恢复为什么需要人工批准？","expected":{"source":"docs/product/11-approval-boundary.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-018","category":"qa","question":"重复点击恢复会创建第二个订单吗？","expected":{"source":"docs/product/05-history-recovery.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-019","category":"qa","question":"Customer Agent 能查看真实订单状态吗？","expected":{"source":"docs/product/12-unsupported-features.md","behavior":"answer_with_citation"},"comparison_groups":[]}
+{"case_id":"qa-020","category":"qa","question":"什么时候应该创建 Engineer Ticket？","expected":{"behavior":"explain_ticket_boundary"},"comparison_groups":[]}
+{"case_id":"order-007","category":"order","question":"shop-b 的订单 O-DEV-ORDER-7 正常同步时应看到什么？","scenario":"order_normal","expected":{"facts":["platform_order_exists","merchant_order_exists"]},"comparison_groups":[]}
+{"case_id":"order-008","category":"order","question":"shop-a 的订单 O-DEV-ORDER-8 收到重复事件后有几条有效订单？","scenario":"duplicate_order_event","expected":{"facts":["single_merchant_order"],"behavior":"duplicate_protected"},"comparison_groups":[]}
+{"case_id":"order-009","category":"order","question":"shop-a 的订单 O-DEV-ORDER-9 响应丢失后是否需要重复创建？","scenario":"order_response_lost","expected":{"behavior":"reconcile_without_duplicate"},"comparison_groups":[]}
+{"case_id":"order-010","category":"order","question":"company-b 能否读取 company-a 的订单 O-DEV-ORDER-10？","scenario":"cross_company_order","expected":{"behavior":"forbidden"},"comparison_groups":[]}
+{"case_id":"order-011","category":"order","question":"shop-a 的订单 O-DEV-ORDER-11 版本变化后能否执行旧批准？","scenario":"order_version_changed","expected":{"behavior":"blocked_version_changed"},"comparison_groups":[]}
+{"case_id":"order-012","category":"order","question":"shop-a 的订单 O-DEV-ORDER-12 批准过期后能否执行？","scenario":"approval_expired","expected":{"behavior":"blocked_expired"},"comparison_groups":[]}
+{"case_id":"shipment-007","category":"shipment","question":"订单 O-DEV-SHIP-7 重复恢复会造成第二次实际出库吗？","scenario":"shipment_duplicate_recovery","expected":{"behavior":"single_warehouse_shipment"},"comparison_groups":[]}
+{"case_id":"shipment-008","category":"shipment","question":"订单 O-DEV-SHIP-8 平台响应丢失后怎样确认结果？","scenario":"shipment_response_lost","expected":{"behavior":"read_after_write_reconciliation"},"comparison_groups":[]}
+{"case_id":"shipment-009","category":"shipment","question":"订单 O-DEV-SHIP-9 Worker 崩溃后怎样继续？","scenario":"shipment_worker_crash","expected":{"behavior":"lease_reclaim"},"comparison_groups":[]}
+{"case_id":"shipment-010","category":"shipment","question":"订单 O-DEV-SHIP-10 两个恢复请求并发时有几条平台 Shipment？","scenario":"shipment_concurrent_recovery","expected":{"behavior":"single_platform_shipment"},"comparison_groups":[]}
+{"case_id":"shipment-011","category":"shipment","question":"company-b 能否读取 company-a 的 Shipment O-DEV-SHIP-11？","scenario":"cross_company_shipment","expected":{"behavior":"forbidden"},"comparison_groups":[]}
+{"case_id":"shipment-012","category":"shipment","question":"订单 O-DEV-SHIP-12 的 Warehouse、Merchant、Platform tracking 不一致。","scenario":"shipment_conflict","expected":{"behavior":"evidence_conflict_escalate"},"comparison_groups":[]}
+{"case_id":"stock-001","category":"stock","question":"shop-a 的 SKU-1 仓库 80、占用 10、安全库存 5，平台应发布多少？","scenario":"stock_normal","expected":{"facts":["published_quantity_65"],"behavior":"consistent"},"comparison_groups":[]}
+{"case_id":"stock-002","category":"stock","question":"shop-a 的 SKU-1 刚发布但平台还是旧版本，应立即判定失败吗？","scenario":"stock_propagation_window","expected":{"behavior":"waiting"},"comparison_groups":[]}
+{"case_id":"stock-003","category":"stock","question":"shop-a 的 SKU-UNKNOWN 没有映射时能否计算库存差异？","scenario":"stock_mapping_missing","expected":{"behavior":"insufficient_information"},"comparison_groups":[]}
+{"case_id":"ticket-001","category":"ticket","question":"这个问题未解决，请转人工工程师。","scenario":"user_requested","expected":{"behavior":"ticket_created_once"},"comparison_groups":[]}
+{"case_id":"ticket-002","category":"ticket","question":"同一会话再次请求人工时会创建第二张未关闭 Ticket 吗？","scenario":"duplicate_ticket_request","expected":{"behavior":"same_open_ticket"},"comparison_groups":[]}
+{"case_id":"ticket-003","category":"ticket","question":"company-b 的 Engineer 能查看分配给 company-a Engineer 的 Ticket 吗？","scenario":"ticket_engineer_scope","expected":{"behavior":"forbidden"},"comparison_groups":[]}

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "dataset": "evals/dev.jsonl",
+  "dry_run_case_ids": ["qa-001", "order-001", "ticket-001"],
+  "experiments": [
+    {
+      "name": "retrieval",
+      "case_ids": ["qa-001", "qa-002", "qa-003", "qa-004", "qa-005", "qa-006", "qa-007", "qa-008"],
+      "repeat": 2,
+      "variants": {
+        "vector_only": {"profiles": {"qa": {"calls": {"groq": 3, "google": 0, "embedding": 1}, "tokens": {"groq_input": 5000, "groq_output": 600, "google_input": 0, "google_output": 0, "embedding_input": 30}, "seconds": 6}}},
+        "hybrid": {"profiles": {"qa": {"calls": {"groq": 3, "google": 0, "embedding": 1}, "tokens": {"groq_input": 5000, "groq_output": 600, "google_input": 0, "google_output": 0, "embedding_input": 30}, "seconds": 6}}},
+        "hybrid_rerank": {"profiles": {"qa": {"calls": {"groq": 3, "google": 0, "embedding": 1}, "tokens": {"groq_input": 5000, "groq_output": 600, "google_input": 0, "google_output": 0, "embedding_input": 30}, "seconds": 12}}}
+      }
+    },
+    {
+      "name": "investigation",
+      "case_ids": ["order-001", "order-002", "order-003", "order-004", "order-005", "order-006", "shipment-001", "shipment-002", "shipment-003", "shipment-004", "shipment-005", "shipment-006"],
+      "repeat": 2,
+      "variants": {
+        "fixed_tools": {"profiles": {"default": {"calls": {"groq": 0, "google": 2, "embedding": 0}, "tokens": {"groq_input": 0, "groq_output": 0, "google_input": 4500, "google_output": 2000, "embedding_input": 0}, "seconds": 18}}},
+        "dynamic_tools": {"profiles": {"default": {"calls": {"groq": 0, "google": 3, "embedding": 0}, "tokens": {"groq_input": 0, "groq_output": 0, "google_input": 7500, "google_output": 3600, "embedding_input": 0}, "seconds": 25}}}
+      }
+    },
+    {
+      "name": "roles",
+      "case_ids": ["qa-001", "qa-002", "qa-003", "qa-004", "qa-005", "qa-006", "qa-007", "qa-008", "order-001", "order-002", "order-003", "order-004", "order-005", "order-006", "shipment-001", "shipment-002", "shipment-003", "shipment-004", "shipment-005", "shipment-006"],
+      "repeat": 2,
+      "variants": {
+        "single_role": {"profiles": {"qa": {"calls": {"groq": 0, "google": 1, "embedding": 0}, "tokens": {"groq_input": 0, "groq_output": 0, "google_input": 4000, "google_output": 1500, "embedding_input": 0}, "seconds": 10}, "default": {"calls": {"groq": 0, "google": 3, "embedding": 0}, "tokens": {"groq_input": 0, "groq_output": 0, "google_input": 7500, "google_output": 3600, "embedding_input": 0}, "seconds": 25}}},
+        "dual_role": {"profiles": {"qa": {"calls": {"groq": 3, "google": 0, "embedding": 1}, "tokens": {"groq_input": 5000, "groq_output": 600, "google_input": 0, "google_output": 0, "embedding_input": 30}, "seconds": 6}, "default": {"calls": {"groq": 1, "google": 3, "embedding": 0}, "tokens": {"groq_input": 800, "groq_output": 100, "google_input": 7500, "google_output": 3600, "embedding_input": 0}, "seconds": 27}}}
+      }
+    }
+  ],
+  "holdout": {
+    "case_count": 30,
+    "repeat": 3,
+    "runs": 90,
+    "average_per_run": {"calls": {"groq": 2, "google": 2, "embedding": 0.5}, "tokens": {"groq_input": 3500, "groq_output": 450, "google_input": 5000, "google_output": 2000, "embedding_input": 35}, "seconds": 18}
+  },
+  "external_acceptance": {
+    "runs": 9,
+    "description": "Phase 4 three order investigations, Phase 6 three shipment investigations, Phase 7 two channel/stock investigations, and Phase 8 one conversation-to-ticket browser acceptance.",
+    "average_per_run": {"calls": {"groq": 1, "google": 2, "embedding": 0.33}, "tokens": {"groq_input": 800, "groq_output": 100, "google_input": 4500, "google_output": 2000, "embedding_input": 10}, "seconds": 25}
+  }
+}

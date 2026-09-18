@@ -103,7 +103,7 @@ Support Agent
 
 **如何验证：**
 
-按技术方案 8.6 节启动数据库与初始化。运行 `python -m app.cli doctor`，确认实际模型和向量调用成功且向量长度为 1024。然后运行资料导入，提问“如何开启订单同步？”
+按技术方案 8.6 节启动数据库与初始化。运行 `python -m backend.app.cli doctor`，确认实际模型和向量调用成功且向量长度为 1024。然后运行资料导入，提问“如何开启订单同步？”
 
 应看到答案、资料标题、片段编号、会话编号；数据库中存在这次输入、回答和运行记录。再问“这个系统能自动退款吗？”应说明本期不提供，不编造操作路径。
 
@@ -176,7 +176,7 @@ Support Agent
 - 本任务创建只复制必要运行模块的 `Dockerfile`，用 `compose.yaml` 启动两个业务服务与后台进程；环境不足时可用独立 Python 进程开发，但接口必须实际调用。
 - 编写 `tests/test_orders.py`，扩大 `tests/test_access.py`；增加 `.github/workflows/checks.yml` 运行现有程序行为测试。
 
-**如何验证：** `python -m lab.cli order create --shop shop-a --order O-1001 --sku SKU-1 --qty 2 --amount-minor 20000`。正常开关时两端存在一致记录。新建独立场景关闭订单同步，平台有订单、管理软件有接收记录和受阻任务、管理订单不存在。
+**如何验证：** `python -m simulator.lab.cli order create --shop shop-a --order O-1001 --sku SKU-1 --qty 2 --amount-minor 20000`。正常开关时两端存在一致记录。新建独立场景关闭订单同步，平台有订单、管理软件有接收记录和受阻任务、管理订单不存在。
 
 **测试与完成条件：** 相同事件重复发送只有一笔业务订单；同事件编号不同内容返回冲突；写入任务之前不能返回接收成功。后台任务实际运行，不能在查询时直接拼出“已同步”。
 
@@ -250,7 +250,7 @@ Support Agent
 - 补充 `docs/product/` 的出库、运单、平台状态、发送记录四者区别。
 - 创建 `tests/test_shipments.py`，分别查询三端事实，不能共用一行状态。
 
-**如何验证：** 先创建有效订单并查询仓库接收记录；任务 04 留下的旧订单先运行 `python -m lab.cli order dispatch --shop shop-a --order O-1001`，等待仓库接收。再运行 `python -m lab.cli shipment create --shop shop-a --order O-1001 --carrier test-express --tracking TEST-1001`。正常情况下三端一致。关闭发货同步后，仓库和管理软件有发货记录，平台仍待发货，管理软件留下受阻任务。
+**如何验证：** 先创建有效订单并查询仓库接收记录；任务 04 留下的旧订单先运行 `python -m simulator.lab.cli order dispatch --shop shop-a --order O-1001`，等待仓库接收。再运行 `python -m simulator.lab.cli shipment create --shop shop-a --order O-1001 --carrier test-express --tracking TEST-1001`。正常情况下三端一致。关闭发货同步后，仓库和管理软件有发货记录，平台仍待发货，管理软件留下受阻任务。
 
 **测试与完成条件：** 送仓请求重复不新增仓库订单；管理软件有订单但仓库尚未接收时不能出库；重复仓库命令不增加出库次数；不存在的订单不能出库；平台尚未接受时不能伪造已更新；错误响应保存原始状态与经过遮盖的信息。
 
@@ -323,7 +323,7 @@ Support Agent
 - `tests/test_recovery.py` 使用实际子进程终止和重启；不同阶段重复验证。`lab/checks.py` 直接统计业务结果。
 - 在 `docs/product/` 明确结果未知与确定失败的区别，在 `README.md` 加恢复命令。
 
-**如何验证：** `python -m lab.cli seed --scenario shipment_response_lost`，调查批准后观察超时；用 `case resume` 恢复。应先查平台事实或原回执，再补本地状态。最终平台一个发货结果，仓库一次出库。
+**如何验证：** `python -m simulator.lab.cli seed --scenario shipment_response_lost`，调查批准后观察超时；用 `case resume` 恢复。应先查平台事实或原回执，再补本地状态。最终平台一个发货结果，仓库一次出库。
 
 **测试与完成条件：** 至少覆盖批准前退出、远端成功后退出、本地成功记录后退出三处；同时恢复只产生一次业务效果；同请求编号不同内容返回冲突；批准后取消订单或改变运单使旧方案的未执行部分失效；本操作已完成步骤造成的新版本通过原回执确认。批准过期仍可查证已生效结果，剩余新业务写入须重新批准，不能把整项操作无条件重放。
 
@@ -421,7 +421,7 @@ Support Agent
 - `tests/test_eval.py` 检查指标分母、失败计数、重复次数和无价格配置时的处理。
 - 保留运行编号、版本、原始用量、遮盖后的记录，以及按案例逐条判断的结果；从现有 trace 汇总每案模型调用次数、retrieval/rerank latency、工具调用次数、总 latency、token/用量和可得成本。
 
-**如何验证：** `python -m app.cli eval run --suite evals/dev.jsonl --mode full --repeat 1`；再运行预设对照与保留集。用 `eval compare` 生成摘要，并抽查至少五个报告结论是否与原始事实一致。
+**如何验证：** `python -m backend.app.cli eval run --suite evals/dev.jsonl --mode full --repeat 1`；再运行预设对照与保留集。用 `eval compare` 生成摘要，并抽查至少五个报告结论是否与原始事实一致。
 
 **测试与完成条件：** 报告包括成功、失败、正常无需修复和应人工案例；不把用户未确认的问答算修复；假成功、越权、未批准写入、重复业务单列；所有模型调用及失败重试计入耗时和用量。安全回归出现任何问题不得完成最终验收。
 

@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-resolveai = "app.cli:main"
+resolveai = "backend.app.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -47,4 +47,4 @@ line-length = 200
 target-version = "py311"
 
 [tool.setuptools.packages.find]
-include = ["app*", "lab*", "services*"]
+include = ["backend*", "simulator*"]

@@ -1,9 +1,9 @@
 from uuid import uuid4
 
-from app.actions import propose_order_recovery
-from app.auth import authenticate
-from app.db import get_connection
-from app.verify import verify_order_recovery
+from backend.app.actions import propose_order_recovery
+from backend.app.auth import authenticate
+from backend.app.database import get_connection
+from backend.app.verification import verify_order_recovery
 from tests.test_actions import action_runtime as setup_action_runtime
 from tests.test_actions import create_missing_order_case
 

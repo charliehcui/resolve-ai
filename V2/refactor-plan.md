@@ -1,6 +1,6 @@
 # ResolveAI V1 → V2 渐进式重构计划
 
-> 状态：Phase 0 已完成；当前停在 Phase 0，未经确认不进入 Phase 1。  
+> 状态：Phase 10 / Task 15 已完成本地实现与交付验证。Phase 9 只保留评估基础，付费 Benchmark、176 次对照、Holdout 30×3 和批量外部验收按当前决定不执行。
 > 唯一事实来源（Source of Truth）：`V2/building-plan-V2.md`。  
 > 本文件只是实施计划。业务背景、Agent 职责、RAG、Tools、数据模型、API、前端、业务流程、测试和评估如与事实来源冲突，一律以 `building-plan-V2.md` 为准。  
 > 本轮明确的 Groq / Google 模型路由（Model Routing）、Phase 审批门槛和 V1 只读边界作为执行约束；它们不改变 V2 的业务范围。
@@ -508,24 +508,28 @@ V1：只读参考，不复制旧业务语义，不产生运行依赖。
 
 对应：Task 14。
 
+状态：**Preparation Complete / Formal Benchmark Deferred**。Dataset、Eval Runner、对照配置、3-case validate-only Dry Run 和预算估算保留；当前不运行付费 Benchmark、176 次对照、Holdout 30×3 或批量外部模型/LangSmith 验收，并且这些运行不阻塞 Phase 10。
+
 工作：
 
 - 在前面阶段持续累积到 50 dev + 30 frozen holdout，隔离 hidden facts。
 - 完成三种 retrieval、fixed vs dynamic tools、single vs dual roles 对照。
 - 先完成 Dataset、Eval Runner、Dry Run、运行次数统计、Token 预计用量、预计费用和预计时间。
-- 将估算与 Dry Run 结果报告给用户并停止。只有用户明确确认后，才在同一个 Phase 9 中运行 building plan 指定的 176 次比较和 30 个 holdout 各三次完整评测。
+- 将估算与 Dry Run 结果保留为评估基础。正式运行已按当前测试策略延期，除非用户以后明确改变要求，否则不执行。
 - 从 LangSmith/本地运行记录聚合成功、失败、正常无需修复、人工升级、工具数、无效调用、延迟、token/usage/cost。
 - 对假成功、越权、未批准写、重复业务效果单列安全失败。
 - 输出 JSON/HTML，可追踪到 case/run/trace/version。
 
 测试：指标分母、重复次数、失败计数、无价格配置、报告脱敏、holdout 隔离和安全门禁。  
-可运行结果：批准前可重复执行小规模 Dry Run 并得到预算估算；批准后才生成完整真实报告。  
-退出条件：完整 Benchmark 获得用户事前确认，报告如实保留失败；安全回归任何一项失败都阻止最终验收。  
+可运行结果：可重复执行确定性 Dry Run 并得到预算估算；它不代表模型质量结果。
+退出条件：评估基础、门禁和失败保留逻辑已完成；正式 Benchmark 当前不作为 Phase 10 前置条件。
 边界：V1 的旧数据集和报告保持不变，但不作为 V2 数据或结果。
 
 ### Phase 10 — Ticket 复查、文档与 V2 独立交付
 
 对应：Task 15 和最终检查清单。
+
+状态：**Complete**。Ticket 复查/关闭、API/CLI/React 展示、HTML 导出、一次性 Compose init、V2 独立性检查和本地固定回归已完成；没有调用真实 Groq/Google 或上传 LangSmith Trace。
 
 工作：
 

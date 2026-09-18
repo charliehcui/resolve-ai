@@ -3,13 +3,13 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import get_connection
-from services import common
-from services.common import OrderEvent
-from services.merchant import app as merchant_app
-from services.merchant import store_order_event
-from services.platform import app as platform_app
-from services.worker import process_next_task, recover_interrupted_tasks
+from backend.app.database import get_connection
+from simulator.services import common
+from simulator.services.common import OrderEvent
+from simulator.services.merchant import app as merchant_app
+from simulator.services.merchant import store_order_event
+from simulator.services.platform import app as platform_app
+from simulator.services.worker import process_next_task, recover_interrupted_tasks
 
 
 @pytest.fixture()
@@ -82,7 +82,7 @@ def test_interrupted_task_continues_after_worker_restart(seeded_database: dict[s
 
 
 def test_platform_duplicate_reuses_event_and_conflicting_content_is_rejected(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("services.platform.deliver_event", lambda order_event: ("delivered", 200, {"accepted": True}, None))
+    monkeypatch.setattr("simulator.services.platform.deliver_event", lambda order_event: ("delivered", 200, {"accepted": True}, None))
     client = TestClient(platform_app)
     headers = {"Authorization": f"Bearer {seeded_database['token_a']}"}
     payload = {"shop_id": "shop-a", "external_order_id": "O-PLATFORM", "sku": "SKU-1", "quantity": 2, "amount_minor": 20000, "payment_status": "paid"}

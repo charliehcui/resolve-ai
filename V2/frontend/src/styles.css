@@ -1,0 +1,27 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17211c; background: #eef2ed; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1280px; margin: auto; padding: 32px 20px 64px; }
+header { padding: 28px; border-radius: 18px; background: #173d31; color: #f4faf6; margin-bottom: 20px; }
+h1 { margin: 4px 0; font-size: 42px; }
+h2 { margin-top: 0; font-size: 17px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; color: #9dd6bd; font-size: 12px; }
+.columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 20px; align-items: start; }
+section { background: white; border: 1px solid #dce5df; border-radius: 14px; padding: 18px; margin-bottom: 16px; box-shadow: 0 4px 18px #1a3c2b0d; }
+label { display: grid; gap: 6px; font-size: 13px; color: #53645b; }
+input, textarea { width: 100%; border: 1px solid #b9c8c0; border-radius: 8px; padding: 10px; font: inherit; }
+textarea { min-height: 90px; margin: 14px 0 8px; resize: vertical; }
+button { border: 0; border-radius: 8px; padding: 10px 14px; background: #17694c; color: white; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+button.secondary { background: #e3eee8; color: #214c3b; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.role { display: inline-block; padding: 6px 10px; border-radius: 99px; background: #dff4e9; color: #17694c; margin-bottom: 14px; font-weight: 700; }
+article { border-top: 1px solid #edf1ee; padding: 12px 0; }
+article p { margin: 5px 0; }
+pre { overflow: auto; max-height: 380px; background: #f6f8f6; padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; }
+.mono { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.error { padding: 12px; margin-bottom: 16px; border-radius: 8px; background: #fee4e2; color: #8e201c; }
+.ticket { display: block; width: 100%; margin-top: 8px; background: #edf5f0; color: #173d31; text-align: left; }
+.ticket-status { display: inline-block; margin-bottom: 10px; padding: 6px 10px; border-radius: 99px; background: #fff0c2; color: #6d4b00; font-weight: 700; }
+.ticket-status.closed { background: #dff4e9; color: #17694c; }
+@media (max-width: 820px) { .columns { grid-template-columns: 1fr; } h1 { font-size: 34px; } }

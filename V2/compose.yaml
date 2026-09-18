@@ -15,11 +15,26 @@ services:
     volumes:
       - resolveai_v2_postgres_data:/var/lib/postgresql/data
 
-  merchant:
-    build: .
-    command: ["uvicorn", "services.merchant:app", "--host", "0.0.0.0", "--port", "8002"]
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.init
+    command: ["python", "-m", "simulator.lab.bootstrap"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      LANGSMITH_TRACING: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./.local:/app/.local
+
+  merchant:
+    build: .
+    command: ["uvicorn", "simulator.services.merchant:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      WAREHOUSE_URL: http://warehouse:8003
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
@@ -28,14 +43,14 @@ services:
     ports:
       - "127.0.0.1:8002:8002"
     depends_on:
-      db:
-        condition: service_healthy
+      init:
+        condition: service_completed_successfully
     volumes:
       - ./.local:/app/.local:ro
 
   platform:
     build: .
-    command: ["uvicorn", "services.platform:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: ["uvicorn", "simulator.services.platform:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       MERCHANT_INGEST_URL: http://merchant:8002/events/orders
@@ -47,8 +62,29 @@ services:
     ports:
       - "127.0.0.1:8001:8001"
     depends_on:
-      db:
-        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+      merchant:
+        condition: service_started
+    volumes:
+      - ./.local:/app/.local:ro
+
+  warehouse:
+    build: .
+    command: ["uvicorn", "simulator.services.warehouse:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      MERCHANT_SHIPMENT_URL: http://merchant:8002/events/shipments
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_WORKSPACE_ID: ${LANGSMITH_WORKSPACE_ID:-}
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      init:
+        condition: service_completed_successfully
       merchant:
         condition: service_started
     volumes:
@@ -56,19 +92,60 @@ services:
 
   worker:
     build: .
-    command: ["python", "-m", "services.worker"]
+    command: ["python", "-m", "simulator.services.worker"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       PLATFORM_URL: http://platform:8001
+      WAREHOUSE_URL: http://warehouse:8003
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
       LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       LANGSMITH_WORKSPACE_ID: ${LANGSMITH_WORKSPACE_ID:-}
     depends_on:
-      db:
-        condition: service_healthy
+      init:
+        condition: service_completed_successfully
       merchant:
+        condition: service_started
+      warehouse:
+        condition: service_started
+    volumes:
+      - ./.local:/app/.local:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["uvicorn", "backend.app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      MERCHANT_URL: http://merchant:8002
+      PLATFORM_URL: http://platform:8001
+      WAREHOUSE_URL: http://warehouse:8003
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_MODEL: ${GOOGLE_MODEL}
+      GOOGLE_FALLBACK_MODEL: ${GOOGLE_FALLBACK_MODEL:-}
+      GOOGLE_EMBEDDING_MODEL: ${GOOGLE_EMBEDDING_MODEL}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      RERANK_MODEL: ${RERANK_MODEL}
+      RETRIEVAL_MODE: ${RETRIEVAL_MODE:-vector_only}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_WORKSPACE_ID: ${LANGSMITH_WORKSPACE_ID:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      merchant:
+        condition: service_started
+      platform:
+        condition: service_started
+      warehouse:
         condition: service_started
     volumes:
       - ./.local:/app/.local:ro

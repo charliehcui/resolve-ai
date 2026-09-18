@@ -1,0 +1,7 @@
+{
+  "status": "frozen",
+  "case_count": 30,
+  "created_for": "Phase 7 / Task 11",
+  "rule": "Do not edit cases or expected labels to improve evaluation results.",
+  "sha256": "87422e35a04b7bff9e4ce23d051c20c2386e46953c7f32d3c71dd108b3ed8a2a"
+}

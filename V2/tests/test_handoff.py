@@ -4,20 +4,22 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import authenticate
-from app.cli import chat_command
-from app.config import get_settings
-from app.db import create_conversation, get_connection
-from app.evidence import EvidenceRecord
-from app.graph import support_plan_node
-from app.models import AuthContext
-from app.support import SupportHandoff, SupportResult, handoff_to_support, load_handoff, plan_support_step, show_case
-from app.tools import TOOL_FUNCTIONS, ToolResult, execute_tool_batch, get_order
-from services import common
-from services.common import OrderEvent, payload_hash
-from services.merchant import app as merchant_app
-from services.merchant import store_order_event
-from services.platform import app as platform_app
+from backend.app.auth import authenticate
+from backend.app.cli import chat_command
+from backend.app.config import get_settings
+from backend.app.database import create_conversation, get_connection
+from backend.app.handoff import SupportHandoff, handoff_to_support, load_handoff
+from backend.app.models import AuthContext
+from backend.app.support_agent import SupportInvestigationResult, plan_support_step, render_control_result
+from backend.app.support_cases import show_case
+from backend.app.support_evidence import EvidenceRecord
+from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult, execute_tool_batch, get_order
+from backend.app.support_workflow import support_plan_node
+from simulator.services import common
+from simulator.services.common import OrderEvent, payload_hash
+from simulator.services.merchant import app as merchant_app
+from simulator.services.merchant import store_order_event
+from simulator.services.platform import app as platform_app
 
 
 def create_handoff(seeded_database: dict[str, str], question: str = "订单 O-HANDOFF 在 shop-a 仍然没有进入管理软件") -> tuple[AuthContext, str, str]:
@@ -51,7 +53,7 @@ def test_cross_company_cannot_read_handoff_case(seeded_database: dict[str, str])
 def test_missing_identifier_requests_information_before_model_or_tools(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     auth, conversation_id, case_id = create_handoff(seeded_database, "订单 O-HANDOFF 仍然没有进入管理软件")
     handoff = load_handoff(conversation_id, auth)
-    monkeypatch.setattr("app.graph.plan_support_step", lambda *args: pytest.fail("planner must not run without shop_id"))
+    monkeypatch.setattr("backend.app.support_workflow.plan_support_step", lambda *args: pytest.fail("planner must not run without shop_id"))
     result = support_plan_node({"question": "继续调查", "auth": auth.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": 0.0})
     assert result["status"] == "needs_info"
     assert "shop_id" in result["answer"]
@@ -77,15 +79,17 @@ def test_internal_contract_distinguishes_scoped_result_and_empty_records(seeded_
 
 
 def test_tool_reports_service_unavailable_without_inventing_fact(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.tools.read_service_token", lambda name: "support-test-token")
+    monkeypatch.setattr("backend.app.support_tools.read_service_token", lambda name: "support-test-token")
 
     def unavailable(*args, **kwargs):
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("app.tools.httpx.get", unavailable)
+    monkeypatch.setattr("backend.app.support_tools.httpx.get", unavailable)
     result = get_order(AuthContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "O-OFFLINE")
     assert result.status == "unavailable"
-    assert result.response == {"error_type": "ConnectError"}
+    assert result.response["error_type"] == "ConnectError"
+    assert result.response["error_code"] == "SERVICE_UNAVAILABLE"
+    assert result.response["request_id"]
 
 
 def test_independent_read_tools_execute_as_parallel_evidence_batch(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,9 +116,9 @@ def test_independent_read_tools_execute_as_parallel_evidence_batch(seeded_databa
 
 def test_support_role_is_sticky_and_does_not_return_to_customer_graph(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     _, conversation_id, case_id = create_handoff(seeded_database)
-    result = SupportResult(answer="已读取真实证据。", status="diagnosed", case_id=case_id, evidence_ids=["evidence-1"], tool_path=["GetOrder"], tool_call_count=1, usage={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2})
-    monkeypatch.setattr("app.cli.run_support_graph", lambda *args: result)
-    monkeypatch.setattr("app.cli.run_customer_graph", lambda *args: pytest.fail("Customer Graph must not run after handoff"))
+    result = SupportInvestigationResult(answer="已读取真实证据。", status="diagnosed", case_id=case_id, evidence_ids=["evidence-1"], tool_path=["GetOrder"], tool_call_count=1, usage={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2})
+    monkeypatch.setattr("backend.app.conversations.run_support_graph", lambda *args: result)
+    monkeypatch.setattr("backend.app.conversations.run_customer_graph", lambda *args: pytest.fail("Customer Graph must not run after handoff"))
     chat_command(seeded_database["token_a"], "继续调查", conversation_id, None)
     assert "Active role: SUPPORT" in capsys.readouterr().out
 
@@ -123,7 +127,7 @@ def test_tool_budget_stops_without_another_model_call(seeded_database: dict[str,
     auth, conversation_id, case_id = create_handoff(seeded_database)
     handoff = load_handoff(conversation_id, auth)
     evidence = [EvidenceRecord(evidence_id=str(uuid4()), sequence=index + 1, batch_id=str(uuid4()), parallel=False, tool_name="GetOrder", request={"shop_id": "shop-a", "order_id": f"O-{index}"}, response={"event_id": str(index)}, source_service="platform", status="success", latency_ms=1) for index in range(6)]
-    monkeypatch.setattr("app.graph.plan_support_step", lambda *args: pytest.fail("planner must not run after budget"))
+    monkeypatch.setattr("backend.app.support_workflow.plan_support_step", lambda *args: pytest.fail("planner must not run after budget"))
     result = support_plan_node({"question": "继续", "auth": auth.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in evidence], "usage": {}, "started_at": 0.0})
     assert result["status"] == "pending_human"
     assert "预算" in result["answer"]
@@ -153,7 +157,7 @@ def test_support_planner_falls_back_only_after_temporary_google_failure(monkeypa
         attempted_models.append(model_name)
         return FakeBoundModel(model_name)
 
-    monkeypatch.setattr("app.support.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_agent.create_google_model", fake_google_model)
     settings = get_settings()
     handoff = SupportHandoff(
         handoff_id="handoff-1",
@@ -185,7 +189,7 @@ def test_support_planner_does_not_fallback_for_non_temporary_error(monkeypatch: 
         attempted_models.append(model_name)
         return FakeBoundModel()
 
-    monkeypatch.setattr("app.support.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_agent.create_google_model", fake_google_model)
     settings = get_settings()
     handoff = SupportHandoff(
         handoff_id="handoff-1",
@@ -200,3 +204,15 @@ def test_support_planner_does_not_fallback_for_non_temporary_error(monkeypatch: 
     with pytest.raises(ValueError, match="invalid structured output"):
         plan_support_step("Investigate", handoff, [], 6)
     assert attempted_models == [settings.google_model]
+
+
+def test_conflicting_shipment_evidence_cannot_be_rendered_as_confirmed_root_cause() -> None:
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    records = [
+        EvidenceRecord(evidence_id=first_id, sequence=1, batch_id=str(uuid4()), parallel=True, tool_name="GetShipment", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"shipment_id": "S-1", "tracking_number": "TRACK-A"}, source_service="warehouse", status="success", latency_ms=1, object_type="shipment", object_id="O-1"),
+        EvidenceRecord(evidence_id=second_id, sequence=2, batch_id=str(uuid4()), parallel=True, tool_name="GetPlatformShipment", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"shipment_id": "S-1", "tracking_number": "TRACK-B"}, source_service="platform", status="success", latency_ms=1, object_type="shipment", object_id="O-1"),
+    ]
+    answer, status = render_control_result({"name": "FinishInvestigation", "args": {"summary": "已确认", "confirmed_facts": [{"text": "平台正确", "evidence_ids": [first_id, second_id]}]}}, records)
+    assert status == "pending_human"
+    assert "矛盾" in answer

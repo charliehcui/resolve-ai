@@ -1,0 +1,13 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.lock /app/requirements.lock
+RUN pip install --no-cache-dir -r /app/requirements.lock
+
+COPY backend /app/backend
+COPY infra/migrations /app/infra/migrations
+COPY simulator/__init__.py /app/simulator/__init__.py
+COPY simulator/services/__init__.py simulator/services/common.py /app/simulator/services/
+
+ENV PYTHONUNBUFFERED=1

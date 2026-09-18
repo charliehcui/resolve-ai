@@ -1,18 +1,19 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import pytest
 
-from app.actions import decide_action, execute_order_recovery, propose_order_recovery, show_action
-from app.auth import authenticate
-from app.db import create_conversation, get_connection
-from app.models import AuthContext
-from app.support import handoff_to_support
-from app.tools import TOOL_FUNCTIONS, ToolResult
-from services import common
-from services.common import OrderEvent, OrderRepairRequest
-from services.merchant import receive_order_repair, store_order_event
-from services.worker import process_next_recovery_task, process_next_task
+from backend.app.actions import decide_action, execute_order_recovery, propose_order_recovery, show_action
+from backend.app.auth import authenticate
+from backend.app.database import create_conversation, get_connection
+from backend.app.handoff import handoff_to_support
+from backend.app.models import AuthContext
+from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
+from simulator.services import common
+from simulator.services.common import OrderEvent, OrderRepairRequest
+from simulator.services.merchant import receive_order_repair, store_order_event
+from simulator.services.worker import process_next_recovery_task, process_next_task
 
 
 def create_missing_order_case(auth: AuthContext, order_id: str = "O-RECOVER") -> tuple[str, str, str]:
@@ -58,31 +59,31 @@ def action_runtime(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPa
     monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda auth, shop_id: business_tool("GetShopStatus", auth, shop_id))
     monkeypatch.setitem(TOOL_FUNCTIONS, "CheckConnection", lambda auth, shop_id: business_tool("CheckConnection", auth, shop_id))
     monkeypatch.setitem(TOOL_FUNCTIONS, "GetProcessRecords", lambda auth, shop_id, order_id: business_tool("GetProcessRecords", auth, shop_id, order_id))
-    monkeypatch.setattr("app.actions.get_order", lambda auth, shop_id, order_id: business_tool("GetOrder", auth, shop_id, order_id))
-    monkeypatch.setattr("app.actions.get_shop_status", lambda auth, shop_id: business_tool("GetShopStatus", auth, shop_id))
+    monkeypatch.setattr("backend.app.actions.get_order", lambda auth, shop_id, order_id: business_tool("GetOrder", auth, shop_id, order_id))
+    monkeypatch.setattr("backend.app.actions.get_shop_status", lambda auth, shop_id: business_tool("GetShopStatus", auth, shop_id))
 
     def fake_mapping(auth: AuthContext, shop_id: str, platform_sku: str) -> ToolResult:
         with get_connection() as connection:
             row = connection.execute("SELECT platform_sku, merchant_sku, active FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s", (auth.company_id, shop_id, platform_sku)).fetchone()
         return ToolResult(tool_name="GetSkuMapping", request={"shop_id": shop_id, "platform_sku": platform_sku}, response=dict(row) if row else {}, source_service="merchant", status="success" if row else "not_found", latency_ms=1)
 
-    monkeypatch.setattr("app.actions.get_sku_mapping", fake_mapping)
-    monkeypatch.setattr("app.actions.submit_order_repair", lambda payload: receive_order_repair(OrderRepairRequest(**payload), "test-service-token"))
+    monkeypatch.setattr("backend.app.actions.get_sku_mapping", fake_mapping)
+    monkeypatch.setattr("backend.app.actions.submit_order_repair", lambda payload: receive_order_repair(OrderRepairRequest(**payload), "test-service-token"))
 
     def fake_platform_order(company_id: str, shop_id: str, external_order_id: str) -> dict[str, object] | None:
         with get_connection() as connection:
             row = connection.execute("SELECT event_id::text, company_id, shop_id, external_order_id, sku, quantity, amount_minor, payment_status, version FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (company_id, shop_id, external_order_id)).fetchone()
         return dict(row) if row else None
 
-    monkeypatch.setattr("services.worker.read_platform_order", fake_platform_order)
+    monkeypatch.setattr("simulator.services.worker.read_platform_order", fake_platform_order)
 
     def process_then_verify(auth: AuthContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
         process_next_recovery_task()
-        from app.verify import verify_order_recovery
+        from backend.app.verification import verify_order_recovery
 
         return verify_order_recovery(auth, action_id, final=True)
 
-    monkeypatch.setattr("app.verify.wait_for_order_verification", process_then_verify)
+    monkeypatch.setattr("backend.app.verification.wait_for_order_verification", process_then_verify)
     return seeded_database
 
 
@@ -187,3 +188,33 @@ def test_existing_correct_order_is_verified_as_no_action_needed(action_runtime: 
     with get_connection() as connection:
         proposal_count = connection.execute("SELECT COUNT(*) AS count FROM support.action_proposals WHERE case_id = %s", (case_id,)).fetchone()["count"]
     assert proposal_count == 0
+
+
+def test_order_repair_response_lost_is_reconciled_after_resume(action_runtime: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    auth = authenticate(action_runtime["token_a"])
+    case_id, _, _ = create_missing_order_case(auth, "O-ORDER-RESPONSE-LOST")
+    proposed = propose_order_recovery(auth, case_id)
+
+    def commit_then_lose(payload: dict[str, object]) -> dict[str, object]:
+        receive_order_repair(OrderRepairRequest(**payload), "test-service-token")
+        raise httpx.ReadTimeout("response lost", request=httpx.Request("POST", "http://merchant/repairs/orders"))
+
+    monkeypatch.setattr("backend.app.actions.submit_order_repair", commit_then_lose)
+    unknown = decide_action(auth, proposed["action_id"], "approve")
+    assert unknown["status"] == "executing"
+    assert unknown["execution"]["status"] == "unknown"
+
+    def receipt_from_merchant(action: dict[str, object]) -> dict[str, object]:
+        with get_connection() as connection:
+            row = connection.execute("""SELECT r.receipt_id::text, t.task_id::text, t.status AS task_status
+                FROM merchant.order_repair_receipts r JOIN merchant.order_recovery_tasks t ON t.receipt_id = r.receipt_id
+                WHERE r.action_id = %s""", (action["action_id"],)).fetchone()
+        return {"accepted": True, "duplicate": True, **dict(row)}
+
+    monkeypatch.setattr("backend.app.actions.reconcile_action_receipt", receipt_from_merchant)
+    completed = execute_order_recovery(auth, proposed["action_id"])
+    assert completed["status"] == "verified_resolved"
+    with get_connection() as connection:
+        receipt_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"]
+        order_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.orders WHERE company_id = %s AND external_order_id = 'O-ORDER-RESPONSE-LOST'", (auth.company_id,)).fetchone()["count"]
+    assert (receipt_count, order_count) == (1, 1)

@@ -31,12 +31,13 @@ jobs:
     env:
       DATABASE_URL: postgresql://resolveai:resolveai-test@127.0.0.1:5432/resolveai
       GROQ_API_KEY: test-only
-      GROQ_MODEL: test-only
+      GROQ_MODEL: groq-test-only
       GOOGLE_API_KEY: test-only
-      GOOGLE_MODEL: test-only
-      GOOGLE_EMBEDDING_MODEL: test-only
+      GOOGLE_MODEL: google-primary-test-only
+      GOOGLE_FALLBACK_MODEL: google-fallback-test-only
+      GOOGLE_EMBEDDING_MODEL: embedding-test-only
       EMBEDDING_DIMENSION: "1024"
-      RERANK_MODEL: test-only
+      RERANK_MODEL: rerank-test-only
       RETRIEVAL_MODE: vector_only
       LANGSMITH_TRACING: "false"
       LANGSMITH_PROJECT: resolveai-v2-ci
@@ -47,6 +48,15 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: V2/requirements.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: V2/frontend/package-lock.json
       - run: python -m pip install -r requirements.lock
       - run: python -m pytest
-      - run: python -m ruff check app lab services tests
+      - run: python -m ruff check backend simulator evals tests
+      - run: npm ci
+        working-directory: V2/frontend
+      - run: npm run build
+        working-directory: V2/frontend

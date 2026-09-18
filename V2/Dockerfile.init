@@ -1,0 +1,15 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY simulator/services/requirements.txt /app/simulator/services/requirements.txt
+RUN pip install --no-cache-dir -r /app/simulator/services/requirements.txt
+
+COPY backend/__init__.py /app/backend/__init__.py
+COPY backend/app/__init__.py backend/app/config.py backend/app/database.py /app/backend/app/
+COPY infra/migrations /app/infra/migrations
+COPY simulator/__init__.py /app/simulator/__init__.py
+COPY simulator/lab/__init__.py simulator/lab/bootstrap.py /app/simulator/lab/
+
+ENV PYTHONUNBUFFERED=1
+ENV LANGSMITH_TRACING=false

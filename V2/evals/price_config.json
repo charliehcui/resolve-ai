@@ -1,13 +1,25 @@
 {
   "currency": "USD",
+  "pricing_as_of": "2026-09-18",
   "groq": {
-    "input_per_million_tokens": null,
-    "output_per_million_tokens": null
+    "model": "openai/gpt-oss-20b",
+    "input_per_million_tokens": 0.075,
+    "output_per_million_tokens": 0.30,
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-20b"
   },
   "google": {
-    "input_per_million_tokens": null,
-    "output_per_million_tokens": null,
-    "embedding_per_million_tokens": null
+    "model": "gemini-3.8-flash",
+    "input_per_million_tokens": 0.75,
+    "output_per_million_tokens": 3.75,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "price_period": "introductory pricing through 2026-12-31"
   },
-  "note": "Unknown prices remain null and are never reported as zero. Phase 9 will add user-approved benchmark estimates."
+  "embedding": {
+    "model": "gemini-embedding-001",
+    "input_per_million_tokens": null,
+    "estimate_proxy_per_million_tokens": 0.20,
+    "proxy_model": "gemini-embedding-2",
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "note": "The current official pricing table does not list a paid rate for gemini-embedding-001. The estimate uses the newer gemini-embedding-2 text-input rate as a transparent proxy; actual embedding cost remains unknown."
+  }
 }

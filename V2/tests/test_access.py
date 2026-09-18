@@ -1,13 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import authenticate, authorize_conversation
-from app.config import Settings, require_env
-from app.db import create_conversation, load_messages, save_message
-from app.models import provider_for_task
-from services.common import OrderEvent
-from services.merchant import app as merchant_app
-from services.merchant import store_order_event
+from backend.app.auth import authenticate, authorize_conversation
+from backend.app.config import Settings, require_env
+from backend.app.database import create_conversation, load_messages, save_message
+from backend.app.models import provider_for_task
+from simulator.services.common import OrderEvent
+from simulator.services.merchant import app as merchant_app
+from simulator.services.merchant import store_order_event
 
 
 def test_invalid_token_is_rejected(seeded_database: dict[str, str]) -> None:
@@ -51,7 +51,7 @@ def test_company_cannot_read_other_company_order_task(seeded_database: dict[str,
 
 
 def test_order_event_ingest_requires_service_credential(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("services.common.read_service_token", lambda name: "expected-service-token")
+    monkeypatch.setattr("simulator.services.common.read_service_token", lambda name: "expected-service-token")
     order_event = OrderEvent(
         event_id="af32fb28-1871-4ec1-bcf0-5b0dd6b4f9cc",
         company_id="company-a",
