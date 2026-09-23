@@ -7,7 +7,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from backend.app.config import PROJECT_ROOT, get_settings
-from backend.app.customer_agent import token_usage
+from backend.app.customer_agent import get_token_usage
 from backend.app.handoff import SupportHandoff
 from backend.app.models import create_google_model
 from backend.app.support_evidence import EvidenceRecord
@@ -125,7 +125,7 @@ def plan_support_step(question: str, handoff: SupportHandoff, evidence: list[Evi
         }
         calls.append(call)
 
-    return calls, token_usage(response), model_name
+    return calls, get_token_usage(response), model_name
 
 
 def handoff_path():

@@ -7,7 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 
 from backend.app.config import get_settings
-from backend.app.customer_agent import add_usage
+from backend.app.customer_agent import sum_token_usage
 from backend.app.handoff import SupportHandoff, update_handoff_identifiers
 from backend.app.models import AuthContext
 from backend.app.support_agent import (
@@ -91,7 +91,7 @@ def support_plan_node(state: SupportInvestigationState) -> SupportInvestigationS
 
     remaining_tool_calls = MAX_TOOL_CALLS - len(evidence)
     calls, usage, model_name = plan_support_step(state["question"], handoff, evidence, remaining_tool_calls)
-    total_usage = add_usage(state.get("usage", {}), usage)
+    total_usage = sum_token_usage(state.get("usage", {}), usage)
     models_used = list(state.get("models_used", []))
     models_used.append(model_name)
 

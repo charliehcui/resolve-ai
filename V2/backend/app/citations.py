@@ -3,7 +3,7 @@ from langsmith import traceable
 
 from backend.app.config import PROJECT_ROOT
 from backend.app.database import get_connection
-from backend.app.models import AnswerClaim, AuthContext, CitationCheckOutput, RetrievedChunk, create_groq_model
+from backend.app.models import AnswerClaim, AuthContext, ClaimValidationOutput, RetrievedChunk, create_groq_model
 
 PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "citation_check.md"
 
@@ -34,11 +34,11 @@ def usage_from_message(message: object) -> dict[str, int | None]:
 
 
 @traceable(name="citation_claim_support", run_type="llm")
-def semantic_claim_checks(claims: list[AnswerClaim], chunks: list[RetrievedChunk]) -> tuple[CitationCheckOutput, dict[str, int | None]]:
+def semantic_claim_checks(claims: list[AnswerClaim], chunks: list[RetrievedChunk]) -> tuple[ClaimValidationOutput, dict[str, int | None]]:
     prompt = PROMPT_FILE.read_text(encoding="utf-8")
     claim_text = "\n".join(f"[{index}] {claim.text} | 引用: {', '.join(claim.cited_chunk_ids)}" for index, claim in enumerate(claims))
     evidence = "\n\n".join(f"[片段 {chunk.chunk_id}]\n{chunk.title}\n{chunk.content}" for chunk in chunks if chunk.chunk_id in {chunk_id for claim in claims for chunk_id in claim.cited_chunk_ids})
-    result = create_groq_model().with_structured_output(CitationCheckOutput, include_raw=True).invoke([SystemMessage(content=prompt), HumanMessage(content=f"待检查结论：\n{claim_text}\n\n引用资料：\n{evidence}")])
+    result = create_groq_model().with_structured_output(ClaimValidationOutput, include_raw=True).invoke([SystemMessage(content=prompt), HumanMessage(content=f"待检查结论：\n{claim_text}\n\n引用资料：\n{evidence}")])
     if result.get("parsed") is None:
         raise RuntimeError("Citation checker did not return structured output")
     return result["parsed"], usage_from_message(result.get("raw"))

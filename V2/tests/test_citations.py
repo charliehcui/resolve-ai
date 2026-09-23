@@ -2,7 +2,7 @@ from backend.app.auth import authenticate
 from backend.app.citations import validate_claims
 from backend.app.customer_document_ingestion import import_product_docs
 from backend.app.customer_retrieval import fetch_visible_chunks
-from backend.app.models import AnswerClaim, CitationCheckOutput, ClaimCheck
+from backend.app.models import AnswerClaim, ClaimValidationOutput, ClaimValidationResult
 
 
 def test_forged_citation_is_removed(seeded_database: dict[str, str], fake_embeddings: None) -> None:
@@ -32,7 +32,7 @@ def test_semantically_unsupported_claim_is_removed(seeded_database: dict[str, st
     claim = AnswerClaim(text="同步会自动补回所有历史订单", cited_chunk_ids=[chunks[0].chunk_id])
 
     def unsupported(*args, **kwargs):
-        return CitationCheckOutput(checks=[ClaimCheck(claim_index=0, supported=False, reason="资料没有支持全部历史订单")]), {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
+        return ClaimValidationOutput(checks=[ClaimValidationResult(claim_index=0, supported=False, reason="资料没有支持全部历史订单")]), {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
 
     monkeypatch.setattr("backend.app.citations.semantic_claim_checks", unsupported)
     supported, removed, usage = validate_claims([claim], chunks, auth, None)

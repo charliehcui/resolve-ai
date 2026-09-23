@@ -12,7 +12,7 @@ from backend.app.config import get_settings
 from backend.app.conversations import process_conversation_message
 from backend.app.customer_document_ingestion import embed_texts, import_product_docs
 from backend.app.database import database_is_ready, initialize_database
-from backend.app.models import DoctorPlatformLookup, DoctorShopLookup, DoctorStructuredResult, create_google_model, create_groq_model
+from backend.app.models import DoctorPlatformStatusRequest, DoctorShopStatusRequest, DoctorStatusResult, create_google_model, create_groq_model
 from backend.app.report import export_ticket_html
 from backend.app.support_cases import show_case
 from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ticket, show_ticket
@@ -74,14 +74,14 @@ def run_doctor_checks() -> dict[str, object]:
     if not database_is_ready():
         raise RuntimeError("PostgreSQL is not ready")
     vector = embed_texts(["ResolveAI Phase 1 doctor"], "RETRIEVAL_QUERY")[0]
-    groq_result = create_groq_model().with_structured_output(DoctorStructuredResult).invoke("Return status ok.")
+    groq_result = create_groq_model().with_structured_output(DoctorStatusResult).invoke("Return status ok.")
     google_model = create_google_model()
-    google_result = google_model.with_structured_output(DoctorStructuredResult).invoke("Return status ok.")
-    tool_result = google_model.bind_tools([DoctorShopLookup, DoctorPlatformLookup], tool_choice="any").invoke("In one response, call DoctorShopLookup with shop_id shop-a and DoctorPlatformLookup with platform_id platform-a. Both are independent read-only checks; call both.")
+    google_result = google_model.with_structured_output(DoctorStatusResult).invoke("Return status ok.")
+    tool_result = google_model.bind_tools([DoctorShopStatusRequest, DoctorPlatformStatusRequest], tool_choice="any").invoke("In one response, call DoctorShopStatusRequest with shop_id shop-a and DoctorPlatformStatusRequest with platform_id platform-a. Both are independent read-only checks; call both.")
     if groq_result.status != "ok" or google_result.status != "ok":
         raise RuntimeError("Structured output capability check failed")
     tool_names = {call["name"] for call in tool_result.tool_calls}
-    if tool_names != {"DoctorShopLookup", "DoctorPlatformLookup"}:
+    if tool_names != {"DoctorShopStatusRequest", "DoctorPlatformStatusRequest"}:
         raise RuntimeError("Google parallel tool calling capability check failed")
     return {
         "database": "ok",

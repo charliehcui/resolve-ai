@@ -5,9 +5,9 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 
 from backend.app.config import get_settings
-from backend.app.customer_agent import add_usage, answer_customer_question, no_search_answer, plan_customer_query
+from backend.app.customer_agent import build_non_search_answer, decide_customer_query_action, generate_answer_from_documents, sum_token_usage
 from backend.app.customer_retrieval import retrieve_customer_documents
-from backend.app.models import AuthContext, CustomerAnswer, CustomerQueryPlan, RetrievedChunk
+from backend.app.models import AuthContext, CustomerAnswer, CustomerQueryAction, RetrievedChunk
 from backend.app.trace import current_trace_id
 
 
@@ -25,7 +25,7 @@ class CustomerGraphState(TypedDict, total=False):
 
 
 def plan_node(state: CustomerGraphState) -> CustomerGraphState:
-    plan, usage = plan_customer_query(state["question"], state["history"])
+    plan, usage = decide_customer_query_action(state["question"], state["history"])
     return {"plan": plan.model_dump(), "plan_usage": usage}
 
 
@@ -37,14 +37,14 @@ def route_plan(state: CustomerGraphState) -> Literal["retrieve", "direct"]:
 
 
 def direct_node(state: CustomerGraphState) -> CustomerGraphState:
-    plan = CustomerQueryPlan(**state["plan"])
-    answer = no_search_answer(plan, state["plan_usage"])
+    plan = CustomerQueryAction(**state["plan"])
+    answer = build_non_search_answer(plan, state["plan_usage"])
     return {"answer": answer.model_dump(), "trace_id": current_trace_id()}
 
 
 def retrieve_node(state: CustomerGraphState) -> CustomerGraphState:
     auth = AuthContext(**state["auth"])
-    plan = CustomerQueryPlan(**state["plan"])
+    plan = CustomerQueryAction(**state["plan"])
     chunks = retrieve_customer_documents(plan.search_query, auth, state["conversation_id"], plan.version, plan.product, state["retrieval_mode"])
 
     retrieved_documents: list[dict[str, object]] = []
@@ -56,13 +56,13 @@ def retrieve_node(state: CustomerGraphState) -> CustomerGraphState:
 
 def answer_node(state: CustomerGraphState) -> CustomerGraphState:
     auth = AuthContext(**state["auth"])
-    plan = CustomerQueryPlan(**state["plan"])
+    plan = CustomerQueryAction(**state["plan"])
     chunks: list[RetrievedChunk] = []
     for item in state["retrieved"]:
         chunks.append(RetrievedChunk(**item))
 
-    answer = answer_customer_question(state["question"], chunks, state["history"], auth, plan.version)
-    answer.usage = add_usage(state["plan_usage"], answer.usage)
+    answer = generate_answer_from_documents(state["question"], chunks, state["history"], auth, plan.version)
+    answer.usage = sum_token_usage(state["plan_usage"], answer.usage)
     return {"answer": answer.model_dump(), "trace_id": current_trace_id()}
 
 

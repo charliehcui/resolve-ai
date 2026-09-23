@@ -1,5 +1,5 @@
-from backend.app.customer_agent import plan_customer_query
-from backend.app.models import CustomerQueryPlan
+from backend.app.customer_agent import decide_customer_query_action
+from backend.app.models import CustomerQueryAction
 
 
 class FakeStructuredModel:
@@ -11,13 +11,13 @@ class FakeStructuredModel:
 
     def invoke(self, messages):
         self.calls += 1
-        return {"parsed": CustomerQueryPlan(decision="search", search_query="ORDER_SYNC_DISABLED", rewrite_used=True), "raw": object()}
+        return {"parsed": CustomerQueryAction(decision="search", search_query="ORDER_SYNC_DISABLED", rewrite_used=True), "raw": object()}
 
 
 def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
     model = FakeStructuredModel()
     monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
-    plan, _ = plan_customer_query("单子不进来", [])
+    plan, _ = decide_customer_query_action("单子不进来", [])
     assert plan.rewrite_used is True
     assert model.calls == 1
 
@@ -25,16 +25,16 @@ def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
 def test_legacy_question_without_version_is_clarified(monkeypatch) -> None:
     model = FakeStructuredModel()
     monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
-    plan, _ = plan_customer_query("旧版里的同步入口在哪里？", [])
+    plan, _ = decide_customer_query_action("旧版里的同步入口在哪里？", [])
     assert plan.decision == "clarify"
     assert "版本号" in plan.customer_message
 
 
 def test_handoff_message_claims_only_the_real_role_transfer(monkeypatch) -> None:
     model = FakeStructuredModel()
-    model.invoke = lambda messages: {"parsed": CustomerQueryPlan(decision="handoff", customer_message="Forwarded."), "raw": object()}
+    model.invoke = lambda messages: {"parsed": CustomerQueryAction(decision="handoff", customer_message="Forwarded."), "raw": object()}
     monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
-    plan, _ = plan_customer_query("订单 O-1001 当前在哪里？", [])
+    plan, _ = decide_customer_query_action("订单 O-1001 当前在哪里？", [])
     assert plan.decision == "handoff"
     assert "已转交 Support Agent" in plan.customer_message
     assert "Customer Agent 没有读取后台数据" in plan.customer_message
