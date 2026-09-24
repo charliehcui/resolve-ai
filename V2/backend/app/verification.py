@@ -5,7 +5,7 @@ from uuid import uuid4
 from langsmith import traceable
 
 from backend.app.database import get_connection
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.stock import assess_stock_facts
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import ToolResult, execute_tool_batch
@@ -89,16 +89,16 @@ def save_verification(action_id: str, status: str, details: dict[str, object], e
 
 
 @traceable(name="verify_order_recovery", run_type="chain")
-def verify_order_recovery(auth: AuthContext, action_id: str, final: bool = False) -> dict[str, object]:
+def verify_order_recovery(user: UserContext, action_id: str, final: bool = False) -> dict[str, object]:
     with get_connection() as connection:
-        action = connection.execute("SELECT action_id::text, case_id::text, company_id, shop_id, external_order_id, source_snapshot FROM support.action_proposals WHERE action_id = %s AND company_id = %s", (action_id, auth.company_id)).fetchone()
+        action = connection.execute("SELECT action_id::text, case_id::text, company_id, shop_id, external_order_id, source_snapshot FROM support.action_proposals WHERE action_id = %s AND company_id = %s", (action_id, user.company_id)).fetchone()
     if action is None:
         raise PermissionError("Action is not available in this company scope")
     calls = [
         {"name": "GetOrder", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-platform"},
         {"name": "GetProcessRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant"},
     ]
-    evidence = execute_tool_batch(action["case_id"], auth, calls, action["shop_id"], action["external_order_id"])
+    evidence = execute_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
     facts = index_tool_results(evidence)
     platform = facts["GetOrder"]
     merchant = facts["GetProcessRecords"]
@@ -122,23 +122,23 @@ def verify_order_recovery(auth: AuthContext, action_id: str, final: bool = False
             connection.execute("INSERT INTO support.action_steps (step_id, action_id, step_name, status, details, evidence_id, trace_id) VALUES (%s, %s, 'verification', %s, %s::jsonb, %s, %s)", (str(uuid4()), action_id, status, json.dumps(details), evidence_ids[0], current_trace_id()))
     from backend.app.actions import show_action
 
-    return show_action(auth, action_id)
+    return show_action(user, action_id)
 
 
-def wait_for_order_verification(auth: AuthContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
+def wait_for_order_verification(user: UserContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        result = verify_order_recovery(auth, action_id)
+        result = verify_order_recovery(user, action_id)
         if result["status"] == "verified_resolved":
             return result
         time.sleep(0.25)
-    return verify_order_recovery(auth, action_id, final=True)
+    return verify_order_recovery(user, action_id, final=True)
 
 
 @traceable(name="verify_shipment_recovery", run_type="chain")
-def verify_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, object]:
+def verify_shipment_recovery(user: UserContext, action_id: str) -> dict[str, object]:
     with get_connection() as connection:
-        action = connection.execute("SELECT action_id::text, case_id::text, company_id, shop_id, external_order_id, source_snapshot FROM support.action_proposals WHERE action_id = %s AND company_id = %s AND action_type = 'recover_shipment'", (action_id, auth.company_id)).fetchone()
+        action = connection.execute("SELECT action_id::text, case_id::text, company_id, shop_id, external_order_id, source_snapshot FROM support.action_proposals WHERE action_id = %s AND company_id = %s AND action_type = 'recover_shipment'", (action_id, user.company_id)).fetchone()
     if action is None:
         raise PermissionError("Shipment action is not available in this company scope")
     calls = [
@@ -146,7 +146,7 @@ def verify_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, obj
         {"name": "GetShipmentRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant-shipment"},
         {"name": "GetPlatformShipment", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-platform-shipment"},
     ]
-    evidence = execute_tool_batch(action["case_id"], auth, calls, action["shop_id"], action["external_order_id"])
+    evidence = execute_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
     facts = index_tool_results(evidence)
     warehouse = facts["GetShipment"]
     merchant = facts["GetShipmentRecords"]
@@ -169,14 +169,14 @@ def verify_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, obj
             connection.execute("INSERT INTO support.action_steps (step_id, action_id, step_name, status, details, evidence_id, trace_id) VALUES (%s, %s, 'verification', 'verified_resolved', %s::jsonb, %s, %s)", (str(uuid4()), action_id, json.dumps(details), evidence_ids[0], current_trace_id()))
     from backend.app.actions import show_action
 
-    return show_action(auth, action_id)
+    return show_action(user, action_id)
 
 
-def wait_for_shipment_verification(auth: AuthContext, action_id: str, timeout_seconds: float = 15) -> dict[str, object]:
+def wait_for_shipment_verification(user: UserContext, action_id: str, timeout_seconds: float = 15) -> dict[str, object]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        result = verify_shipment_recovery(auth, action_id)
+        result = verify_shipment_recovery(user, action_id)
         if result["status"] == "verified_resolved":
             return result
         time.sleep(0.25)
-    return verify_shipment_recovery(auth, action_id)
+    return verify_shipment_recovery(user, action_id)

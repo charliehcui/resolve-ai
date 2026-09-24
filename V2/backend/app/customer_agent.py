@@ -5,7 +5,7 @@ from langsmith import traceable
 
 from backend.app.citations import validate_claims
 from backend.app.config import PROJECT_ROOT
-from backend.app.models import AnswerClaim, AuthContext, Citation, CustomerAnswer, CustomerGeneratedClaims, CustomerQueryAction, RetrievedChunk, create_groq_model
+from backend.app.models import AnswerClaim, Citation, CustomerAnswer, CustomerGeneratedClaims, CustomerQueryDecision, RetrievedChunk, UserContext, create_groq_model
 
 PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "customer.md"
 
@@ -94,8 +94,8 @@ def build_citations_from_claims(claims: list[AnswerClaim], chunks: list[Retrieve
     return citations
 
 #判断下一步是 search、clarify 还是 handoff
-@traceable(name="customer_query_action", run_type="llm")
-def decide_customer_query_action(question: str, history: list[dict[str, object]]) -> tuple[CustomerQueryAction, dict[str, int | None]]:
+@traceable(name="customer_query_next_step", run_type="llm")
+def decide_customer_query_next_step(question: str, history: list[dict[str, object]]) -> tuple[CustomerQueryDecision, dict[str, int | None]]:
     recent_history = format_recent_history(history)
 
     instruction = """你是 Customer Agent 的查询规划器。只规划产品资料检索，不读取后台数据。
@@ -112,13 +112,13 @@ def decide_customer_query_action(question: str, history: list[dict[str, object]]
     ]
 
     model = create_groq_model()
-    structured_model = model.with_structured_output(CustomerQueryAction, include_raw=True)  # 用于 debug，会返回 raw、parsed 和 parsing_error
+    structured_model = model.with_structured_output(CustomerQueryDecision, include_raw=True)  # 用于 debug，会返回 raw、parsed 和 parsing_error
     result = structured_model.invoke(messages)
 
     if result.get("parsed") is None:  # parsed 是 Groq 解析出来的结构化结果，如果没有，说明 Groq 没有按要求输出
         raise RuntimeError("Query planner did not return structured output")
 
-    plan = result["parsed"]
+    query_decision = result["parsed"]
 
     old_version_match = re.search(r"旧版|老版|历史版本", question)
     version_number_match = re.search(r"\b\d+\.\d+\b", question)
@@ -127,28 +127,28 @@ def decide_customer_query_action(question: str, history: list[dict[str, object]]
         pass
     else:
         if version_number_match is None:
-            plan = CustomerQueryAction(
+            query_decision = CustomerQueryDecision(
                 decision="clarify",
                 customer_message="请提供具体产品版本号，例如 1.0 或 2.0，我再选择对应资料。",
             )
 
-    if plan.decision == "handoff":
-        plan.customer_message = "这个问题涉及真实订单、店铺或平台状态，已转交 Support Agent。Customer Agent 没有读取后台数据。"
+    if query_decision.decision == "handoff":
+        query_decision.customer_message = "这个问题涉及真实订单、店铺或平台状态，已转交 Support Agent。Customer Agent 没有读取后台数据。"
 
-    if plan.decision == "search":
-        if plan.search_query is None:
-            plan.search_query = question
-            plan.rewrite_used = False
+    if query_decision.decision == "search":
+        if query_decision.search_query is None:
+            query_decision.search_query = question
+            query_decision.rewrite_used = False
         else:
-            if plan.search_query.strip() == "":
-                plan.search_query = question
-                plan.rewrite_used = False
+            if query_decision.search_query.strip() == "":
+                query_decision.search_query = question
+                query_decision.rewrite_used = False
 
-    return plan, get_token_usage(result.get("raw"))
+    return query_decision, get_token_usage(result.get("raw"))
 
 #处理不需要搜索的情况，比如追问用户或提示已转交 Support
-def build_non_search_answer(plan: CustomerQueryAction, usage: dict[str, int | None]) -> CustomerAnswer:
-    message = plan.customer_message
+def build_non_search_answer(query_decision: CustomerQueryDecision, usage: dict[str, int | None]) -> CustomerAnswer:
+    message = query_decision.customer_message
 
     if message is None:
         message = ""
@@ -156,7 +156,7 @@ def build_non_search_answer(plan: CustomerQueryAction, usage: dict[str, int | No
         message = message.strip()
 
     if message == "":
-        if plan.decision == "clarify":
+        if query_decision.decision == "clarify":
             message = "请补充会影响产品资料选择的版本信息。"
         else:
             message = "这个问题需要 Support Agent 查询真实业务状态。"
@@ -164,13 +164,13 @@ def build_non_search_answer(plan: CustomerQueryAction, usage: dict[str, int | No
     return CustomerAnswer(
         answer=message,
         citations=[],
-        needs_support=plan.decision == "handoff",
+        needs_support=query_decision.decision == "handoff",
         usage=usage,
     )
 
 #根据搜索到的资料生成回答
 @traceable(name="customer_answer_from_documents", run_type="llm")
-def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], history: list[dict[str, object]], auth: AuthContext, version: str | None) -> CustomerAnswer:
+def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], history: list[dict[str, object]], user: UserContext, version: str | None) -> CustomerAnswer:
     if len(chunks) == 0:
         return CustomerAnswer(
             answer="当前可见产品资料不足以回答这个问题，需要交给 Support 进一步处理。",
@@ -201,7 +201,7 @@ def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], 
     if parsed is None:
         raise RuntimeError("Groq did not return the required structured answer")
 
-    supported, removed, check_usage = validate_claims(parsed.claims, chunks, auth, version)
+    supported, removed, check_usage = validate_claims(parsed.claims, chunks, user, version)
 
     if len(supported) == 0:
         return CustomerAnswer(
@@ -235,9 +235,9 @@ def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], 
 
 # 用户问题 question + 最近对话 history
 #         ↓
-# decide_customer_query_action()
+# decide_customer_query_next_step()
 #         ↓
-# CustomerQueryAction
+# CustomerQueryDecision
 #         ↓
 # ┌─────────────┬─────────────┬─────────────┐
 # │ search      │ clarify     │ handoff     │

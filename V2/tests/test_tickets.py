@@ -13,12 +13,12 @@ from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ti
 
 
 def unresolved_case(token: str) -> tuple[object, str, str]:
-    auth = authenticate(token)
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
+    user = authenticate(token)
+    conversation_id = create_conversation(user.company_id, user.user_id)
     save_message(conversation_id, "user", "shop-a order O-800 did not sync")
-    _, case_id = handoff_to_support(auth, conversation_id, "shop-a order O-800 did not sync", "I could not resolve it from product documentation.", [])
+    _, case_id = handoff_to_support(user, conversation_id, "shop-a order O-800 did not sync", "I could not resolve it from product documentation.", [])
     update_case(case_id, "pending_human", "Evidence is insufficient", 2, 20)
-    return auth, conversation_id, case_id
+    return user, conversation_id, case_id
 
 
 def tool_evidence(name: str, response: dict[str, object], status: str = "success", sequence: int = 1) -> EvidenceRecord:
@@ -26,12 +26,12 @@ def tool_evidence(name: str, response: dict[str, object], status: str = "success
 
 
 def test_ticket_captures_grounded_investigation_and_deduplicates(seeded_database: dict[str, str]) -> None:
-    auth, conversation_id, case_id = unresolved_case(seeded_database["token_a"])
+    user, conversation_id, case_id = unresolved_case(seeded_database["token_a"])
     success = save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetShopStatus", {"shop_id": "shop-a"}, {"sync_enabled": True, "version": 3}, "merchant", "shop-a", "success", 2, None)
     failure = save_evidence(case_id, "company-a", str(uuid4()), False, None, "CheckConnection", {"shop_id": "shop-a"}, {"error_code": "UPSTREAM_TIMEOUT"}, "merchant", "shop-a", "unavailable", 3000, None)
 
-    first = create_ticket(auth, conversation_id, "evidence_insufficient", "Investigation cannot confirm the cause")
-    second = create_ticket(auth, conversation_id, "support_unresolved", "Repeated escalation")
+    first = create_ticket(user, conversation_id, "evidence_insufficient", "Investigation cannot confirm the cause")
+    second = create_ticket(user, conversation_id, "support_unresolved", "Repeated escalation")
 
     assert first["ticket_id"] == second["ticket_id"]
     assert second["duplicate"] is True
@@ -46,11 +46,11 @@ def test_ticket_captures_grounded_investigation_and_deduplicates(seeded_database
 
 
 def test_ticket_policy_and_explicit_human_request(seeded_database: dict[str, str]) -> None:
-    auth = authenticate(seeded_database["token_a"])
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
+    user = authenticate(seeded_database["token_a"])
+    conversation_id = create_conversation(user.company_id, user.user_id)
     with pytest.raises(ValueError, match="unresolved"):
-        create_ticket(auth, conversation_id, "support_unresolved", "No unresolved work exists")
-    ticket = create_ticket(auth, conversation_id, "user_requested", "Please let me speak to an engineer")
+        create_ticket(user, conversation_id, "support_unresolved", "No unresolved work exists")
+    ticket = create_ticket(user, conversation_id, "user_requested", "Please let me speak to an engineer")
     assert ticket["category"] == "general"
     assert ticket["handoff_id"] is None
     assert ticket["trigger"] == "user_requested"
@@ -85,7 +85,7 @@ def test_other_merchant_cannot_read_ticket_in_same_company(seeded_database: dict
 
 
 def test_support_safe_stop_creates_ticket_without_model_write_access(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    auth, conversation_id, _ = unresolved_case(seeded_database["token_a"])
+    user, conversation_id, _ = unresolved_case(seeded_database["token_a"])
 
     class FakeSaver:
         @classmethod
@@ -111,10 +111,10 @@ def test_support_safe_stop_creates_ticket_without_model_write_access(seeded_data
 
     monkeypatch.setattr("backend.app.support_workflow.PostgresSaver", FakeSaver)
     monkeypatch.setattr("backend.app.support_workflow.build_support_investigation_graph", lambda: FakeGraph())
-    result = run_support_graph("continue", auth, conversation_id)
+    result = run_support_graph("continue", user, conversation_id)
     assert result.status == "pending_human"
     assert result.ticket_id is not None
-    assert show_ticket(auth, result.ticket_id)["trigger"] == "support_unresolved"
+    assert show_ticket(user, result.ticket_id)["trigger"] == "support_unresolved"
 
 
 def test_order_ticket_recheck_closes_and_failed_recheck_reopens(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:

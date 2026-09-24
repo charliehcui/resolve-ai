@@ -5,7 +5,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from backend.app.database import get_connection
-from backend.app.models import AuthContext, Citation
+from backend.app.models import Citation, UserContext
 
 
 class SupportHandoff(BaseModel):
@@ -54,7 +54,7 @@ def missing_identifiers(shop_id: str | None, order_id: str | None, sku: str | No
     return missing_fields
 
 
-def handoff_to_support(auth: AuthContext, conversation_id: str, question: str, customer_answer: str, history: list[dict[str, object]]) -> tuple[SupportHandoff, str]:
+def handoff_to_support(user: UserContext, conversation_id: str, question: str, customer_answer: str, history: list[dict[str, object]]) -> tuple[SupportHandoff, str]:
     shop_id, order_id, sku = extract_identifiers(question)
     previous_answer = ""
     citations: list[dict[str, str]] = []
@@ -83,43 +83,43 @@ def handoff_to_support(auth: AuthContext, conversation_id: str, question: str, c
         existing = connection.execute(
             """SELECT h.handoff_id::text, c.case_id::text FROM support.handoffs h JOIN support.cases c ON c.handoff_id = h.handoff_id
             WHERE h.conversation_id = %s AND h.company_id = %s""",
-            (conversation_id, auth.company_id),
+            (conversation_id, user.company_id),
         ).fetchone()
         if existing:
-            existing_handoff = load_handoff(conversation_id, auth)
+            existing_handoff = load_handoff(conversation_id, user)
             return existing_handoff, existing["case_id"]
         conversation = connection.execute("SELECT company_id, user_id FROM support.conversations WHERE conversation_id = %s FOR UPDATE", (conversation_id,)).fetchone()
-        if conversation is None or conversation["company_id"] != auth.company_id or conversation["user_id"] != auth.user_id:
+        if conversation is None or conversation["company_id"] != user.company_id or conversation["user_id"] != user.user_id:
             raise PermissionError("Conversation is not available in this user scope")
         connection.execute(
             """INSERT INTO support.handoffs (handoff_id, conversation_id, company_id, customer_problem, customer_answer, citations, attempted_steps, known_shop_id, known_order_id, known_sku, unresolved_reason, missing_fields)
             VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)""",
-            (handoff_id, conversation_id, auth.company_id, question, previous_answer or customer_answer, json.dumps(citations), json.dumps(attempted_steps, ensure_ascii=False), shop_id, order_id, sku, question, json.dumps(missing_fields)),
+            (handoff_id, conversation_id, user.company_id, question, previous_answer or customer_answer, json.dumps(citations), json.dumps(attempted_steps, ensure_ascii=False), shop_id, order_id, sku, question, json.dumps(missing_fields)),
         )
-        connection.execute("INSERT INTO support.cases (case_id, conversation_id, handoff_id, company_id) VALUES (%s, %s, %s, %s)", (case_id, conversation_id, handoff_id, auth.company_id))
+        connection.execute("INSERT INTO support.cases (case_id, conversation_id, handoff_id, company_id) VALUES (%s, %s, %s, %s)", (case_id, conversation_id, handoff_id, user.company_id))
         connection.execute("UPDATE support.conversations SET active_role = 'SUPPORT', updated_at = NOW() WHERE conversation_id = %s", (conversation_id,))
-    return load_handoff(conversation_id, auth), case_id
+    return load_handoff(conversation_id, user), case_id
 
 
-def load_handoff(conversation_id: str, auth: AuthContext) -> SupportHandoff:
+def load_handoff(conversation_id: str, user: UserContext) -> SupportHandoff:
     with get_connection() as connection:
         row = connection.execute(
             """SELECT handoff_id::text, conversation_id::text, company_id, customer_problem, customer_answer, citations, attempted_steps,
             known_shop_id, known_order_id, known_sku, unresolved_reason, missing_fields FROM support.handoffs
             WHERE conversation_id = %s AND company_id = %s""",
-            (conversation_id, auth.company_id),
+            (conversation_id, user.company_id),
         ).fetchone()
     if row is None:
         raise PermissionError("Support handoff is not available in this user scope")
     return SupportHandoff(**row)
 
 
-def update_handoff_identifiers(conversation_id: str, auth: AuthContext, text: str) -> SupportHandoff:
+def update_handoff_identifiers(conversation_id: str, user: UserContext, text: str) -> SupportHandoff:
     shop_id, order_id, sku = extract_identifiers(text)
     with get_connection() as connection:
         row = connection.execute(
             "SELECT known_shop_id, known_order_id, known_sku, customer_problem FROM support.handoffs WHERE conversation_id = %s AND company_id = %s FOR UPDATE",
-            (conversation_id, auth.company_id),
+            (conversation_id, user.company_id),
         ).fetchone()
         if row is None:
             raise PermissionError("Support handoff is not available in this user scope")
@@ -131,4 +131,4 @@ def update_handoff_identifiers(conversation_id: str, auth: AuthContext, text: st
             "UPDATE support.handoffs SET known_shop_id = %s, known_order_id = %s, known_sku = %s, missing_fields = %s::jsonb, updated_at = NOW() WHERE conversation_id = %s",
             (known_shop_id, known_order_id, known_sku, json.dumps(missing_fields), conversation_id),
         )
-    return load_handoff(conversation_id, auth)
+    return load_handoff(conversation_id, user)

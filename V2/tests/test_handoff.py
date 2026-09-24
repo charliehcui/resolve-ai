@@ -9,7 +9,7 @@ from backend.app.cli import chat_command
 from backend.app.config import get_settings
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import SupportHandoff, handoff_to_support, load_handoff
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.support_agent import SupportInvestigationResult, plan_support_step, render_control_result
 from backend.app.support_cases import show_case
 from backend.app.support_evidence import EvidenceRecord
@@ -22,17 +22,17 @@ from simulator.services.merchant import store_order_event
 from simulator.services.platform import app as platform_app
 
 
-def create_handoff(seeded_database: dict[str, str], question: str = "订单 O-HANDOFF 在 shop-a 仍然没有进入管理软件") -> tuple[AuthContext, str, str]:
-    auth = authenticate(seeded_database["token_a"])
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
+def create_handoff(seeded_database: dict[str, str], question: str = "订单 O-HANDOFF 在 shop-a 仍然没有进入管理软件") -> tuple[UserContext, str, str]:
+    user = authenticate(seeded_database["token_a"])
+    conversation_id = create_conversation(user.company_id, user.user_id)
     history = [{"role": "assistant", "content": "请先确认订单同步开关。", "metadata": {"citations": [{"chunk_id": "chunk-1", "title": "订单同步", "source_uri": "docs/product/01-order-sync-switch.md"}]}}]
-    _, case_id = handoff_to_support(auth, conversation_id, question, "需要后台调查。", history)
-    return auth, conversation_id, case_id
+    _, case_id = handoff_to_support(user, conversation_id, question, "需要后台调查。", history)
+    return user, conversation_id, case_id
 
 
 def test_handoff_atomically_switches_role_and_preserves_customer_context(seeded_database: dict[str, str]) -> None:
-    auth, conversation_id, case_id = create_handoff(seeded_database)
-    handoff = load_handoff(conversation_id, auth)
+    user, conversation_id, case_id = create_handoff(seeded_database)
+    handoff = load_handoff(conversation_id, user)
     with get_connection() as connection:
         role = connection.execute("SELECT active_role FROM support.conversations WHERE conversation_id = %s", (conversation_id,)).fetchone()["active_role"]
     assert role == "SUPPORT"
@@ -40,7 +40,7 @@ def test_handoff_atomically_switches_role_and_preserves_customer_context(seeded_
     assert handoff.known_order_id == "O-HANDOFF"
     assert handoff.customer_answer == "请先确认订单同步开关。"
     assert handoff.citations[0].source_uri == "docs/product/01-order-sync-switch.md"
-    assert show_case(case_id, auth)["case_id"] == case_id
+    assert show_case(case_id, user)["case_id"] == case_id
 
 
 def test_cross_company_cannot_read_handoff_case(seeded_database: dict[str, str]) -> None:
@@ -51,10 +51,10 @@ def test_cross_company_cannot_read_handoff_case(seeded_database: dict[str, str])
 
 
 def test_missing_identifier_requests_information_before_model_or_tools(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    auth, conversation_id, case_id = create_handoff(seeded_database, "订单 O-HANDOFF 仍然没有进入管理软件")
-    handoff = load_handoff(conversation_id, auth)
+    user, conversation_id, case_id = create_handoff(seeded_database, "订单 O-HANDOFF 仍然没有进入管理软件")
+    handoff = load_handoff(conversation_id, user)
     monkeypatch.setattr("backend.app.support_workflow.plan_support_step", lambda *args: pytest.fail("planner must not run without shop_id"))
-    result = support_plan_node({"question": "继续调查", "auth": auth.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": 0.0})
+    result = support_plan_node({"question": "继续调查", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": 0.0})
     assert result["status"] == "needs_info"
     assert "shop_id" in result["answer"]
 
@@ -85,7 +85,7 @@ def test_tool_reports_service_unavailable_without_inventing_fact(monkeypatch: py
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr("backend.app.support_tools.httpx.get", unavailable)
-    result = get_order(AuthContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "O-OFFLINE")
+    result = get_order(UserContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "O-OFFLINE")
     assert result.status == "unavailable"
     assert result.response["error_type"] == "ConnectError"
     assert result.response["error_code"] == "SERVICE_UNAVAILABLE"
@@ -93,12 +93,12 @@ def test_tool_reports_service_unavailable_without_inventing_fact(monkeypatch: py
 
 
 def test_independent_read_tools_execute_as_parallel_evidence_batch(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    auth, _, case_id = create_handoff(seeded_database)
+    user, _, case_id = create_handoff(seeded_database)
 
-    def fake_order(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+    def fake_order(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
         return ToolResult(tool_name="GetOrder", request={"shop_id": shop_id, "order_id": order_id}, response={"event_id": "event-1"}, source_service="platform", source_record_id="event-1", status="success", latency_ms=3)
 
-    def fake_shop(auth: AuthContext, shop_id: str) -> ToolResult:
+    def fake_shop(user: UserContext, shop_id: str) -> ToolResult:
         return ToolResult(tool_name="GetShopStatus", request={"shop_id": shop_id}, response={"shop_id": shop_id, "sync_enabled": False}, source_service="merchant", source_record_id=shop_id, status="success", latency_ms=2)
 
     monkeypatch.setitem(TOOL_FUNCTIONS, "GetOrder", fake_order)
@@ -107,7 +107,7 @@ def test_independent_read_tools_execute_as_parallel_evidence_batch(seeded_databa
         {"name": "GetOrder", "args": {"shop_id": "shop-a", "order_id": "O-HANDOFF"}, "id": "call-order"},
         {"name": "GetShopStatus", "args": {"shop_id": "shop-a"}, "id": "call-shop"},
     ]
-    evidence = execute_tool_batch(case_id, auth, calls, "shop-a", "O-HANDOFF")
+    evidence = execute_tool_batch(case_id, user, calls, "shop-a", "O-HANDOFF")
     assert len(evidence) == 2
     assert all(record.parallel for record in evidence)
     assert {record.model_tool_call_id for record in evidence} == {"call-order", "call-shop"}
@@ -118,17 +118,17 @@ def test_support_role_is_sticky_and_does_not_return_to_customer_graph(seeded_dat
     _, conversation_id, case_id = create_handoff(seeded_database)
     result = SupportInvestigationResult(answer="已读取真实证据。", status="diagnosed", case_id=case_id, evidence_ids=["evidence-1"], tool_path=["GetOrder"], tool_call_count=1, usage={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2})
     monkeypatch.setattr("backend.app.conversations.run_support_graph", lambda *args: result)
-    monkeypatch.setattr("backend.app.conversations.run_customer_graph", lambda *args: pytest.fail("Customer Graph must not run after handoff"))
+    monkeypatch.setattr("backend.app.conversations.run_customer_workflow", lambda *args: pytest.fail("Customer workflow must not run after handoff"))
     chat_command(seeded_database["token_a"], "继续调查", conversation_id, None)
     assert "Active role: SUPPORT" in capsys.readouterr().out
 
 
 def test_tool_budget_stops_without_another_model_call(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    auth, conversation_id, case_id = create_handoff(seeded_database)
-    handoff = load_handoff(conversation_id, auth)
+    user, conversation_id, case_id = create_handoff(seeded_database)
+    handoff = load_handoff(conversation_id, user)
     evidence = [EvidenceRecord(evidence_id=str(uuid4()), sequence=index + 1, batch_id=str(uuid4()), parallel=False, tool_name="GetOrder", request={"shop_id": "shop-a", "order_id": f"O-{index}"}, response={"event_id": str(index)}, source_service="platform", status="success", latency_ms=1) for index in range(6)]
     monkeypatch.setattr("backend.app.support_workflow.plan_support_step", lambda *args: pytest.fail("planner must not run after budget"))
-    result = support_plan_node({"question": "继续", "auth": auth.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in evidence], "usage": {}, "started_at": 0.0})
+    result = support_plan_node({"question": "继续", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in evidence], "usage": {}, "started_at": 0.0})
     assert result["status"] == "pending_human"
     assert "预算" in result["answer"]
 

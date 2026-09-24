@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 
 USAGE_KEYS = ("groq_calls", "google_calls", "embedding_calls", "groq_input", "groq_output", "google_input", "google_output", "embedding_input")
 
@@ -60,10 +60,10 @@ def render_ticket_html(ticket: dict[str, object]) -> str:
     return f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>body{{font-family:system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 20px;color:#17211c}}pre{{white-space:pre-wrap;background:#f3f6f4;padding:20px;border-radius:10px}}h1{{color:#173d31}}</style></head><body><h1>{title}</h1><p>Exported from deterministic Ticket state. Secrets and access tokens are not included.</p><pre>{content}</pre></body></html>"
 
 
-def export_ticket_html(auth: AuthContext, ticket_id: str, output_path: Path) -> Path:
+def export_ticket_html(user: UserContext, ticket_id: str, output_path: Path) -> Path:
     from backend.app.tickets import show_ticket
 
-    ticket = show_ticket(auth, ticket_id)
+    ticket = show_ticket(user, ticket_id)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_ticket_html(ticket), encoding="utf-8")
     return output_path

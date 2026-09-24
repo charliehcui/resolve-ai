@@ -14,15 +14,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from backend.app import customer_document_ingestion
 from backend.app.config import get_settings
 from backend.app.database import get_connection
-from backend.app.models import AuthContext, RetrievedChunk
+from backend.app.models import RetrievedChunk, UserContext
 from backend.app.trace import current_trace_id
 
 RETRIEVAL_MODES = {"vector_only", "hybrid", "hybrid_rerank"}
 
 
-def filter_sql(auth: AuthContext, product: str | None, version: str | None) -> tuple[str, dict[str, object]]:
+def filter_sql(user: UserContext, product: str | None, version: str | None) -> tuple[str, dict[str, object]]:
     clauses = ["c.company_id = %(company_id)s", "d.effective_from <= %(today)s", "(d.effective_to IS NULL OR d.effective_to >= %(today)s)"]
-    parameters: dict[str, object] = {"company_id": auth.company_id, "today": datetime.now(UTC).date()}
+    parameters: dict[str, object] = {"company_id": user.company_id, "today": datetime.now(UTC).date()}
     if product:
         clauses.append("d.product = %(product)s")
         parameters["product"] = product
@@ -32,17 +32,17 @@ def filter_sql(auth: AuthContext, product: str | None, version: str | None) -> t
     return " AND ".join(clauses), parameters
 
 
-def fetch_visible_chunks(auth: AuthContext, product: str | None = None, version: str | None = None) -> list[RetrievedChunk]:
-    where, parameters = filter_sql(auth, product, version)
+def fetch_visible_chunks(user: UserContext, product: str | None = None, version: str | None = None) -> list[RetrievedChunk]:
+    where, parameters = filter_sql(user, product, version)
     with get_connection() as connection:
         rows = connection.execute(f"""SELECT c.chunk_id::text, d.title, d.source_uri, d.version, c.content, 0.0::float AS score
             FROM support.document_chunks c JOIN support.product_documents d ON d.document_id = c.document_id WHERE {where}""", parameters).fetchall()
     return [RetrievedChunk(**row) for row in rows]
 
 
-def vector_search(query: str, auth: AuthContext, product: str | None = None, version: str | None = None, limit: int = 15) -> list[RetrievedChunk]:
+def vector_search(query: str, user: UserContext, product: str | None = None, version: str | None = None, limit: int = 15) -> list[RetrievedChunk]:
     query_vector = customer_document_ingestion.embed_texts([query], "RETRIEVAL_QUERY")[0]
-    where, parameters = filter_sql(auth, product, version)
+    where, parameters = filter_sql(user, product, version)
     parameters.update({"query_vector": json.dumps(query_vector), "limit": limit})
     with get_connection() as connection:
         rows = connection.execute(f"""SELECT c.chunk_id::text, d.title, d.source_uri, d.version, c.content, 1 - (c.embedding <=> %(query_vector)s::vector) AS score
@@ -108,18 +108,18 @@ def rank_ids(chunks: list[RetrievedChunk]) -> list[str]:
 
 
 @traceable(name="customer_hybrid_retrieval", run_type="retriever")
-def retrieve_customer_documents(query: str, auth: AuthContext, conversation_id: str | None, version: str | None = None, product: str | None = None, mode: str = "vector_only", limit: int = 5) -> list[RetrievedChunk]:
+def retrieve_customer_documents(query: str, user: UserContext, conversation_id: str | None, version: str | None = None, product: str | None = None, mode: str = "vector_only", limit: int = 5) -> list[RetrievedChunk]:
     if mode not in RETRIEVAL_MODES:
         raise ValueError(f"Unsupported retrieval mode: {mode}")
     started = time.perf_counter()
-    vector_chunks = vector_search(query, auth, product, version)
+    vector_chunks = vector_search(query, user, product, version)
     keyword_chunks: list[RetrievedChunk] = []
     fused_chunks = vector_chunks
     reranked_chunks: list[RetrievedChunk] = []
     rerank_error: str | None = None
     rerank_latency_ms: int | None = None
     if mode != "vector_only":
-        keyword_chunks = keyword_search(query, fetch_visible_chunks(auth, product, version))
+        keyword_chunks = keyword_search(query, fetch_visible_chunks(user, product, version))
         fused_chunks = reciprocal_rank_fusion([vector_chunks, keyword_chunks])
     final_chunks = fused_chunks[:limit]
     if mode == "hybrid_rerank":
@@ -137,6 +137,6 @@ def retrieve_customer_documents(query: str, auth: AuthContext, conversation_id: 
         connection.execute(
             """INSERT INTO support.retrieval_runs (retrieval_id, conversation_id, company_id, query, search_query, chunk_ids, latency_ms, trace_id, mode, filters, vector_ranks, keyword_ranks, fused_ranks, rerank_ranks, rerank_model, rerank_latency_ms, rerank_error)
             VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s)""",
-            (str(uuid4()), conversation_id, auth.company_id, query, query, json.dumps(rank_ids(final_chunks)), latency_ms, current_trace_id(), mode, json.dumps({"company_id": auth.company_id, "product": product, "version": version}), json.dumps(rank_ids(vector_chunks)), json.dumps(rank_ids(keyword_chunks)), json.dumps(rank_ids(fused_chunks)), json.dumps(rank_ids(reranked_chunks)), settings.rerank_model if mode == "hybrid_rerank" else None, rerank_latency_ms, rerank_error),
+            (str(uuid4()), conversation_id, user.company_id, query, query, json.dumps(rank_ids(final_chunks)), latency_ms, current_trace_id(), mode, json.dumps({"company_id": user.company_id, "product": product, "version": version}), json.dumps(rank_ids(vector_chunks)), json.dumps(rank_ids(keyword_chunks)), json.dumps(rank_ids(fused_chunks)), json.dumps(rank_ids(reranked_chunks)), settings.rerank_model if mode == "hybrid_rerank" else None, rerank_latency_ms, rerank_error),
         )
     return final_chunks

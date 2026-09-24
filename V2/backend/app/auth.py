@@ -1,14 +1,14 @@
 import hashlib
 
 from backend.app.database import get_connection, get_conversation
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def authenticate(token: str) -> AuthContext:
+def authenticate(token: str) -> UserContext:
     if not token:
         raise PermissionError("A valid access token is required")
     with get_connection() as connection:
@@ -23,12 +23,11 @@ def authenticate(token: str) -> AuthContext:
         ).fetchone()
     if row is None:
         raise PermissionError("Invalid access token")
-    return AuthContext(**row)
+    return UserContext(**row)
 
 
-def authorize_conversation(auth: AuthContext, conversation_id: str) -> dict[str, object]:
+def authorize_conversation(user: UserContext, conversation_id: str) -> dict[str, object]:
     conversation = get_conversation(conversation_id)
-    if conversation is None or conversation["company_id"] != auth.company_id or conversation["user_id"] != auth.user_id:
+    if conversation is None or conversation["company_id"] != user.company_id or conversation["user_id"] != user.user_id:
         raise PermissionError("Conversation is not available in this user scope")
     return conversation
-

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+
+#把 .env 里的配置读进来，让项目其他文件统一使用
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = PROJECT_ROOT / ".env"
 load_dotenv(ENV_FILE, override=False)
@@ -22,8 +24,8 @@ def psycopg_url(database_url: str) -> str:
     return normalized_url.replace("@localhost:", "@127.0.0.1:", 1)
 
 
-@dataclass(frozen=True)
-class Settings:
+@dataclass(frozen=True)   #这个对象创建之后，里面的数据就不能再改了
+class Settings:  #把项目所有配置统一装进一个对象
     database_url: str = field(repr=False)
     groq_api_key: str = field(repr=False)
     groq_model: str

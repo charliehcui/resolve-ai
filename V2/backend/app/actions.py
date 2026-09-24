@@ -8,7 +8,7 @@ import httpx
 from langsmith import traceable
 
 from backend.app.database import get_connection
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.support_cases import update_case
 from backend.app.support_evidence import EvidenceRecord, save_evidence
 from backend.app.support_tools import ToolResult, execute_tool_batch, get_order, get_platform_shipment, get_shipment, get_shipment_records, get_shop_status, request_fact
@@ -24,12 +24,12 @@ def save_action_step(action_id: str, step_name: str, status: str, details: dict[
         connection.execute("INSERT INTO support.action_steps (step_id, action_id, step_name, status, details, evidence_id, trace_id) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)", (str(uuid4()), action_id, step_name, status, json.dumps(details, default=str), evidence_id, current_trace_id()))
 
 
-def load_case_scope(case_id: str, auth: AuthContext) -> dict[str, object]:
+def load_case_scope(case_id: str, user: UserContext) -> dict[str, object]:
     with get_connection() as connection:
         row = connection.execute("""SELECT c.case_id::text, c.conversation_id::text, c.company_id, h.known_shop_id, h.known_order_id
             FROM support.cases c JOIN support.handoffs h ON h.handoff_id = c.handoff_id
             JOIN support.conversations v ON v.conversation_id = c.conversation_id
-            WHERE c.case_id = %s AND c.company_id = %s AND v.user_id = %s""", (case_id, auth.company_id, auth.user_id)).fetchone()
+            WHERE c.case_id = %s AND c.company_id = %s AND v.user_id = %s""", (case_id, user.company_id, user.user_id)).fetchone()
     if row is None:
         raise PermissionError("Support case is not available in this user scope")
     if not row["known_shop_id"] or not row["known_order_id"]:
@@ -37,15 +37,15 @@ def load_case_scope(case_id: str, auth: AuthContext) -> dict[str, object]:
     return dict(row)
 
 
-def get_sku_mapping(auth: AuthContext, shop_id: str, platform_sku: str) -> ToolResult:
+def get_sku_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("GetSkuMapping", "merchant", f"{base_url}/internal/shops/{shop_id}/mappings/{platform_sku}", auth.company_id, {})
+    result = request_fact("GetSkuMapping", "merchant", f"{base_url}/internal/shops/{shop_id}/mappings/{platform_sku}", user.company_id, {})
     result.request = {"shop_id": shop_id, "platform_sku": platform_sku}
     return result
 
 
-def save_tool_evidence(case_id: str, auth: AuthContext, result: ToolResult) -> str:
-    record = save_evidence(case_id, auth.company_id, str(uuid4()), False, None, result.tool_name, result.request, result.response, result.source_service, result.source_record_id, result.status, result.latency_ms, result.trace_id)
+def save_tool_evidence(case_id: str, user: UserContext, result: ToolResult) -> str:
+    record = save_evidence(case_id, user.company_id, str(uuid4()), False, None, result.tool_name, result.request, result.response, result.source_service, result.source_record_id, result.status, result.latency_ms, result.trace_id)
     return record.evidence_id
 
 
@@ -88,8 +88,8 @@ def shipment_action_idempotency_key(company_id: str, shop_id: str, external_orde
 
 
 @traceable(name="propose_order_recovery", run_type="chain")
-def propose_order_recovery(auth: AuthContext, case_id: str, enable_order_sync: bool = False) -> dict[str, object]:
-    scope = load_case_scope(case_id, auth)
+def propose_order_recovery(user: UserContext, case_id: str, enable_order_sync: bool = False) -> dict[str, object]:
+    scope = load_case_scope(case_id, user)
     shop_id = str(scope["known_shop_id"])
     order_id = str(scope["known_order_id"])
     calls = [
@@ -98,7 +98,7 @@ def propose_order_recovery(auth: AuthContext, case_id: str, enable_order_sync: b
         {"name": "GetShopStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
         {"name": "CheckConnection", "args": {"shop_id": shop_id}, "id": "proposal-connection"},
     ]
-    evidence = execute_tool_batch(case_id, auth, calls, shop_id, order_id)
+    evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
     facts = evidence_by_tool(evidence)
     source = facts["GetOrder"]
     process = facts["GetProcessRecords"]
@@ -118,8 +118,8 @@ def propose_order_recovery(auth: AuthContext, case_id: str, enable_order_sync: b
         raise ValueError("Order sync is disabled; enabling it requires an explicit proposal option")
     if connection_status.response.get("channel") == "B" and connection_status.response.get("connection_status") != "authorized":
         raise ValueError("Shop authorization cannot be repaired by recover_order")
-    mapping = get_sku_mapping(auth, shop_id, str(source_data["sku"]))
-    mapping_evidence_id = save_tool_evidence(case_id, auth, mapping)
+    mapping = get_sku_mapping(user, shop_id, str(source_data["sku"]))
+    mapping_evidence_id = save_tool_evidence(case_id, user, mapping)
     if mapping.status != "success" or not mapping.response.get("active"):
         raise ValueError("SKU mapping must exist before order recovery")
     snapshot_fields = ("event_id", "version", "sku", "quantity", "amount_minor", "payment_status")
@@ -129,26 +129,26 @@ def propose_order_recovery(auth: AuthContext, case_id: str, enable_order_sync: b
 
     evidence_ids = evidence_ids_from(evidence)
     evidence_ids.append(mapping_evidence_id)
-    idempotency_key = action_idempotency_key(auth.company_id, shop_id, order_id, str(source_data["event_id"]), int(source_data["version"]), enable_order_sync)
+    idempotency_key = action_idempotency_key(user.company_id, shop_id, order_id, str(source_data["event_id"]), int(source_data["version"]), enable_order_sync)
     action_id = str(uuid4())
     expires_at = datetime.now(UTC) + timedelta(minutes=APPROVAL_MINUTES)
     with get_connection() as connection:
-        existing = connection.execute("SELECT action_id::text FROM support.action_proposals WHERE idempotency_key = %s AND company_id = %s", (idempotency_key, auth.company_id)).fetchone()
+        existing = connection.execute("SELECT action_id::text FROM support.action_proposals WHERE idempotency_key = %s AND company_id = %s", (idempotency_key, user.company_id)).fetchone()
         if existing:
-            return show_action(auth, existing["action_id"])
+            return show_action(user, existing["action_id"])
         connection.execute(
             """INSERT INTO support.action_proposals (action_id, case_id, company_id, shop_id, external_order_id, action_type, status, source_event_id, source_version, shop_version, source_snapshot, enable_order_sync, evidence_ids, idempotency_key, proposed_by, expires_at)
             VALUES (%s, %s, %s, %s, %s, 'recover_order', 'proposed', %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s)""",
-            (action_id, case_id, auth.company_id, shop_id, order_id, source_data["event_id"], source_data["version"], shop.response["version"], json.dumps(snapshot), enable_order_sync, json.dumps(evidence_ids), idempotency_key, auth.user_id, expires_at),
+            (action_id, case_id, user.company_id, shop_id, order_id, source_data["event_id"], source_data["version"], shop.response["version"], json.dumps(snapshot), enable_order_sync, json.dumps(evidence_ids), idempotency_key, user.user_id, expires_at),
         )
     save_action_step(action_id, "action_proposal", "passed", {"action_type": "recover_order", "shop_id": shop_id, "order_id": order_id, "enable_order_sync": enable_order_sync, "evidence_ids": evidence_ids}, source.evidence_id)
     save_action_step(action_id, "policy_check", "passed", {"payment_status": "paid", "mapping_active": True, "connection_authorized": True, "source_version": source_data["version"], "shop_version": shop.response["version"], "evidence_ids": evidence_ids}, mapping_evidence_id)
-    return show_action(auth, action_id)
+    return show_action(user, action_id)
 
 
 @traceable(name="propose_shipment_recovery", run_type="chain")
-def propose_shipment_recovery(auth: AuthContext, case_id: str, enable_shipment_sync: bool = False) -> dict[str, object]:
-    scope = load_case_scope(case_id, auth)
+def propose_shipment_recovery(user: UserContext, case_id: str, enable_shipment_sync: bool = False) -> dict[str, object]:
+    scope = load_case_scope(case_id, user)
     shop_id = str(scope["known_shop_id"])
     order_id = str(scope["known_order_id"])
     calls = [
@@ -158,7 +158,7 @@ def propose_shipment_recovery(auth: AuthContext, case_id: str, enable_shipment_s
         {"name": "GetPlatformShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-platform-shipment"},
         {"name": "GetShopStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
     ]
-    evidence = execute_tool_batch(case_id, auth, calls, shop_id, order_id)
+    evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
     facts = evidence_by_tool(evidence)
     source_order = facts["GetOrder"]
     warehouse = facts["GetShipment"]
@@ -184,35 +184,35 @@ def propose_shipment_recovery(auth: AuthContext, case_id: str, enable_shipment_s
         raise ValueError("Shipment sync is disabled; enabling it requires an explicit proposal option")
     snapshot = {**expected, "version": warehouse.response["shipment_version"], "shipped_at": warehouse.response["shipped_at"], "order_event_id": source_order.response["event_id"], "order_version": source_order.response["version"], "payment_status": source_order.response["payment_status"]}
     evidence_ids = evidence_ids_from(evidence)
-    idempotency_key = shipment_action_idempotency_key(auth.company_id, shop_id, order_id, str(snapshot["shipment_id"]), int(snapshot["version"]), enable_shipment_sync)
+    idempotency_key = shipment_action_idempotency_key(user.company_id, shop_id, order_id, str(snapshot["shipment_id"]), int(snapshot["version"]), enable_shipment_sync)
     action_id = str(uuid4())
     expires_at = datetime.now(UTC) + timedelta(minutes=APPROVAL_MINUTES)
     with get_connection() as connection:
-        existing = connection.execute("SELECT action_id::text FROM support.action_proposals WHERE idempotency_key = %s AND company_id = %s", (idempotency_key, auth.company_id)).fetchone()
+        existing = connection.execute("SELECT action_id::text FROM support.action_proposals WHERE idempotency_key = %s AND company_id = %s", (idempotency_key, user.company_id)).fetchone()
         if existing:
-            return show_action(auth, existing["action_id"])
+            return show_action(user, existing["action_id"])
         connection.execute("""INSERT INTO support.action_proposals
             (action_id, case_id, company_id, shop_id, external_order_id, action_type, status, source_event_id, source_version, shop_version, source_snapshot, enable_shipment_sync, evidence_ids, idempotency_key, proposed_by, expires_at)
-            VALUES (%s, %s, %s, %s, %s, 'recover_shipment', 'proposed', %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s)""", (action_id, case_id, auth.company_id, shop_id, order_id, snapshot["shipment_id"], snapshot["version"], shop.response["version"], json.dumps(snapshot, default=str), enable_shipment_sync, json.dumps(evidence_ids), idempotency_key, auth.user_id, expires_at))
+            VALUES (%s, %s, %s, %s, %s, 'recover_shipment', 'proposed', %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s)""", (action_id, case_id, user.company_id, shop_id, order_id, snapshot["shipment_id"], snapshot["version"], shop.response["version"], json.dumps(snapshot, default=str), enable_shipment_sync, json.dumps(evidence_ids), idempotency_key, user.user_id, expires_at))
     steps: list[str] = []
     if enable_shipment_sync:
         steps.append("enable_shipment_sync")
     steps.append("resend_specific_shipment")
     save_action_step(action_id, "action_proposal", "passed", {"action_type": "recover_shipment", "shop_id": shop_id, "order_id": order_id, "steps": steps, "evidence_ids": evidence_ids}, warehouse.evidence_id)
     save_action_step(action_id, "policy_check", "passed", {"warehouse_shipment_count": 1, "merchant_matches": True, "source_version": snapshot["version"], "shop_version": shop.response["version"], "evidence_ids": evidence_ids}, merchant.evidence_id)
-    return show_action(auth, action_id)
+    return show_action(user, action_id)
 
 
-def get_action(auth: AuthContext, action_id: str) -> dict[str, object]:
+def get_action(user: UserContext, action_id: str) -> dict[str, object]:
     with get_connection() as connection:
-        row = connection.execute("SELECT * FROM support.action_proposals WHERE action_id = %s AND company_id = %s", (action_id, auth.company_id)).fetchone()
+        row = connection.execute("SELECT * FROM support.action_proposals WHERE action_id = %s AND company_id = %s", (action_id, user.company_id)).fetchone()
     if row is None:
         raise PermissionError("Action is not available in this company scope")
     return dict(row)
 
 
-def show_action(auth: AuthContext, action_id: str) -> dict[str, object]:
-    action = get_action(auth, action_id)
+def show_action(user: UserContext, action_id: str) -> dict[str, object]:
+    action = get_action(user, action_id)
     with get_connection() as connection:
         decision = connection.execute("SELECT decision_id::text, decision, decided_by, decided_at FROM support.action_decisions WHERE action_id = %s", (action_id,)).fetchone()
         execution = connection.execute("SELECT execution_id::text, request_id::text, status, claim_until, attempts, receipt, error_type, trace_id, created_at, updated_at FROM support.action_executions WHERE action_id = %s", (action_id,)).fetchone()
@@ -297,41 +297,41 @@ def record_reconciled_submission(action: dict[str, object], receipt: dict[str, o
 
 
 @traceable(name="execute_order_recovery", run_type="chain")
-def execute_order_recovery(auth: AuthContext, action_id: str) -> dict[str, object]:
-    if auth.role != "admin":
+def execute_order_recovery(user: UserContext, action_id: str) -> dict[str, object]:
+    if user.role != "admin":
         raise PermissionError("Only a company admin can execute an approved action")
-    action = get_action(auth, action_id)
+    action = get_action(user, action_id)
     if action["status"] in {"verified_resolved", "verification_failed", "blocked", "rejected", "expired"}:
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if action["status"] == "awaiting_verification":
         from backend.app.verification import wait_for_order_verification
 
-        return wait_for_order_verification(auth, action_id)
+        return wait_for_order_verification(user, action_id)
     if action["status"] == "executing":
         receipt = reconcile_action_receipt(action)
         if receipt:
             record_reconciled_submission(action, receipt)
             from backend.app.verification import wait_for_order_verification
 
-            return wait_for_order_verification(auth, action_id)
+            return wait_for_order_verification(user, action_id)
     if action["status"] not in {"approved", "executing"}:
         raise ValueError("Action is not approved")
-    current_order = get_order(auth, action["shop_id"], action["external_order_id"])
-    current_shop = get_shop_status(auth, action["shop_id"])
-    order_evidence_id = save_tool_evidence(str(action["case_id"]), auth, current_order)
-    shop_evidence_id = save_tool_evidence(str(action["case_id"]), auth, current_shop)
+    current_order = get_order(user, action["shop_id"], action["external_order_id"])
+    current_shop = get_shop_status(user, action["shop_id"])
+    order_evidence_id = save_tool_evidence(str(action["case_id"]), user, current_order)
+    shop_evidence_id = save_tool_evidence(str(action["case_id"]), user, current_shop)
     snapshot = action["source_snapshot"]
     compared_fields = ("event_id", "version", "sku", "quantity", "amount_minor", "payment_status")
     source_order_matches = current_order.status == "success" and fields_match(current_order.response, snapshot, compared_fields)
     if not source_order_matches:
         block_action(action_id, "SOURCE_VERSION_CHANGED", order_evidence_id)
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if current_order.response.get("payment_status") != "paid":
         block_action(action_id, "ORDER_NOT_PAID", order_evidence_id)
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if current_shop.status != "success" or current_shop.response.get("version") != action["shop_version"]:
         block_action(action_id, "SHOP_VERSION_CHANGED", shop_evidence_id)
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     request_id = str(uuid5(NAMESPACE_URL, action["idempotency_key"]))
     with get_connection() as connection:
         decision = connection.execute("SELECT decision_id::text, decided_by FROM support.action_decisions WHERE action_id = %s AND decision = 'approved'", (action_id,)).fetchone()
@@ -339,11 +339,11 @@ def execute_order_recovery(auth: AuthContext, action_id: str) -> dict[str, objec
             raise ValueError("Approved decision record is missing")
     claim = claim_action_execution(action_id, request_id)
     if claim == "busy":
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if claim == "submitted":
         from backend.app.verification import wait_for_order_verification
 
-        return wait_for_order_verification(auth, action_id)
+        return wait_for_order_verification(user, action_id)
     save_action_step(action_id, "scope_version_recheck", "passed", {"source_version": action["source_version"], "shop_version": action["shop_version"], "evidence_ids": [order_evidence_id, shop_evidence_id]}, order_evidence_id)
     payload = {
         "action_id": action_id,
@@ -366,57 +366,57 @@ def execute_order_recovery(auth: AuthContext, action_id: str) -> dict[str, objec
         with get_connection() as connection:
             connection.execute("UPDATE support.action_executions SET status = 'unknown', error_type = %s, updated_at = NOW() WHERE action_id = %s", (type(error).__name__, action_id))
         save_action_step(action_id, "execute", "unknown", {"error_type": type(error).__name__})
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     except RuntimeError as error:
         with get_connection() as connection:
             connection.execute("UPDATE support.action_executions SET status = 'failed', error_type = %s, updated_at = NOW() WHERE action_id = %s", (type(error).__name__, action_id))
             connection.execute("UPDATE support.action_proposals SET status = 'blocked', updated_at = NOW() WHERE action_id = %s", (action_id,))
         save_action_step(action_id, "execute", "failed", {"error_type": type(error).__name__})
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     with get_connection() as connection:
         connection.execute("UPDATE support.action_executions SET status = 'submitted', receipt = %s::jsonb, updated_at = NOW() WHERE action_id = %s", (json.dumps(receipt), action_id))
         connection.execute("UPDATE support.action_proposals SET status = 'awaiting_verification', updated_at = NOW() WHERE action_id = %s", (action_id,))
-    receipt_record = save_evidence(str(action["case_id"]), auth.company_id, str(uuid4()), False, None, "RecoverOrderReceipt", {"action_id": action_id, "request_id": request_id}, receipt, "merchant", str(receipt.get("receipt_id") or "") or None, "success", 0, current_trace_id())
+    receipt_record = save_evidence(str(action["case_id"]), user.company_id, str(uuid4()), False, None, "RecoverOrderReceipt", {"action_id": action_id, "request_id": request_id}, receipt, "merchant", str(receipt.get("receipt_id") or "") or None, "success", 0, current_trace_id())
     save_action_step(action_id, "execute", "submitted", {"request_id": request_id})
     save_action_step(action_id, "receipt_reconciliation", "accepted", {"duplicate": bool(receipt.get("duplicate")), "task_id": receipt.get("task_id"), "evidence_ids": [receipt_record.evidence_id]}, receipt_record.evidence_id)
     from backend.app.verification import wait_for_order_verification
 
-    return wait_for_order_verification(auth, action_id)
+    return wait_for_order_verification(user, action_id)
 
 
 @traceable(name="execute_shipment_recovery", run_type="chain")
-def execute_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, object]:
-    if auth.role != "admin":
+def execute_shipment_recovery(user: UserContext, action_id: str) -> dict[str, object]:
+    if user.role != "admin":
         raise PermissionError("Only a company admin can execute an approved action")
-    action = get_action(auth, action_id)
+    action = get_action(user, action_id)
     if action["action_type"] != "recover_shipment":
         raise ValueError("Action is not a shipment recovery")
     if action["status"] in {"verified_resolved", "verification_failed", "blocked", "rejected", "expired"}:
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if action["status"] == "awaiting_verification":
         from backend.app.verification import wait_for_shipment_verification
 
-        return wait_for_shipment_verification(auth, action_id)
+        return wait_for_shipment_verification(user, action_id)
     if action["status"] == "executing":
         receipt = reconcile_action_receipt(action)
         if receipt:
             record_reconciled_submission(action, receipt)
             from backend.app.verification import wait_for_shipment_verification
 
-            return wait_for_shipment_verification(auth, action_id)
+            return wait_for_shipment_verification(user, action_id)
     if action["status"] not in {"approved", "executing"}:
         raise ValueError("Action is not approved")
     shop_id = str(action["shop_id"])
     order_id = str(action["external_order_id"])
-    warehouse = get_shipment(auth, shop_id, order_id)
-    merchant = get_shipment_records(auth, shop_id, order_id)
-    platform = get_platform_shipment(auth, shop_id, order_id)
-    shop = get_shop_status(auth, shop_id)
-    source_order = get_order(auth, shop_id, order_id)
+    warehouse = get_shipment(user, shop_id, order_id)
+    merchant = get_shipment_records(user, shop_id, order_id)
+    platform = get_platform_shipment(user, shop_id, order_id)
+    shop = get_shop_status(user, shop_id)
+    source_order = get_order(user, shop_id, order_id)
 
     evidence_ids: list[str] = []
     for tool_result in (warehouse, merchant, platform, shop, source_order):
-        evidence_id = save_tool_evidence(str(action["case_id"]), auth, tool_result)
+        evidence_id = save_tool_evidence(str(action["case_id"]), user, tool_result)
         evidence_ids.append(evidence_id)
 
     snapshot = action["source_snapshot"]
@@ -436,10 +436,10 @@ def execute_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, ob
     order_matches = source_order.status == "success" and order_event_matches and order_version_matches and order_is_paid
     if not warehouse_matches or not merchant_matches or not order_matches:
         block_action(action_id, "SHIPMENT_VERSION_CHANGED", evidence_ids[0])
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if shop.status != "success" or shop.response.get("version") != action["shop_version"]:
         block_action(action_id, "SHOP_VERSION_CHANGED", evidence_ids[3])
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     request_id = str(uuid5(NAMESPACE_URL, action["idempotency_key"]))
     with get_connection() as connection:
         decision = connection.execute("SELECT decision_id::text, decided_by FROM support.action_decisions WHERE action_id = %s AND decision = 'approved'", (action_id,)).fetchone()
@@ -447,11 +447,11 @@ def execute_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, ob
             raise ValueError("Approved decision record is missing")
     claim = claim_action_execution(action_id, request_id)
     if claim == "busy":
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if claim == "submitted":
         from backend.app.verification import wait_for_shipment_verification
 
-        return wait_for_shipment_verification(auth, action_id)
+        return wait_for_shipment_verification(user, action_id)
     save_action_step(action_id, "scope_version_recheck", "passed", {"source_version": action["source_version"], "shop_version": action["shop_version"], "evidence_ids": evidence_ids}, evidence_ids[0])
     platform_already_matches = platform.status == "success" and fields_match(platform.response, snapshot, fields)
     if platform_already_matches:
@@ -477,57 +477,57 @@ def execute_shipment_recovery(auth: AuthContext, action_id: str) -> dict[str, ob
             with get_connection() as connection:
                 connection.execute("UPDATE support.action_executions SET status = 'unknown', error_type = %s, updated_at = NOW() WHERE action_id = %s", (type(error).__name__, action_id))
             save_action_step(action_id, "execute", "unknown", {"error_type": type(error).__name__})
-            return show_action(auth, action_id)
+            return show_action(user, action_id)
         except RuntimeError as error:
             with get_connection() as connection:
                 connection.execute("UPDATE support.action_executions SET status = 'failed', error_type = %s, updated_at = NOW() WHERE action_id = %s", (type(error).__name__, action_id))
                 connection.execute("UPDATE support.action_proposals SET status = 'blocked', updated_at = NOW() WHERE action_id = %s", (action_id,))
             save_action_step(action_id, "execute", "failed", {"error_type": type(error).__name__})
-            return show_action(auth, action_id)
+            return show_action(user, action_id)
     with get_connection() as connection:
         connection.execute("UPDATE support.action_executions SET status = 'submitted', receipt = %s::jsonb, updated_at = NOW() WHERE action_id = %s", (json.dumps(receipt), action_id))
         connection.execute("UPDATE support.action_proposals SET status = 'awaiting_verification', updated_at = NOW() WHERE action_id = %s", (action_id,))
-    receipt_record = save_evidence(str(action["case_id"]), auth.company_id, str(uuid4()), False, None, "RecoverShipmentReceipt", {"action_id": action_id, "request_id": request_id}, receipt, "merchant" if not platform_already_matches else "platform", str(receipt.get("receipt_id") or "") or None, "success", 0, current_trace_id())
+    receipt_record = save_evidence(str(action["case_id"]), user.company_id, str(uuid4()), False, None, "RecoverShipmentReceipt", {"action_id": action_id, "request_id": request_id}, receipt, "merchant" if not platform_already_matches else "platform", str(receipt.get("receipt_id") or "") or None, "success", 0, current_trace_id())
     save_action_step(action_id, "execute", "submitted", {"request_id": request_id, "reconciled": platform_already_matches})
     save_action_step(action_id, "receipt_reconciliation", "accepted", {"duplicate": bool(receipt.get("duplicate")), "task_id": receipt.get("task_id"), "evidence_ids": [receipt_record.evidence_id]}, receipt_record.evidence_id)
     from backend.app.verification import wait_for_shipment_verification
 
-    return wait_for_shipment_verification(auth, action_id)
+    return wait_for_shipment_verification(user, action_id)
 
 
-def execute_action(auth: AuthContext, action_id: str) -> dict[str, object]:
-    action = get_action(auth, action_id)
+def execute_action(user: UserContext, action_id: str) -> dict[str, object]:
+    action = get_action(user, action_id)
     if action["action_type"] == "recover_shipment":
-        return execute_shipment_recovery(auth, action_id)
-    return execute_order_recovery(auth, action_id)
+        return execute_shipment_recovery(user, action_id)
+    return execute_order_recovery(user, action_id)
 
 
 @traceable(name="decide_order_recovery", run_type="chain")
-def decide_action(auth: AuthContext, action_id: str, decision: str) -> dict[str, object]:
-    if auth.role != "admin":
+def decide_action(user: UserContext, action_id: str, decision: str) -> dict[str, object]:
+    if user.role != "admin":
         raise PermissionError("Only a company admin can approve or reject an action")
     if decision not in {"approve", "reject"}:
         raise ValueError("Decision must be approve or reject")
-    action = get_action(auth, action_id)
+    action = get_action(user, action_id)
     if action["status"] != "proposed":
         if decision == "approve" and action["status"] in {"approved", "executing", "awaiting_verification", "verified_resolved", "verification_failed", "blocked"}:
             if action["status"] in {"approved", "awaiting_verification"}:
-                return execute_action(auth, action_id)
-            return show_action(auth, action_id)
-        return show_action(auth, action_id)
+                return execute_action(user, action_id)
+            return show_action(user, action_id)
+        return show_action(user, action_id)
     if action["expires_at"] <= datetime.now(UTC):
         with get_connection() as connection:
             connection.execute("UPDATE support.action_proposals SET status = 'expired', updated_at = NOW() WHERE action_id = %s", (action_id,))
         save_action_step(action_id, "human_approval", "expired", {"expires_at": action["expires_at"]})
-        return show_action(auth, action_id)
+        return show_action(user, action_id)
     if decision == "approve":
         stored_decision = "approved"
     else:
         stored_decision = "rejected"
     with get_connection() as connection:
-        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, %s, %s)", (str(uuid4()), action_id, stored_decision, auth.user_id))
+        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, %s, %s)", (str(uuid4()), action_id, stored_decision, user.user_id))
         connection.execute("UPDATE support.action_proposals SET status = %s, updated_at = NOW() WHERE action_id = %s", (stored_decision, action_id))
-    save_action_step(action_id, "human_approval", stored_decision, {"decided_by": auth.user_id})
+    save_action_step(action_id, "human_approval", stored_decision, {"decided_by": user.user_id})
     if decision == "reject":
-        return show_action(auth, action_id)
-    return execute_action(auth, action_id)
+        return show_action(user, action_id)
+    return execute_action(user, action_id)

@@ -24,10 +24,10 @@ def test_company_b_cannot_open_company_a_conversation(seeded_database: dict[str,
 
 
 def test_same_user_can_continue_conversation(seeded_database: dict[str, str]) -> None:
-    auth = authenticate(seeded_database["token_a"])
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
+    user = authenticate(seeded_database["token_a"])
+    conversation_id = create_conversation(user.company_id, user.user_id)
     save_message(conversation_id, "user", "第一个问题")
-    authorize_conversation(auth, conversation_id)
+    authorize_conversation(user, conversation_id)
     assert [message["content"] for message in load_messages(conversation_id)] == ["第一个问题"]
 
 

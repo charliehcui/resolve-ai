@@ -8,7 +8,7 @@ from backend.app.actions import decide_action, execute_order_recovery, propose_o
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import handoff_to_support
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
 from simulator.services import common
 from simulator.services.common import OrderEvent, OrderRepairRequest
@@ -16,28 +16,28 @@ from simulator.services.merchant import receive_order_repair, store_order_event
 from simulator.services.worker import process_next_recovery_task, process_next_task
 
 
-def create_missing_order_case(auth: AuthContext, order_id: str = "O-RECOVER") -> tuple[str, str, str]:
+def create_missing_order_case(user: UserContext, order_id: str = "O-RECOVER") -> tuple[str, str, str]:
     event_id = str(uuid4())
     with get_connection() as connection:
         connection.execute(
             "INSERT INTO platform.orders (platform_order_id, event_id, company_id, shop_id, external_order_id, sku, quantity, amount_minor, payment_status, payload_hash) VALUES (%s, %s, %s, 'shop-a', %s, 'SKU-1', 2, 20000, 'paid', %s)",
-            (str(uuid4()), event_id, auth.company_id, order_id, f"hash-{event_id}"),
+            (str(uuid4()), event_id, user.company_id, order_id, f"hash-{event_id}"),
         )
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
-    _, case_id = handoff_to_support(auth, conversation_id, f"shop-a 的订单 {order_id} 仍未同步", "需要后台调查", [])
+    conversation_id = create_conversation(user.company_id, user.user_id)
+    _, case_id = handoff_to_support(user, conversation_id, f"shop-a 的订单 {order_id} 仍未同步", "需要后台调查", [])
     return case_id, event_id, conversation_id
 
 
-def business_tool(name: str, auth: AuthContext, shop_id: str, order_id: str | None = None) -> ToolResult:
+def business_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ToolResult:
     with get_connection() as connection:
         if name == "GetOrder":
-            row = connection.execute("SELECT event_id::text, company_id, shop_id, external_order_id, sku, quantity, amount_minor, payment_status, version FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (auth.company_id, shop_id, order_id)).fetchone()
+            row = connection.execute("SELECT event_id::text, company_id, shop_id, external_order_id, sku, quantity, amount_minor, payment_status, version FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (user.company_id, shop_id, order_id)).fetchone()
             return ToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {}, source_service="platform", source_record_id=row["event_id"] if row else None, status="success" if row else "not_found", latency_ms=1)
         if name == "GetShopStatus":
-            row = connection.execute("SELECT company_id, shop_id, channel, sync_enabled, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (auth.company_id, shop_id)).fetchone()
+            row = connection.execute("SELECT company_id, shop_id, channel, sync_enabled, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (user.company_id, shop_id)).fetchone()
             return ToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
         if name == "CheckConnection":
-            row = connection.execute("SELECT company_id, shop_id, channel, connection_status, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (auth.company_id, shop_id)).fetchone()
+            row = connection.execute("SELECT company_id, shop_id, channel, connection_status, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (user.company_id, shop_id)).fetchone()
             return ToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
         row = connection.execute(
             """SELECT r.event_id::text, r.payload->>'sku' AS platform_sku, (r.payload->>'quantity')::integer AS source_quantity,
@@ -47,7 +47,7 @@ def business_tool(name: str, auth: AuthContext, shop_id: str, order_id: str | No
             FROM merchant.order_event_receipts r JOIN merchant.order_tasks t ON t.event_id = r.event_id
             LEFT JOIN merchant.orders m ON m.event_id = r.event_id
             WHERE r.company_id = %s AND r.shop_id = %s AND r.external_order_id = %s""",
-            (auth.company_id, shop_id, order_id),
+            (user.company_id, shop_id, order_id),
         ).fetchone()
     return ToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {"empty": True}, source_service="merchant", source_record_id=row["event_id"] if row else None, status="success" if row else "empty", latency_ms=1)
 
@@ -55,16 +55,16 @@ def business_tool(name: str, auth: AuthContext, shop_id: str, order_id: str | No
 @pytest.fixture()
 def action_runtime(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     monkeypatch.setattr(common, "read_service_token", lambda name: "test-service-token")
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetOrder", lambda auth, shop_id, order_id: business_tool("GetOrder", auth, shop_id, order_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda auth, shop_id: business_tool("GetShopStatus", auth, shop_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "CheckConnection", lambda auth, shop_id: business_tool("CheckConnection", auth, shop_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetProcessRecords", lambda auth, shop_id, order_id: business_tool("GetProcessRecords", auth, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_order", lambda auth, shop_id, order_id: business_tool("GetOrder", auth, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shop_status", lambda auth, shop_id: business_tool("GetShopStatus", auth, shop_id))
+    monkeypatch.setitem(TOOL_FUNCTIONS, "GetOrder", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
+    monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda user, shop_id: business_tool("GetShopStatus", user, shop_id))
+    monkeypatch.setitem(TOOL_FUNCTIONS, "CheckConnection", lambda user, shop_id: business_tool("CheckConnection", user, shop_id))
+    monkeypatch.setitem(TOOL_FUNCTIONS, "GetProcessRecords", lambda user, shop_id, order_id: business_tool("GetProcessRecords", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.actions.get_order", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.actions.get_shop_status", lambda user, shop_id: business_tool("GetShopStatus", user, shop_id))
 
-    def fake_mapping(auth: AuthContext, shop_id: str, platform_sku: str) -> ToolResult:
+    def fake_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ToolResult:
         with get_connection() as connection:
-            row = connection.execute("SELECT platform_sku, merchant_sku, active FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s", (auth.company_id, shop_id, platform_sku)).fetchone()
+            row = connection.execute("SELECT platform_sku, merchant_sku, active FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s", (user.company_id, shop_id, platform_sku)).fetchone()
         return ToolResult(tool_name="GetSkuMapping", request={"shop_id": shop_id, "platform_sku": platform_sku}, response=dict(row) if row else {}, source_service="merchant", status="success" if row else "not_found", latency_ms=1)
 
     monkeypatch.setattr("backend.app.actions.get_sku_mapping", fake_mapping)
@@ -77,22 +77,22 @@ def action_runtime(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("simulator.services.worker.read_platform_order", fake_platform_order)
 
-    def process_then_verify(auth: AuthContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
+    def process_then_verify(user: UserContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
         process_next_recovery_task()
         from backend.app.verification import verify_order_recovery
 
-        return verify_order_recovery(auth, action_id, final=True)
+        return verify_order_recovery(user, action_id, final=True)
 
     monkeypatch.setattr("backend.app.verification.wait_for_order_verification", process_then_verify)
     return seeded_database
 
 
 def test_approved_recovery_is_verified_and_duplicate_approval_has_one_effect(action_runtime: dict[str, str]) -> None:
-    auth = authenticate(action_runtime["token_a"])
-    case_id, event_id, _ = create_missing_order_case(auth)
-    proposed = propose_order_recovery(auth, case_id)
-    completed = decide_action(auth, proposed["action_id"], "approve")
-    duplicate = decide_action(auth, proposed["action_id"], "approve")
+    user = authenticate(action_runtime["token_a"])
+    case_id, event_id, _ = create_missing_order_case(user)
+    proposed = propose_order_recovery(user, case_id)
+    completed = decide_action(user, proposed["action_id"], "approve")
+    duplicate = decide_action(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     assert completed["verification"]["status"] == "verified_resolved"
     assert duplicate["status"] == "verified_resolved"
@@ -124,28 +124,28 @@ def test_staff_cannot_approve_and_rejection_creates_no_repair(action_runtime: di
 
 
 def test_expired_approval_and_changed_source_do_not_execute(action_runtime: dict[str, str]) -> None:
-    auth = authenticate(action_runtime["token_a"])
-    expired_case, _, _ = create_missing_order_case(auth, "O-EXPIRED")
-    expired = propose_order_recovery(auth, expired_case)
+    user = authenticate(action_runtime["token_a"])
+    expired_case, _, _ = create_missing_order_case(user, "O-EXPIRED")
+    expired = propose_order_recovery(user, expired_case)
     with get_connection() as connection:
         connection.execute("UPDATE support.action_proposals SET expires_at = %s WHERE action_id = %s", (datetime.now(UTC) - timedelta(seconds=1), expired["action_id"]))
-    assert decide_action(auth, expired["action_id"], "approve")["status"] == "expired"
-    changed_case, _, _ = create_missing_order_case(auth, "O-CHANGED")
-    changed = propose_order_recovery(auth, changed_case)
+    assert decide_action(user, expired["action_id"], "approve")["status"] == "expired"
+    changed_case, _, _ = create_missing_order_case(user, "O-CHANGED")
+    changed = propose_order_recovery(user, changed_case)
     with get_connection() as connection:
-        connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE company_id = %s AND external_order_id = 'O-CHANGED'", (auth.company_id,))
-    assert decide_action(auth, changed["action_id"], "approve")["status"] == "blocked"
+        connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE company_id = %s AND external_order_id = 'O-CHANGED'", (user.company_id,))
+    assert decide_action(user, changed["action_id"], "approve")["status"] == "blocked"
     with get_connection() as connection:
         count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id IN (%s, %s)", (expired["action_id"], changed["action_id"])).fetchone()["count"]
     assert count == 0
 
 
 def test_persisted_approval_can_execute_after_process_restart(action_runtime: dict[str, str]) -> None:
-    auth = authenticate(action_runtime["token_a"])
-    case_id, _, _ = create_missing_order_case(auth, "O-RESTART")
-    proposed = propose_order_recovery(auth, case_id)
+    user = authenticate(action_runtime["token_a"])
+    case_id, _, _ = create_missing_order_case(user, "O-RESTART")
+    proposed = propose_order_recovery(user, case_id)
     with get_connection() as connection:
-        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), proposed["action_id"], auth.user_id))
+        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), proposed["action_id"], user.user_id))
         connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (proposed["action_id"],))
     result = execute_order_recovery(authenticate(action_runtime["token_a"]), proposed["action_id"])
     assert result["status"] == "verified_resolved", result
@@ -162,28 +162,28 @@ def test_repair_contract_deduplicates_action_id(action_runtime: dict[str, str]) 
 
 
 def test_enabling_sync_requires_explicit_proposal_scope(action_runtime: dict[str, str]) -> None:
-    auth = authenticate(action_runtime["token_a"])
+    user = authenticate(action_runtime["token_a"])
     with get_connection() as connection:
-        connection.execute("UPDATE merchant.shops SET sync_enabled = FALSE, version = version + 1 WHERE company_id = %s AND shop_id = 'shop-a'", (auth.company_id,))
-    case_id, _, _ = create_missing_order_case(auth, "O-ENABLE-SYNC")
+        connection.execute("UPDATE merchant.shops SET sync_enabled = FALSE, version = version + 1 WHERE company_id = %s AND shop_id = 'shop-a'", (user.company_id,))
+    case_id, _, _ = create_missing_order_case(user, "O-ENABLE-SYNC")
     with pytest.raises(ValueError, match="explicit proposal"):
-        propose_order_recovery(auth, case_id)
-    proposed = propose_order_recovery(auth, case_id, enable_order_sync=True)
+        propose_order_recovery(user, case_id)
+    proposed = propose_order_recovery(user, case_id, enable_order_sync=True)
     assert proposed["enable_order_sync"] is True
-    result = decide_action(auth, proposed["action_id"], "approve")
+    result = decide_action(user, proposed["action_id"], "approve")
     assert result["status"] == "verified_resolved"
     with get_connection() as connection:
-        shop = connection.execute("SELECT sync_enabled FROM merchant.shops WHERE company_id = %s AND shop_id = 'shop-a'", (auth.company_id,)).fetchone()
+        shop = connection.execute("SELECT sync_enabled FROM merchant.shops WHERE company_id = %s AND shop_id = 'shop-a'", (user.company_id,)).fetchone()
     assert shop["sync_enabled"] is True
 
 
 def test_existing_correct_order_is_verified_as_no_action_needed(action_runtime: dict[str, str]) -> None:
-    auth = authenticate(action_runtime["token_a"])
-    case_id, event_id, _ = create_missing_order_case(auth, "O-ALREADY-DONE")
-    event = OrderEvent(event_id=event_id, company_id=auth.company_id, shop_id="shop-a", external_order_id="O-ALREADY-DONE", sku="SKU-1", quantity=2, amount_minor=20000, payment_status="paid")
+    user = authenticate(action_runtime["token_a"])
+    case_id, event_id, _ = create_missing_order_case(user, "O-ALREADY-DONE")
+    event = OrderEvent(event_id=event_id, company_id=user.company_id, shop_id="shop-a", external_order_id="O-ALREADY-DONE", sku="SKU-1", quantity=2, amount_minor=20000, payment_status="paid")
     store_order_event(event)
     assert process_next_task()["status"] == "completed"
-    result = propose_order_recovery(auth, case_id)
+    result = propose_order_recovery(user, case_id)
     assert result["status"] == "no_action_needed"
     with get_connection() as connection:
         proposal_count = connection.execute("SELECT COUNT(*) AS count FROM support.action_proposals WHERE case_id = %s", (case_id,)).fetchone()["count"]
@@ -191,16 +191,16 @@ def test_existing_correct_order_is_verified_as_no_action_needed(action_runtime: 
 
 
 def test_order_repair_response_lost_is_reconciled_after_resume(action_runtime: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    auth = authenticate(action_runtime["token_a"])
-    case_id, _, _ = create_missing_order_case(auth, "O-ORDER-RESPONSE-LOST")
-    proposed = propose_order_recovery(auth, case_id)
+    user = authenticate(action_runtime["token_a"])
+    case_id, _, _ = create_missing_order_case(user, "O-ORDER-RESPONSE-LOST")
+    proposed = propose_order_recovery(user, case_id)
 
     def commit_then_lose(payload: dict[str, object]) -> dict[str, object]:
         receive_order_repair(OrderRepairRequest(**payload), "test-service-token")
         raise httpx.ReadTimeout("response lost", request=httpx.Request("POST", "http://merchant/repairs/orders"))
 
     monkeypatch.setattr("backend.app.actions.submit_order_repair", commit_then_lose)
-    unknown = decide_action(auth, proposed["action_id"], "approve")
+    unknown = decide_action(user, proposed["action_id"], "approve")
     assert unknown["status"] == "executing"
     assert unknown["execution"]["status"] == "unknown"
 
@@ -212,9 +212,9 @@ def test_order_repair_response_lost_is_reconciled_after_resume(action_runtime: d
         return {"accepted": True, "duplicate": True, **dict(row)}
 
     monkeypatch.setattr("backend.app.actions.reconcile_action_receipt", receipt_from_merchant)
-    completed = execute_order_recovery(auth, proposed["action_id"])
+    completed = execute_order_recovery(user, proposed["action_id"])
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:
         receipt_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"]
-        order_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.orders WHERE company_id = %s AND external_order_id = 'O-ORDER-RESPONSE-LOST'", (auth.company_id,)).fetchone()["count"]
+        order_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.orders WHERE company_id = %s AND external_order_id = 'O-ORDER-RESPONSE-LOST'", (user.company_id,)).fetchone()["count"]
     assert (receipt_count, order_count) == (1, 1)

@@ -9,7 +9,7 @@ from langsmith import traceable
 from backend.app.config import get_settings
 from backend.app.customer_agent import sum_token_usage
 from backend.app.handoff import SupportHandoff, update_handoff_identifiers
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.support_agent import (
     MAX_CONSECUTIVE_ERRORS,
     MAX_INVESTIGATION_MS,
@@ -27,7 +27,7 @@ from backend.app.trace import current_trace_id
 
 class SupportInvestigationState(TypedDict, total=False):
     question: str
-    auth: dict[str, str]
+    user: dict[str, str]
     conversation_id: str
     case_id: str
     handoff: dict[str, object]
@@ -73,7 +73,7 @@ def count_evidence_errors(records: list[EvidenceRecord]) -> int:
 
 
 def support_plan_node(state: SupportInvestigationState) -> SupportInvestigationState:
-    handoff = SupportHandoff(**state["handoff"])
+    handoff = SupportHandoff.model_validate(state["handoff"])
     evidence = load_evidence_records(state.get("evidence", []))
 
     if handoff.missing_fields:
@@ -139,10 +139,10 @@ def json_key(value: dict[str, object]) -> str:
 
 
 def support_execute_node(state: SupportInvestigationState) -> SupportInvestigationState:
-    auth = AuthContext(**state["auth"])
-    handoff = SupportHandoff(**state["handoff"])
+    user = UserContext.model_validate(state["user"])
+    handoff = SupportHandoff.model_validate(state["handoff"])
     evidence = load_evidence_records(state.get("evidence", []))
-    new_evidence = execute_tool_batch(state["case_id"], auth, state["proposed_calls"], handoff.known_shop_id or "", handoff.known_order_id or "", handoff.known_sku or "")
+    new_evidence = execute_tool_batch(state["case_id"], user, state["proposed_calls"], handoff.known_shop_id or "", handoff.known_order_id or "", handoff.known_sku or "")
     combined = [*evidence, *new_evidence]
 
     consecutive_errors = 0
@@ -181,11 +181,11 @@ def build_support_investigation_graph() -> StateGraph:
 
 
 @traceable(name="support_conversation_turn", run_type="chain")
-def run_support_graph(question: str, auth: AuthContext, conversation_id: str) -> SupportInvestigationResult:
+def run_support_graph(question: str, user: UserContext, conversation_id: str) -> SupportInvestigationResult:
     settings = get_settings()
     started_at = time.perf_counter()
-    handoff = update_handoff_identifiers(conversation_id, auth, question)
-    case_id = get_case_id(conversation_id, auth)
+    handoff = update_handoff_identifiers(conversation_id, user, question)
+    case_id = get_case_id(conversation_id, user)
     evidence = load_evidence(case_id)
 
     with PostgresSaver.from_conn_string(settings.postgres_url) as checkpointer:
@@ -195,7 +195,7 @@ def run_support_graph(question: str, auth: AuthContext, conversation_id: str) ->
 
         initial_state: SupportInvestigationState = {
             "question": question,
-            "auth": auth.model_dump(),
+            "user": user.model_dump(),
             "conversation_id": conversation_id,
             "case_id": case_id,
             "handoff": handoff.model_dump(),
@@ -228,7 +228,7 @@ def run_support_graph(question: str, auth: AuthContext, conversation_id: str) ->
         else:
             trigger = "support_unresolved"
 
-        ticket = create_ticket(auth, conversation_id, trigger, answer)
+        ticket = create_ticket(user, conversation_id, trigger, answer)
         ticket_id = str(ticket["ticket_id"])
 
     evidence_ids: list[str] = []

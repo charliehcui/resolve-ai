@@ -103,36 +103,36 @@ def doctor_command() -> None:
 
 
 def chat_command(token: str, question: str, conversation_id: str | None, retrieval_mode: str | None) -> None:
-    auth = authenticate(token)
-    result = process_conversation_message(auth, question, conversation_id, retrieval_mode)
+    user = authenticate(token)
+    result = process_conversation_message(user, question, conversation_id, retrieval_mode)
     print(f"Active role: {result['active_role']}")
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 def case_show_command(token: str, case_id: str) -> None:
-    auth = authenticate(token)
-    print(json.dumps(show_case(case_id, auth), ensure_ascii=False, indent=2, default=str))
+    user = authenticate(token)
+    print(json.dumps(show_case(case_id, user), ensure_ascii=False, indent=2, default=str))
 
 
 def action_propose_command(token: str, case_id: str, action_type: str, enable_order_sync: bool, enable_shipment_sync: bool) -> None:
-    auth = authenticate(token)
-    result = propose_shipment_recovery(auth, case_id, enable_shipment_sync) if action_type == "recover_shipment" else propose_order_recovery(auth, case_id, enable_order_sync)
+    user = authenticate(token)
+    result = propose_shipment_recovery(user, case_id, enable_shipment_sync) if action_type == "recover_shipment" else propose_order_recovery(user, case_id, enable_order_sync)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 def action_decide_command(token: str, action_id: str, decision: str) -> None:
-    auth = authenticate(token)
-    print(json.dumps(decide_action(auth, action_id, decision), ensure_ascii=False, indent=2, default=str))
+    user = authenticate(token)
+    print(json.dumps(decide_action(user, action_id, decision), ensure_ascii=False, indent=2, default=str))
 
 
 def action_execute_command(token: str, action_id: str) -> None:
-    auth = authenticate(token)
-    print(json.dumps(execute_action(auth, action_id), ensure_ascii=False, indent=2, default=str))
+    user = authenticate(token)
+    print(json.dumps(execute_action(user, action_id), ensure_ascii=False, indent=2, default=str))
 
 
 def action_show_command(token: str, action_id: str) -> None:
-    auth = authenticate(token)
-    print(json.dumps(show_action(auth, action_id), ensure_ascii=False, indent=2, default=str))
+    user = authenticate(token)
+    print(json.dumps(show_action(user, action_id), ensure_ascii=False, indent=2, default=str))
 
 
 def ticket_create_command(token: str, conversation_id: str, reason: str) -> None:

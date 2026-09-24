@@ -5,104 +5,155 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 
 from backend.app.config import get_settings
-from backend.app.customer_agent import build_non_search_answer, decide_customer_query_action, generate_answer_from_documents, sum_token_usage
+from backend.app.customer_agent import build_non_search_answer, decide_customer_query_next_step, generate_answer_from_documents, sum_token_usage
 from backend.app.customer_retrieval import retrieve_customer_documents
-from backend.app.models import AuthContext, CustomerAnswer, CustomerQueryAction, RetrievedChunk
+from backend.app.models import CustomerAnswer, CustomerQueryDecision, RetrievedChunk, UserContext
 from backend.app.trace import current_trace_id
 
 
-class CustomerGraphState(TypedDict, total=False):
+# 工作过程中先使用容易保存的普通数据，需要真正调用函数时再变回我们定义好的 Data Model
+#数据库保存和恢复普通数据最稳，也更容易查看
+class CustomerWorkflowState(TypedDict, total=False):
     question: str
-    auth: dict[str, str]
+    user: dict[str, str]
     conversation_id: str
     history: list[dict[str, object]]
-    retrieval_mode: str
-    plan: dict[str, object]
-    plan_usage: dict[str, int | None]
-    retrieved: list[dict[str, object]]
+    search_mode: str
+    query_decision: dict[str, object]
+    query_decision_usage: dict[str, int | None]
+    retrieved_documents: list[dict[str, object]]
     answer: dict[str, object]
     trace_id: str | None
 
 
-def plan_node(state: CustomerGraphState) -> CustomerGraphState:
-    plan, usage = decide_customer_query_action(state["question"], state["history"])
-    return {"plan": plan.model_dump(), "plan_usage": usage}
+def decide_query_next_step_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
+    query_decision, usage = decide_customer_query_next_step(state["question"], state["history"])
+
+    return {
+        "query_decision": query_decision.model_dump(),
+        "query_decision_usage": usage,
+    }
 
 
-def route_plan(state: CustomerGraphState) -> Literal["retrieve", "direct"]:
-    if state["plan"]["decision"] == "search":
-        return "retrieve"
+def choose_next_step(state: CustomerWorkflowState) -> Literal["search_documents", "build_non_search_answer"]:
+    if state["query_decision"]["decision"] == "search":
+        return "search_documents"
 
-    return "direct"
-
-
-def direct_node(state: CustomerGraphState) -> CustomerGraphState:
-    plan = CustomerQueryAction(**state["plan"])
-    answer = build_non_search_answer(plan, state["plan_usage"])
-    return {"answer": answer.model_dump(), "trace_id": current_trace_id()}
+    return "build_non_search_answer"
 
 
-def retrieve_node(state: CustomerGraphState) -> CustomerGraphState:
-    auth = AuthContext(**state["auth"])
-    plan = CustomerQueryAction(**state["plan"])
-    chunks = retrieve_customer_documents(plan.search_query, auth, state["conversation_id"], plan.version, plan.product, state["retrieval_mode"])
+def build_non_search_answer_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
+    query_decision = CustomerQueryDecision.model_validate(state["query_decision"])
+    answer = build_non_search_answer(query_decision, state["query_decision_usage"])
+
+    return {
+        "answer": answer.model_dump(),
+        "trace_id": current_trace_id(),
+    }
+
+
+def search_documents_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
+    user = UserContext.model_validate(state["user"])
+    query_decision = CustomerQueryDecision.model_validate(state["query_decision"])
+
+    chunks = retrieve_customer_documents(
+        query_decision.search_query,
+        user,
+        state["conversation_id"],
+        query_decision.version,
+        query_decision.product,
+        state["search_mode"],
+    )
 
     retrieved_documents: list[dict[str, object]] = []
+
     for chunk in chunks:
         retrieved_documents.append(chunk.model_dump())
 
-    return {"retrieved": retrieved_documents}
+    return {
+        "retrieved_documents": retrieved_documents,
+    }
 
 
-def answer_node(state: CustomerGraphState) -> CustomerGraphState:
-    auth = AuthContext(**state["auth"])
-    plan = CustomerQueryAction(**state["plan"])
+def generate_answer_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
+    user = UserContext.model_validate(state["user"])
+    query_decision = CustomerQueryDecision.model_validate(state["query_decision"])
+
     chunks: list[RetrievedChunk] = []
-    for item in state["retrieved"]:
-        chunks.append(RetrievedChunk(**item))
 
-    answer = generate_answer_from_documents(state["question"], chunks, state["history"], auth, plan.version)
-    answer.usage = sum_token_usage(state["plan_usage"], answer.usage)
-    return {"answer": answer.model_dump(), "trace_id": current_trace_id()}
+    for item in state["retrieved_documents"]:
+        chunks.append(RetrievedChunk.model_validate(item))
+
+    answer = generate_answer_from_documents(
+        state["question"],
+        chunks,
+        state["history"],
+        user,
+        query_decision.version,
+    )
+
+    answer.usage = sum_token_usage(
+        state["query_decision_usage"],
+        answer.usage,
+    )
+
+    return {
+        "answer": answer.model_dump(),
+        "trace_id": current_trace_id(),
+    }
 
 
-def build_customer_graph() -> StateGraph:
-    graph = StateGraph(CustomerGraphState)
-    graph.add_node("plan", plan_node)
-    graph.add_node("retrieve", retrieve_node)
-    graph.add_node("answer", answer_node)
-    graph.add_node("direct", direct_node)
-    graph.add_edge(START, "plan")
-    graph.add_conditional_edges("plan", route_plan, {"retrieve": "retrieve", "direct": "direct"})
-    graph.add_edge("retrieve", "answer")
-    graph.add_edge("answer", END)
-    graph.add_edge("direct", END)
-    return graph
+def build_customer_workflow() -> StateGraph:
+    workflow = StateGraph(CustomerWorkflowState)
+
+    workflow.add_node("decide_query_next_step", decide_query_next_step_node)
+    workflow.add_node("search_documents", search_documents_node)
+    workflow.add_node("generate_answer", generate_answer_node)
+    workflow.add_node("build_non_search_answer", build_non_search_answer_node)
+
+    workflow.add_edge(START, "decide_query_next_step")
+
+    workflow.add_conditional_edges(
+        "decide_query_next_step",
+        choose_next_step,
+        {
+            "search_documents": "search_documents",
+            "build_non_search_answer": "build_non_search_answer",
+        },
+    )
+
+    workflow.add_edge("search_documents", "generate_answer")
+    workflow.add_edge("generate_answer", END)
+    workflow.add_edge("build_non_search_answer", END)
+
+    return workflow
 
 
 @traceable(name="customer_conversation_turn", run_type="chain")
-def run_customer_graph(question: str, auth: AuthContext, conversation_id: str, history: list[dict[str, object]], retrieval_mode: str) -> tuple[CustomerAnswer, str | None]:
+def run_customer_workflow(question: str, user: UserContext, conversation_id: str, history: list[dict[str, object]], retrieval_mode: str) -> tuple[CustomerAnswer, str | None]:
     settings = get_settings()
+
     with PostgresSaver.from_conn_string(settings.postgres_url) as checkpointer:
         checkpointer.setup()
-        graph_builder = build_customer_graph()
-        graph = graph_builder.compile(checkpointer=checkpointer)
 
-        initial_state: CustomerGraphState = {
+        workflow_builder = build_customer_workflow()
+        workflow = workflow_builder.compile(checkpointer=checkpointer)
+
+        initial_state: CustomerWorkflowState = {
             "question": question,
-            "auth": auth.model_dump(),
+            "user": user.model_dump(),
             "conversation_id": conversation_id,
             "history": history,
-            "retrieval_mode": retrieval_mode,
+            "search_mode": retrieval_mode,
         }
-        graph_config = {
+
+        workflow_config = {
             "configurable": {
                 "thread_id": conversation_id,
                 "checkpoint_ns": "customer",
             }
         }
-        result = graph.invoke(initial_state, config=graph_config)
 
-    return CustomerAnswer(**result["answer"]), result.get("trace_id")
+        result = workflow.invoke(initial_state, config=workflow_config)
 
-
+    return CustomerAnswer.model_validate(result["answer"]), result.get("trace_id")

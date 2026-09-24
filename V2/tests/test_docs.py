@@ -42,21 +42,21 @@ def test_rrf_rewards_chunk_found_by_both_routes() -> None:
 
 def test_expired_version_is_filtered_before_ranking(seeded_database: dict[str, str], fake_embeddings: None) -> None:
     import_product_docs()
-    auth = authenticate(seeded_database["token_a"])
-    results = retrieve_customer_documents("旧版同步入口", auth, None, mode="hybrid")
+    user = authenticate(seeded_database["token_a"])
+    results = retrieve_customer_documents("旧版同步入口", user, None, mode="hybrid")
     assert all(chunk.version == "2.0" for chunk in results)
     assert all("legacy-order-sync" not in chunk.source_uri for chunk in results)
 
 
 def test_rerank_failure_records_fallback(seeded_database: dict[str, str], fake_embeddings: None, monkeypatch) -> None:
     import_product_docs()
-    auth = authenticate(seeded_database["token_a"])
+    user = authenticate(seeded_database["token_a"])
 
     def fail_rerank(*args, **kwargs):
         raise RuntimeError("test reranker outage")
 
     monkeypatch.setattr("backend.app.customer_retrieval.rerank_chunks", fail_rerank)
-    results = retrieve_customer_documents("订单同步", auth, None, mode="hybrid_rerank")
+    results = retrieve_customer_documents("订单同步", user, None, mode="hybrid_rerank")
     assert results
     with get_connection() as connection:
         row = connection.execute("SELECT rerank_error FROM support.retrieval_runs ORDER BY created_at DESC LIMIT 1").fetchone()

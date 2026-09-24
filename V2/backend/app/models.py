@@ -21,7 +21,7 @@ TaskName = Literal[
 ]
 
 
-class AuthContext(BaseModel):  # 当前是谁在使用系统，以及属于哪家公司
+class UserContext(BaseModel):  # 当前是谁在使用系统，以及属于哪家公司
     company_id: str
     user_id: str
     role: str
@@ -60,7 +60,7 @@ class CustomerAnswer(BaseModel):  # Customer Agent 完整处理结束后最终�
     usage: dict[str, int | None]
 
 
-class CustomerQueryAction(BaseModel):  # Customer Agent 正式处理问题以前决定下一步做什么
+class CustomerQueryDecision(BaseModel):  # Customer Agent 正式处理问题以前决定下一步做什么
     decision: Literal["search", "clarify", "handoff"]
     search_query: str = ""
     rewrite_used: bool = False

@@ -9,7 +9,7 @@ import httpx
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.stock import assess_stock_facts
 from backend.app.support_evidence import EvidenceRecord, EvidenceStatus, save_evidence
 from backend.app.trace import current_trace_id
@@ -186,65 +186,65 @@ def request_fact(tool_name: str, source_service: str, url: str, company_id: str,
 
 
 @traceable(name="support_get_shop_status", run_type="tool")
-def get_shop_status(auth: AuthContext, shop_id: str) -> ToolResult:
+def get_shop_status(user: UserContext, shop_id: str) -> ToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("GetShopStatus", "merchant", f"{base_url}/internal/shops/{shop_id}/status", auth.company_id, {})
+    result = request_fact("GetShopStatus", "merchant", f"{base_url}/internal/shops/{shop_id}/status", user.company_id, {})
     result.request = {"shop_id": shop_id}
     return result
 
 
 @traceable(name="support_get_order", run_type="tool")
-def get_order(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+def get_order(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
     base_url = os.getenv("PLATFORM_URL", "http://127.0.0.1:8001")
-    result = request_fact("GetOrder", "platform", f"{base_url}/internal/orders/{order_id}", auth.company_id, {"shop_id": shop_id})
+    result = request_fact("GetOrder", "platform", f"{base_url}/internal/orders/{order_id}", user.company_id, {"shop_id": shop_id})
     result.request = {"shop_id": shop_id, "order_id": order_id}
     return result
 
 
 @traceable(name="support_get_process_records", run_type="tool")
-def get_process_records(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+def get_process_records(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("GetProcessRecords", "merchant", f"{base_url}/internal/process-records/{order_id}", auth.company_id, {"shop_id": shop_id})
+    result = request_fact("GetProcessRecords", "merchant", f"{base_url}/internal/process-records/{order_id}", user.company_id, {"shop_id": shop_id})
     result.request = {"shop_id": shop_id, "order_id": order_id}
     return result
 
 
 @traceable(name="support_check_connection", run_type="tool")
-def check_connection(auth: AuthContext, shop_id: str) -> ToolResult:
+def check_connection(user: UserContext, shop_id: str) -> ToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("CheckConnection", "merchant", f"{base_url}/internal/shops/{shop_id}/connection", auth.company_id, {})
+    result = request_fact("CheckConnection", "merchant", f"{base_url}/internal/shops/{shop_id}/connection", user.company_id, {})
     result.request = {"shop_id": shop_id}
     return result
 
 
 @traceable(name="support_get_shipment", run_type="tool")
-def get_shipment(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+def get_shipment(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
     base_url = os.getenv("WAREHOUSE_URL", "http://127.0.0.1:8003")
-    result = request_fact("GetShipment", "warehouse", f"{base_url}/internal/shipments/{order_id}", auth.company_id, {"shop_id": shop_id})
+    result = request_fact("GetShipment", "warehouse", f"{base_url}/internal/shipments/{order_id}", user.company_id, {"shop_id": shop_id})
     result.request = {"shop_id": shop_id, "order_id": order_id}
     return result
 
 
 @traceable(name="support_get_shipment_records", run_type="tool")
-def get_shipment_records(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+def get_shipment_records(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("GetShipmentRecords", "merchant", f"{base_url}/internal/shipment-records/{order_id}", auth.company_id, {"shop_id": shop_id})
+    result = request_fact("GetShipmentRecords", "merchant", f"{base_url}/internal/shipment-records/{order_id}", user.company_id, {"shop_id": shop_id})
     result.request = {"shop_id": shop_id, "order_id": order_id}
     return result
 
 
 @traceable(name="support_get_platform_shipment", run_type="tool")
-def get_platform_shipment(auth: AuthContext, shop_id: str, order_id: str) -> ToolResult:
+def get_platform_shipment(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
     base_url = os.getenv("PLATFORM_URL", "http://127.0.0.1:8001")
-    result = request_fact("GetPlatformShipment", "platform", f"{base_url}/internal/shipments/{order_id}", auth.company_id, {"shop_id": shop_id})
+    result = request_fact("GetPlatformShipment", "platform", f"{base_url}/internal/shipments/{order_id}", user.company_id, {"shop_id": shop_id})
     result.request = {"shop_id": shop_id, "order_id": order_id}
     return result
 
 
 @traceable(name="support_get_stock_facts", run_type="tool")
-def get_stock_facts(auth: AuthContext, shop_id: str, sku: str) -> ToolResult:
+def get_stock_facts(user: UserContext, shop_id: str, sku: str) -> ToolResult:
     merchant_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    merchant = request_fact("GetStockFacts", "merchant", f"{merchant_url}/internal/stock-records/{sku}", auth.company_id, {"shop_id": shop_id})
+    merchant = request_fact("GetStockFacts", "merchant", f"{merchant_url}/internal/stock-records/{sku}", user.company_id, {"shop_id": shop_id})
     request = {"shop_id": shop_id, "sku": sku}
 
     if merchant.status == "empty":
@@ -286,8 +286,8 @@ def get_stock_facts(auth: AuthContext, shop_id: str, sku: str) -> ToolResult:
     with ThreadPoolExecutor(max_workers=2) as executor:
         warehouse_stock_url = f"{warehouse_url}/internal/stocks/{rule['warehouse_sku']}"
         platform_stock_url = f"{platform_url}/internal/stocks/{sku}"
-        warehouse_future = executor.submit(copy_context().run, request_fact, "GetStockFacts", "warehouse", warehouse_stock_url, auth.company_id, {})
-        platform_future = executor.submit(copy_context().run, request_fact, "GetStockFacts", "platform", platform_stock_url, auth.company_id, {"shop_id": shop_id})
+        warehouse_future = executor.submit(copy_context().run, request_fact, "GetStockFacts", "warehouse", warehouse_stock_url, user.company_id, {})
+        platform_future = executor.submit(copy_context().run, request_fact, "GetStockFacts", "platform", platform_stock_url, user.company_id, {"shop_id": shop_id})
         warehouse = warehouse_future.result()
         platform = platform_future.result()
 
@@ -342,14 +342,14 @@ def validate_tool_call(tool_call: dict[str, object], shop_id: str, order_id: str
     return None
 
 
-def call_tool(auth: AuthContext, tool_call: dict[str, object]) -> ToolResult:
+def call_tool(user: UserContext, tool_call: dict[str, object]) -> ToolResult:
     name = str(tool_call["name"])
     args = dict(tool_call.get("args") or {})
-    return TOOL_FUNCTIONS[name](auth, **args)
+    return TOOL_FUNCTIONS[name](user, **args)
 
 
 @traceable(name="support_parallel_tool_batch", run_type="chain")
-def execute_tool_batch(case_id: str, auth: AuthContext, tool_calls: list[dict[str, object]], shop_id: str, order_id: str, sku: str = "") -> list[EvidenceRecord]:
+def execute_tool_batch(case_id: str, user: UserContext, tool_calls: list[dict[str, object]], shop_id: str, order_id: str, sku: str = "") -> list[EvidenceRecord]:
     batch_id = str(uuid4())
     valid_calls: list[dict[str, object]] = []
     results: list[tuple[dict[str, object], ToolResult]] = []
@@ -374,26 +374,26 @@ def execute_tool_batch(case_id: str, auth: AuthContext, tool_calls: list[dict[st
         with ThreadPoolExecutor(max_workers=len(valid_calls)) as executor:
             futures = []
             for tool_call in valid_calls:
-                future = executor.submit(copy_context().run, call_tool, auth, tool_call)
+                future = executor.submit(copy_context().run, call_tool, user, tool_call)
                 futures.append((tool_call, future))
 
             for tool_call, future in futures:
                 results.append((tool_call, future.result()))
     else:
         for tool_call in valid_calls:
-            results.append((tool_call, call_tool(auth, tool_call)))
+            results.append((tool_call, call_tool(user, tool_call)))
 
     evidence: list[EvidenceRecord] = []
     for tool_call, result in results:
         model_tool_call_id = str(tool_call.get("id") or "") or None
-        record = save_evidence(case_id, auth.company_id, batch_id, parallel, model_tool_call_id, result.tool_name, result.request, result.response, result.source_service, result.source_record_id, result.status, result.latency_ms, result.trace_id)
+        record = save_evidence(case_id, user.company_id, batch_id, parallel, model_tool_call_id, result.tool_name, result.request, result.response, result.source_service, result.source_record_id, result.status, result.latency_ms, result.trace_id)
         evidence.append(record)
 
     return evidence
 
 
 @traceable(name="create_engineer_ticket", run_type="tool")
-def create_ticket(auth: AuthContext, conversation_id: str, trigger: str, reason: str) -> dict[str, object]:
+def create_ticket(user: UserContext, conversation_id: str, trigger: str, reason: str) -> dict[str, object]:
     """Create an Engineer Ticket through deterministic policy checks.
 
     This controlled write is intentionally not registered in READ_TOOL_SCHEMAS or
@@ -401,4 +401,4 @@ def create_ticket(auth: AuthContext, conversation_id: str, trigger: str, reason:
     """
     from backend.app.tickets import create_ticket as create_engineer_ticket
 
-    return create_engineer_ticket(auth, conversation_id, trigger, reason)  # type: ignore[arg-type]
+    return create_engineer_ticket(user, conversation_id, trigger, reason)  # type: ignore[arg-type]

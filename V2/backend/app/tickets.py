@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from backend.app.auth import authorize_conversation
 from backend.app.database import get_connection
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import execute_tool_batch
 from backend.app.verification import verify_order_facts, verify_shipment_facts, verify_stock_facts
@@ -121,10 +121,10 @@ def load_ticket_source(conversation_id: str) -> dict[str, object]:
     }
 
 
-def create_ticket(auth: AuthContext, conversation_id: str, trigger: TicketTrigger, reason: str) -> dict[str, object]:
-    if auth.role == "engineer":
+def create_ticket(user: UserContext, conversation_id: str, trigger: TicketTrigger, reason: str) -> dict[str, object]:
+    if user.role == "engineer":
         raise PermissionError("Engineer identities cannot create merchant tickets")
-    authorize_conversation(auth, conversation_id)
+    authorize_conversation(user, conversation_id)
     data = load_ticket_source(conversation_id)
     source = data["source"]
     if source is None:
@@ -132,7 +132,7 @@ def create_ticket(auth: AuthContext, conversation_id: str, trigger: TicketTrigge
     with get_connection() as connection:
         existing = connection.execute("SELECT ticket_id::text FROM support.tickets WHERE conversation_id = %s AND status IN ('open', 'in_progress')", (conversation_id,)).fetchone()
     if existing:
-        result = show_ticket(auth, existing["ticket_id"])
+        result = show_ticket(user, existing["ticket_id"])
         result["duplicate"] = True
         return result
     unresolved_action = False
@@ -215,7 +215,7 @@ def create_ticket(auth: AuthContext, conversation_id: str, trigger: TicketTrigge
     ticket_id = str(uuid4())
     with get_connection() as connection:
         assignment = connection.execute("""SELECT r.engineer_user_id FROM support.ticket_assignment_rules r JOIN support.users u ON u.user_id = r.engineer_user_id
-            WHERE r.company_id = %s AND r.active AND u.role = 'engineer' AND u.company_id = %s""", (auth.company_id, auth.company_id)).fetchone()
+            WHERE r.company_id = %s AND r.active AND u.role = 'engineer' AND u.company_id = %s""", (user.company_id, user.company_id)).fetchone()
         if assignment:
             assigned_to = assignment["engineer_user_id"]
         else:
@@ -228,23 +228,23 @@ def create_ticket(auth: AuthContext, conversation_id: str, trigger: TicketTrigge
         connection.execute("""INSERT INTO support.tickets (ticket_id, conversation_id, case_id, handoff_id, company_id, category, trigger, product_version, customer_problem, business_target,
             last_successful_step, failed_evidence_ids, attempted_actions, confirmed_facts, possible_causes, excluded_causes, unknowns, next_steps, current_result, created_by, assigned_to)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s)""",
-            (ticket_id, conversation_id, source["case_id"], source["handoff_id"], auth.company_id, category, trigger, PRODUCT_VERSION, customer_problem, json.dumps(business_target), json.dumps(last_successful_step, default=str) if last_successful_step else None, json.dumps(failed_evidence_ids), json.dumps(attempted_actions, default=str), json.dumps(confirmed, default=str), json.dumps(possible, default=str), json.dumps(excluded_causes(evidence)), json.dumps(unknowns), json.dumps(next_steps_for(category, failed_evidence, unknowns)), current_result, auth.user_id, assigned_to),
+            (ticket_id, conversation_id, source["case_id"], source["handoff_id"], user.company_id, category, trigger, PRODUCT_VERSION, customer_problem, json.dumps(business_target), json.dumps(last_successful_step, default=str) if last_successful_step else None, json.dumps(failed_evidence_ids), json.dumps(attempted_actions, default=str), json.dumps(confirmed, default=str), json.dumps(possible, default=str), json.dumps(excluded_causes(evidence)), json.dumps(unknowns), json.dumps(next_steps_for(category, failed_evidence, unknowns)), current_result, user.user_id, assigned_to),
         )
         if assigned_to:
             connection.execute("INSERT INTO support.ticket_read_grants (ticket_id, user_id) VALUES (%s, %s)", (ticket_id, assigned_to))
-    result = show_ticket(auth, ticket_id)
+    result = show_ticket(user, ticket_id)
     result["duplicate"] = False
     return result
 
 
-def show_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
+def show_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
     with get_connection() as connection:
-        if auth.role == "engineer":
+        if user.role == "engineer":
             ticket = connection.execute("""SELECT t.* FROM support.tickets t JOIN support.ticket_read_grants g ON g.ticket_id = t.ticket_id
-                WHERE t.ticket_id = %s AND g.user_id = %s""", (ticket_id, auth.user_id)).fetchone()
+                WHERE t.ticket_id = %s AND g.user_id = %s""", (ticket_id, user.user_id)).fetchone()
         else:
             ticket = connection.execute("""SELECT t.* FROM support.tickets t JOIN support.conversations v ON v.conversation_id = t.conversation_id
-                WHERE t.ticket_id = %s AND t.company_id = %s AND v.user_id = %s""", (ticket_id, auth.company_id, auth.user_id)).fetchone()
+                WHERE t.ticket_id = %s AND t.company_id = %s AND v.user_id = %s""", (ticket_id, user.company_id, user.user_id)).fetchone()
         if ticket is None:
             raise PermissionError("Ticket is not available in this user scope")
         messages = connection.execute("SELECT message_id::text, role, content, metadata, created_at FROM support.messages WHERE conversation_id = %s ORDER BY created_at", (ticket["conversation_id"],)).fetchall()
@@ -326,23 +326,23 @@ def show_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
     return result
 
 
-def save_ticket_recheck(auth: AuthContext, ticket: dict[str, object], status: TicketRecheckStatus, details: dict[str, object], evidence_ids: list[str]) -> dict[str, object]:
+def save_ticket_recheck(user: UserContext, ticket: dict[str, object], status: TicketRecheckStatus, details: dict[str, object], evidence_ids: list[str]) -> dict[str, object]:
     recheck_id = str(uuid4())
     ticket_status = "closed" if status == "RESOLVED" else "open"
     summary = str(details["summary"])
     with get_connection() as connection:
-        connection.execute("INSERT INTO support.ticket_rechecks (recheck_id, ticket_id, status, details, evidence_ids, checked_by) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s)", (recheck_id, ticket["ticket_id"], status, json.dumps(details, default=str), json.dumps(evidence_ids), auth.user_id))
+        connection.execute("INSERT INTO support.ticket_rechecks (recheck_id, ticket_id, status, details, evidence_ids, checked_by) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s)", (recheck_id, ticket["ticket_id"], status, json.dumps(details, default=str), json.dumps(evidence_ids), user.user_id))
         connection.execute("UPDATE support.tickets SET status = %s, current_result = %s, updated_at = NOW() WHERE ticket_id = %s", (ticket_status, summary, ticket["ticket_id"]))
-    result = show_ticket(auth, str(ticket["ticket_id"]))
+    result = show_ticket(user, str(ticket["ticket_id"]))
     result["recheck_status"] = status
     result["recheck_id"] = recheck_id
     return result
 
 
-def recheck_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
-    if auth.role != "engineer":
+def recheck_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
+    if user.role != "engineer":
         raise PermissionError("Engineer role is required to recheck a ticket")
-    ticket = show_ticket(auth, ticket_id)
+    ticket = show_ticket(user, ticket_id)
     target = ticket["business_target"] if isinstance(ticket["business_target"], dict) else {}
     shop_id = str(target.get("shop_id") or "")
     order_id = str(target.get("order_id") or "")
@@ -377,14 +377,14 @@ def recheck_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
             missing.append("business_target")
 
         details = {"category": category, "target": target, "missing": sorted(set(missing)), "summary": "Ticket remains open because the business target is incomplete."}
-        return save_ticket_recheck(auth, ticket, "NEEDS_INFO", details, [])
+        return save_ticket_recheck(user, ticket, "NEEDS_INFO", details, [])
 
     if category == "order":
         calls = [
             {"name": "GetOrder", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-platform-order"},
             {"name": "GetProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-order"},
         ]
-        evidence = execute_tool_batch(case_id, auth, calls, shop_id, order_id)
+        evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
         verification = verify_order_facts(facts["GetOrder"], facts["GetProcessRecords"], facts["GetOrder"].response)
     elif category == "shipment":
@@ -393,12 +393,12 @@ def recheck_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
             {"name": "GetShipmentRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-shipment"},
             {"name": "GetPlatformShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-platform-shipment"},
         ]
-        evidence = execute_tool_batch(case_id, auth, calls, shop_id, order_id)
+        evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
         verification = verify_shipment_facts(facts["GetShipment"], facts["GetShipmentRecords"], facts["GetPlatformShipment"], facts["GetShipment"].response)
     else:
         calls = [{"name": "GetStockFacts", "args": {"shop_id": shop_id, "sku": sku}, "id": "ticket-recheck-stock"}]
-        evidence = execute_tool_batch(case_id, auth, calls, shop_id, "", sku)
+        evidence = execute_tool_batch(case_id, user, calls, shop_id, "", sku)
         stock = evidence[0]
         response = stock.response
         merchant = response.get("merchant") if isinstance(response.get("merchant"), dict) else {}
@@ -409,7 +409,7 @@ def recheck_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
         if stock_result["assessment"] == "insufficient_information":
             details = {"category": category, "target": target, "verification": verification, "summary": "Ticket remains open because current stock facts are incomplete."}
             evidence_ids = record_evidence_ids(evidence)
-            return save_ticket_recheck(auth, ticket, "NEEDS_INFO", details, evidence_ids)
+            return save_ticket_recheck(user, ticket, "NEEDS_INFO", details, evidence_ids)
 
     resolved = verification["resolved"] is True
     if resolved:
@@ -421,14 +421,14 @@ def recheck_ticket(auth: AuthContext, ticket_id: str) -> dict[str, object]:
 
     details = {"category": category, "target": target, "verification": verification, "summary": summary}
     evidence_ids = record_evidence_ids(evidence)
-    return save_ticket_recheck(auth, ticket, recheck_status, details, evidence_ids)
+    return save_ticket_recheck(user, ticket, recheck_status, details, evidence_ids)
 
 
-def list_engineer_tickets(auth: AuthContext) -> list[dict[str, object]]:
-    if auth.role != "engineer":
+def list_engineer_tickets(user: UserContext) -> list[dict[str, object]]:
+    if user.role != "engineer":
         raise PermissionError("Engineer role is required")
     with get_connection() as connection:
         rows = connection.execute("""SELECT t.ticket_id::text, t.company_id, t.category, t.trigger, t.status, t.customer_problem, t.assigned_to, t.created_at
             FROM support.tickets t JOIN support.ticket_read_grants g ON g.ticket_id = t.ticket_id
-            WHERE g.user_id = %s ORDER BY t.created_at DESC""", (auth.user_id,)).fetchall()
+            WHERE g.user_id = %s ORDER BY t.created_at DESC""", (user.user_id,)).fetchall()
     return rows_as_dicts(rows)

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.database import get_connection
 from backend.app.handoff import handoff_to_support
-from backend.app.models import AuthContext
+from backend.app.models import UserContext
 from backend.app.stock import assess_stock_facts
 from backend.app.support_tools import TOOL_FUNCTIONS, get_stock_facts, validate_tool_call
 from simulator.services import common, merchant, worker
@@ -70,7 +70,7 @@ def test_real_stock_publish_computes_65_and_platform_keeps_source_version(seeded
 
     monkeypatch.setattr("backend.app.support_tools.read_service_token", lambda name: "service-test-token")
     monkeypatch.setattr("backend.app.support_tools.httpx.get", read_router)
-    facts = get_stock_facts(AuthContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "SKU-1")
+    facts = get_stock_facts(UserContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "SKU-1")
     assert facts.status == "success"
     assert facts.response["assessment"] == "consistent" and facts.response["expected_quantity"] == 65
 
@@ -117,9 +117,9 @@ def test_stock_handoff_and_tool_scope_need_shop_and_sku_not_order(seeded_databas
     from backend.app.auth import authenticate
     from backend.app.database import create_conversation
 
-    auth: AuthContext = authenticate(seeded_database["token_a"])
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
-    handoff, _ = handoff_to_support(auth, conversation_id, "shop-a 的 SKU-1 库存为什么不同", "需要后台调查", [])
+    user: UserContext = authenticate(seeded_database["token_a"])
+    conversation_id = create_conversation(user.company_id, user.user_id)
+    handoff, _ = handoff_to_support(user, conversation_id, "shop-a 的 SKU-1 库存为什么不同", "需要后台调查", [])
     assert handoff.known_shop_id == "shop-a" and handoff.known_sku == "SKU-1"
     assert handoff.known_order_id is None and handoff.missing_fields == []
     assert validate_tool_call({"name": "GetStockFacts", "args": {"shop_id": "shop-a", "sku": "SKU-1"}}, "shop-a", "", "SKU-1") is None
@@ -130,7 +130,7 @@ def test_stock_handoff_without_sku_requests_sku_not_order(seeded_database: dict[
     from backend.app.auth import authenticate
     from backend.app.database import create_conversation
 
-    auth = authenticate(seeded_database["token_a"])
-    conversation_id = create_conversation(auth.company_id, auth.user_id)
-    handoff, _ = handoff_to_support(auth, conversation_id, "shop-a 的库存为什么不同", "需要后台调查", [])
+    user = authenticate(seeded_database["token_a"])
+    conversation_id = create_conversation(user.company_id, user.user_id)
+    handoff, _ = handoff_to_support(user, conversation_id, "shop-a 的库存为什么不同", "需要后台调查", [])
     assert handoff.missing_fields == ["sku"]

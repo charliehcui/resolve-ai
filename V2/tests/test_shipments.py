@@ -29,8 +29,8 @@ def shipment_runtime(seeded_database: dict[str, str], monkeypatch: pytest.Monkey
     return BusinessAuth(company_id="company-a", user_id="admin-a", role="admin")
 
 
-def create_dispatched_order(auth: BusinessAuth, order_id: str = "O-SHIP") -> str:
-    result = create_order(OrderCreate(shop_id="shop-a", external_order_id=order_id, sku="SKU-1", quantity=2, amount_minor=20000, payment_status="paid"), auth)
+def create_dispatched_order(user: BusinessAuth, order_id: str = "O-SHIP") -> str:
+    result = create_order(OrderCreate(shop_id="shop-a", external_order_id=order_id, sku="SKU-1", quantity=2, amount_minor=20000, payment_status="paid"), user)
     assert process_next_task()["status"] == "completed"
     assert process_next_dispatch_task()["status"] == "completed"
     return str(result["event_id"])
