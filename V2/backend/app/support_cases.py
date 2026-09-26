@@ -19,7 +19,7 @@ def update_case(case_id: str, status: str, outcome: str, tool_call_count: int, t
 def show_case(case_id: str, user: UserContext) -> dict[str, object]:
     with get_connection() as connection:
         case = connection.execute("""SELECT c.case_id::text, c.conversation_id::text, c.status, c.outcome, c.tool_call_count, c.total_latency_ms,
-            h.customer_problem, h.customer_answer, h.citations, h.attempted_steps, h.known_shop_id, h.known_order_id, h.known_sku, h.missing_fields
+            h.customer_problem, h.attempted_steps, h.known_shop_id, h.known_order_id, h.known_sku, h.missing_fields
             FROM support.cases c JOIN support.handoffs h ON h.handoff_id = c.handoff_id JOIN support.conversations v ON v.conversation_id = c.conversation_id
             WHERE c.case_id = %s AND c.company_id = %s AND v.user_id = %s""", (case_id, user.company_id, user.user_id)).fetchone()
     if case is None:

@@ -6,9 +6,9 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from backend.app.config import PROJECT_ROOT, get_settings
+from backend.app.config import PROJECT_ROOT
 from backend.app.customer_agent import get_token_usage
-from backend.app.handoff import SupportHandoff
+from backend.app.handoff import SupportHandoffRecord
 from backend.app.models import create_google_model
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import READ_TOOL_SCHEMAS
@@ -19,136 +19,159 @@ MAX_CONSECUTIVE_ERRORS = int(os.getenv("SUPPORT_MAX_CONSECUTIVE_ERRORS", "2"))
 MAX_TOOL_ERRORS = int(os.getenv("SUPPORT_MAX_TOOL_ERRORS", "3"))
 
 
-class EvidenceClaim(BaseModel):
+class ClaimWithEvidence(BaseModel):  # 一个结论，以及支持这个结论的证据
     text: str
     evidence_ids: list[str]
 
 
-class FinishInvestigation(BaseModel):
-    """Finish when current evidence supports a useful read-only diagnosis."""
-
+class InvestigationComplete(BaseModel):  # 当前证据已经足够，可以结束自动调查
     summary: str
-    confirmed_facts: list[EvidenceClaim]
-    possible_causes: list[EvidenceClaim] = Field(default_factory=list)
+    confirmed_facts: list[ClaimWithEvidence]
+    possible_causes: list[ClaimWithEvidence] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
 
 
-class RequestInformation(BaseModel):
-    """Ask for a missing shop or order identifier before using business tools."""
-
+class MissingInformationRequest(BaseModel):  # 缺少必要信息，需要向用户补问
     missing_fields: list[Literal["shop_id", "order_id", "sku"]]
     customer_message: str
 
 
-class EscalateInvestigation(BaseModel):
-    """Stop safely when evidence is insufficient, conflicting, unavailable, or over budget."""
-
+class HumanSupportRequired(BaseModel):  # 自动调查无法继续，需要人工处理
     reason: str
-    known_facts: list[EvidenceClaim] = Field(default_factory=list)
+    known_facts: list[ClaimWithEvidence] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
 
 
-class SupportInvestigationResult(BaseModel):
+class SupportNextStep(BaseModel):  # Support Agent 决定下一步做什么
+    next_step: Literal["use_tool", "request_information", "finish", "human_support"]
+    tool_calls: list[dict[str, object]] = Field(default_factory=list)
+    missing_information: MissingInformationRequest | None = None
+    investigation_complete: InvestigationComplete | None = None
+    human_support: HumanSupportRequired | None = None
+
+
+class SupportAgentResult(BaseModel):  # Support Agent 最终返回结果
     answer: str
     status: Literal["needs_info", "diagnosed", "pending_human"]
     case_id: str
     evidence_ids: list[str]
     tool_path: list[str]
     tool_call_count: int
-    models_used: list[str] = Field(default_factory=list)
     usage: dict[str, int | None]
     trace_id: str | None = None
     ticket_id: str | None = None
 
 
-CONTROL_SCHEMAS = [FinishInvestigation, RequestInformation, EscalateInvestigation]
-SUPPORT_SCHEMAS = [*READ_TOOL_SCHEMAS, *CONTROL_SCHEMAS]
+def get_support_prompt_path():
+    return PROJECT_ROOT / "backend" / "prompts" / "support.md"
 
 
-def is_temporary_google_error(error: Exception) -> bool:
-    code = getattr(error, "code", None)
-    status = str(getattr(error, "status", "") or "").upper()
-    message = str(error).lower()
-
-    if code == 503:
-        return True
-
-    if status == "UNAVAILABLE":
-        return True
-
-    mentions_temporary_outage = "unavailable" in message or "high demand" in message
-    return "503" in message and mentions_temporary_outage
-
-
-def invoke_support_model(model_name: str, messages: list[BaseMessage]):
-    model = create_google_model(model_name=model_name, max_retries=1)
-    model_with_tools = model.bind_tools(SUPPORT_SCHEMAS, tool_choice="any")
+def call_support_model(messages: list[BaseMessage]) -> BaseMessage:
+    model = create_google_model(max_retries=2)
+    model_with_tools = model.bind_tools(READ_TOOL_SCHEMAS)
     return model_with_tools.invoke(messages)
 
 
 @traceable(name="support_next_step", run_type="llm")
-def plan_support_step(question: str, handoff: SupportHandoff, evidence: list[EvidenceRecord], remaining_calls: int) -> tuple[list[dict[str, object]], dict[str, int | None], str]:
-    prompt = handoff_path().read_text(encoding="utf-8")
+def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evidence: list[EvidenceRecord], remaining_calls: int) -> tuple[SupportNextStep, dict[str, int | None]]:
+    prompt = get_support_prompt_path().read_text(encoding="utf-8")
 
     evidence_items: list[dict[str, object]] = []
+
     for record in evidence:
         evidence_items.append(record.model_dump())
 
-    evidence_text = json.dumps(evidence_items, ensure_ascii=False, default=str)
     handoff_text = json.dumps(handoff.model_dump(), ensure_ascii=False)
-    message = f"Handoff:\n{handoff_text}\n\nCurrent user message:\n{question}\n\nEvidence:\n{evidence_text}\n\nRemaining tool budget: {remaining_calls}"
-    messages = [SystemMessage(content=prompt), HumanMessage(content=message)]
+    evidence_text = json.dumps(evidence_items, ensure_ascii=False, default=str)
+    terminal_schemas = {
+        "request_information": MissingInformationRequest.model_json_schema(),
+        "finish": InvestigationComplete.model_json_schema(),
+        "human_support": HumanSupportRequired.model_json_schema(),
+    }
+    terminal_schemas_text = json.dumps(terminal_schemas, ensure_ascii=False)
 
-    settings = get_settings()
-    model_name = settings.google_model
+    message = f"""Handoff:
+{handoff_text}
 
-    try:
-        response = invoke_support_model(model_name, messages)
-    except Exception as primary_error:
-        primary_error.attempted_models = [settings.google_model]
-        if not is_temporary_google_error(primary_error) or settings.google_fallback_model == settings.google_model:
-            raise
+Current user message:
+{question}
 
-        model_name = settings.google_fallback_model
-        try:
-            response = invoke_support_model(model_name, messages)
-        except Exception as fallback_error:
-            fallback_error.attempted_models = [settings.google_model, settings.google_fallback_model]
-            raise
+Evidence:
+{evidence_text}
 
-    calls: list[dict[str, object]] = []
-    for tool_call in response.tool_calls:
-        call = {
-            "name": tool_call["name"],
-            "args": tool_call.get("args") or {},
-            "id": tool_call.get("id"),
-        }
-        calls.append(call)
+Remaining tool budget:
+{remaining_calls}
 
-    return calls, get_token_usage(response), model_name
+Choose exactly one next step.
+
+When more evidence is required, call one or more bound read-only query tools. Do not describe a tool call in text.
+
+When no query tool is required, return only one JSON object in one of these forms:
+- {{"next_step": "request_information", "missing_information": {{...}}}}
+- {{"next_step": "finish", "investigation_complete": {{...}}}}
+- {{"next_step": "human_support", "human_support": {{...}}}}
+
+Terminal data schemas:
+{terminal_schemas_text}
+"""
+
+    messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content=message),
+    ]
+
+    response = call_support_model(messages)
+    usage = get_token_usage(response)
+    response_tool_calls = getattr(response, "tool_calls", [])
+
+    if len(response_tool_calls) > 0:
+        tool_calls: list[dict[str, object]] = []
+
+        for tool_call in response_tool_calls:
+            tool_calls.append({
+                "name": tool_call["name"],
+                "args": tool_call.get("args") or {},
+                "id": tool_call.get("id"),
+            })
+
+        return SupportNextStep(next_step="use_tool", tool_calls=tool_calls), usage
+
+    if isinstance(response.content, str) is False:
+        raise RuntimeError("Support Agent did not return valid terminal JSON")
+
+    terminal_data = json.loads(response.content)
+    next_step = SupportNextStep.model_validate(terminal_data)
+
+    return next_step, usage
 
 
-def handoff_path():
-    return PROJECT_ROOT / "backend" / "prompts" / "support.md"
-
-
-def shipment_evidence_conflicts(evidence: list[EvidenceRecord]) -> bool:
+def has_shipment_evidence_conflict(evidence: list[EvidenceRecord]) -> bool:
     shipment_records: list[EvidenceRecord] = []
+
     for record in evidence:
         if record.status == "success" and record.object_type == "shipment":
             shipment_records.append(record)
 
-    values: dict[str, set[str]] = {"shipment_id": set(), "carrier": set(), "tracking_number": set()}
+    values: dict[str, set[str]] = {
+        "shipment_id": set(),
+        "carrier": set(),
+        "tracking_number": set(),
+    }
+
     for record in shipment_records:
         response = record.response
-        candidates = {
+        record_values = {
             "shipment_id": response.get("shipment_id"),
             "carrier": response.get("carrier") or response.get("event_carrier"),
             "tracking_number": response.get("tracking_number") or response.get("event_tracking_number"),
         }
-        for field, value in candidates.items():
-            if value:
-                values[field].add(str(value))
+
+        for field_name, field_value in record_values.items():
+            if field_value is None:
+                continue
+
+            values[field_name].add(str(field_value))
+
     for field_values in values.values():
         if len(field_values) > 1:
             return True
@@ -156,75 +179,131 @@ def shipment_evidence_conflicts(evidence: list[EvidenceRecord]) -> bool:
     return False
 
 
-def supported_claims(claims: list[EvidenceClaim], valid_evidence_ids: set[str]) -> list[EvidenceClaim]:
-    supported: list[EvidenceClaim] = []
+def filter_supported_claims(claims: list[ClaimWithEvidence], valid_evidence_ids: set[str]) -> list[ClaimWithEvidence]:
+    supported_claims: list[ClaimWithEvidence] = []
 
     for claim in claims:
-        if not claim.evidence_ids:
+        if len(claim.evidence_ids) == 0:
             continue
 
         claim_evidence_ids = set(claim.evidence_ids)
+
         if claim_evidence_ids.issubset(valid_evidence_ids):
-            supported.append(claim)
+            supported_claims.append(claim)
 
-    return supported
+    return supported_claims
 
 
-def append_claims(lines: list[str], claims: list[EvidenceClaim]) -> None:
+def add_claims_to_answer(lines: list[str], claims: list[ClaimWithEvidence]) -> None:
     for claim in claims:
         evidence_text = ", ".join(claim.evidence_ids)
         lines.append(f"- {claim.text} [{evidence_text}]")
 
 
-def render_escalation_result(args: dict[str, object]) -> tuple[str, Literal["pending_human"]]:
-    decision = EscalateInvestigation(**args)
+def build_human_support_answer(decision: HumanSupportRequired) -> tuple[str, Literal["pending_human"]]:
     unknowns = "；".join(decision.unknowns)
-    if not unknowns:
+
+    if unknowns == "":
         unknowns = "需要进一步检查"
 
-    answer = f"当前调查需要人工继续处理：{decision.reason}\n尚未确认：{unknowns}"
+    answer = f"当前自动调查无法继续，需要人工处理：{decision.reason}\n尚未确认：{unknowns}"
+
     return answer, "pending_human"
 
 
-def render_finished_investigation(args: dict[str, object], evidence: list[EvidenceRecord]) -> tuple[str, Literal["diagnosed", "pending_human"]]:
-    if shipment_evidence_conflicts(evidence):
-        return "仓库、管理软件或平台的发货证据存在矛盾，需要刷新事实后再确认根因。", "pending_human"
+def build_investigation_answer(decision: InvestigationComplete, evidence: list[EvidenceRecord]) -> tuple[str, Literal["diagnosed", "pending_human"]]:
+    if has_shipment_evidence_conflict(evidence) is True:
+        return "仓库、管理软件或平台的发货证据存在矛盾，需要人工进一步确认。", "pending_human"
 
-    decision = FinishInvestigation(**args)
     valid_evidence_ids: set[str] = set()
+
     for record in evidence:
         valid_evidence_ids.add(record.evidence_id)
 
-    confirmed_claims = supported_claims(decision.confirmed_facts, valid_evidence_ids)
-    possible_causes = supported_claims(decision.possible_causes, valid_evidence_ids)
+    confirmed_claims = filter_supported_claims(decision.confirmed_facts, valid_evidence_ids)
+    possible_causes = filter_supported_claims(decision.possible_causes, valid_evidence_ids)
 
-    if not confirmed_claims:
-        return "当前证据不足以形成可核验结论，已保留为待人工处理。", "pending_human"
+    if len(confirmed_claims) == 0:
+        return "当前证据不足以形成可靠结论，需要人工进一步处理。", "pending_human"
 
-    lines = [decision.summary, "已确认事实："]
-    append_claims(lines, confirmed_claims)
+    lines = [
+        decision.summary,
+        "已确认事实：",
+    ]
 
-    if possible_causes:
+    add_claims_to_answer(lines, confirmed_claims)
+
+    if len(possible_causes) > 0:
         lines.append("可能原因：")
-        append_claims(lines, possible_causes)
+        add_claims_to_answer(lines, possible_causes)
 
-    if decision.unknowns:
+    if len(decision.unknowns) > 0:
         lines.append("尚未确认：")
+
         for unknown in decision.unknowns:
             lines.append(f"- {unknown}")
 
     return "\n".join(lines), "diagnosed"
 
 
-def render_control_result(tool_call: dict[str, object], evidence: list[EvidenceRecord]) -> tuple[str, Literal["needs_info", "diagnosed", "pending_human"]]:
-    name = str(tool_call.get("name", ""))
-    args = dict(tool_call.get("args") or {})
+def build_support_answer(next_step: SupportNextStep, evidence: list[EvidenceRecord]) -> tuple[str, Literal["needs_info", "diagnosed", "pending_human"]]:
+    if next_step.next_step == "request_information":
+        if next_step.missing_information is None:
+            return "还需要补充必要的订单、店铺或商品信息。", "needs_info"
 
-    if name == "RequestInformation":
-        decision = RequestInformation(**args)
-        return decision.customer_message, "needs_info"
+        return next_step.missing_information.customer_message, "needs_info"
 
-    if name == "EscalateInvestigation":
-        return render_escalation_result(args)
+    if next_step.next_step == "human_support":
+        if next_step.human_support is None:
+            return "当前自动调查无法继续，需要人工进一步处理。", "pending_human"
 
-    return render_finished_investigation(args, evidence)
+        return build_human_support_answer(next_step.human_support)
+
+    if next_step.investigation_complete is None:
+        return "当前证据不足以形成可靠结论，需要人工进一步处理。", "pending_human"
+
+    return build_investigation_answer(next_step.investigation_complete, evidence)
+
+
+
+# Handoff + Evidence + 用户消息
+# ↓
+# decide_support_next_step()
+# ↓
+# 如果需要查数据
+# → 调工具
+# → 得到新 Evidence
+# → 再决定一次
+
+# 如果信息不足
+# → 问用户
+
+# 如果证据足够
+# → 生成最终答案
+
+# 如果自动调查不能继续
+# → 转人工
+
+
+# Handoff
+# +
+# Evidence
+# +
+# 用户最新消息
+#         ↓
+# decide_support_next_step()
+#         ↓
+#    SupportNextStep
+#         ↓
+#  ┌──────┼──────────┬───────────┐
+#  │      │          │           │
+# use   request     finish      human
+# tool  information              support
+#  │      │          │           │
+#  ↓      ↓          ↓           ↓
+# 查询   问用户     生成结果      人工
+#  │
+#  ↓
+# Evidence
+#  │
+#  └────────→ 再次 decide_support_next_step()

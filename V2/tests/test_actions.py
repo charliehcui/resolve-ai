@@ -7,7 +7,7 @@ import pytest
 from backend.app.actions import decide_action, execute_order_recovery, propose_order_recovery, show_action
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
-from backend.app.handoff import handoff_to_support
+from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
 from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
 from simulator.services import common
@@ -24,7 +24,7 @@ def create_missing_order_case(user: UserContext, order_id: str = "O-RECOVER") ->
             (str(uuid4()), event_id, user.company_id, order_id, f"hash-{event_id}"),
         )
     conversation_id = create_conversation(user.company_id, user.user_id)
-    _, case_id = handoff_to_support(user, conversation_id, f"shop-a 的订单 {order_id} 仍未同步", "需要后台调查", [])
+    _, case_id = create_support_handoff(user, conversation_id, f"shop-a 的订单 {order_id} 仍未同步", [])
     return case_id, event_id, conversation_id
 
 

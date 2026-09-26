@@ -3,12 +3,9 @@ CREATE TABLE IF NOT EXISTS support.handoffs (
     conversation_id UUID NOT NULL UNIQUE REFERENCES support.conversations(conversation_id) ON DELETE CASCADE,
     company_id TEXT NOT NULL REFERENCES support.companies(company_id),
     customer_problem TEXT NOT NULL,
-    customer_answer TEXT NOT NULL,
-    citations JSONB NOT NULL DEFAULT '[]'::jsonb,
     attempted_steps JSONB NOT NULL DEFAULT '[]'::jsonb,
     known_shop_id TEXT,
     known_order_id TEXT,
-    unresolved_reason TEXT NOT NULL,
     missing_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -48,4 +45,3 @@ CREATE TABLE IF NOT EXISTS support.evidence (
 );
 
 CREATE INDEX IF NOT EXISTS idx_evidence_case ON support.evidence (case_id, sequence);
-

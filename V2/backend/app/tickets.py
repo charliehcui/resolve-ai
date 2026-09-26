@@ -91,7 +91,7 @@ def next_steps_for(category: str, failed_evidence: list[dict[str, object]], unkn
 def load_ticket_source(conversation_id: str) -> dict[str, object]:
     with get_connection() as connection:
         source = connection.execute("""SELECT v.conversation_id::text, v.company_id, v.user_id, v.active_role,
-            c.case_id::text, c.status AS case_status, c.outcome, h.handoff_id::text, h.customer_problem, h.customer_answer,
+            c.case_id::text, c.status AS case_status, c.outcome, h.handoff_id::text, h.customer_problem,
             h.attempted_steps, h.known_shop_id, h.known_order_id, h.known_sku, h.missing_fields
             FROM support.conversations v
             LEFT JOIN support.cases c ON c.conversation_id = v.conversation_id
@@ -251,8 +251,8 @@ def show_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
 
         handoff = None
         if ticket["handoff_id"] is not None:
-            handoff = connection.execute("""SELECT handoff_id::text, conversation_id::text, customer_problem, customer_answer, citations, attempted_steps,
-                known_shop_id, known_order_id, known_sku, unresolved_reason, missing_fields, created_at, updated_at FROM support.handoffs WHERE handoff_id = %s""", (ticket["handoff_id"],)).fetchone()
+            handoff = connection.execute("""SELECT handoff_id::text, conversation_id::text, company_id, customer_problem, attempted_steps,
+                known_shop_id, known_order_id, known_sku, missing_fields, created_at, updated_at FROM support.handoffs WHERE handoff_id = %s""", (ticket["handoff_id"],)).fetchone()
 
         evidence = []
         if ticket["case_id"] is not None:

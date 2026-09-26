@@ -10,7 +10,7 @@ from fastapi.encoders import jsonable_encoder
 from backend.app.actions import claim_action_execution, decide_action, propose_shipment_recovery
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
-from backend.app.handoff import handoff_to_support
+from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
 from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
 from simulator.services import common
@@ -65,7 +65,7 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
 
     user = authenticate(seeded_database["token_a"])
     conversation_id = create_conversation(user.company_id, user.user_id)
-    _, case_id = handoff_to_support(user, conversation_id, "shop-a 的订单 O-RECOVER-SHIP 仓库已发货但平台没更新", "需要调查。", [])
+    _, case_id = create_support_handoff(user, conversation_id, "shop-a 的订单 O-RECOVER-SHIP 仓库已发货但平台没更新", [])
     for name in ("GetOrder", "GetShipment", "GetShipmentRecords", "GetPlatformShipment"):
         monkeypatch.setitem(TOOL_FUNCTIONS, name, lambda user, shop_id, order_id, tool_name=name: shipment_tool(tool_name, user, shop_id, order_id))
     monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda user, shop_id: shipment_tool("GetShopStatus", user, shop_id))

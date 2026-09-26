@@ -1,3 +1,4 @@
+import time
 from uuid import uuid4
 
 import httpx
@@ -5,9 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.database import get_connection
-from backend.app.handoff import SupportHandoff
+from backend.app.handoff import SupportHandoffRecord
+from backend.app.support_agent import SupportNextStep
 from backend.app.support_tools import TOOL_FUNCTIONS, request_fact
-from backend.app.support_workflow import support_plan_node
+from backend.app.support_workflow import support_agent_node
 from simulator.services import common
 from simulator.services.common import OrderEvent
 from simulator.services.merchant import app as merchant_app
@@ -95,13 +97,14 @@ def test_tool_timeout_is_not_reported_as_empty(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_error_budget_stops_before_another_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    handoff = SupportHandoff(handoff_id="h", conversation_id="c", company_id="company-a", customer_problem="x", customer_answer="x", known_shop_id="shop-a", known_order_id="O-1", unresolved_reason="x")
+    handoff = SupportHandoffRecord(handoff_id="h", conversation_id="c", company_id="company-a", customer_problem="x", known_shop_id="shop-a", known_order_id="O-1")
     evidence = []
     for index in range(3):
         evidence.append({"evidence_id": str(uuid4()), "sequence": index + 1, "batch_id": str(uuid4()), "parallel": False, "tool_name": "GetOrder", "request": {}, "response": {}, "source_service": "platform", "status": "error", "latency_ms": 1})
-    monkeypatch.setattr("backend.app.support_workflow.plan_support_step", lambda *args: pytest.fail("planner must not run after error budget"))
-    result = support_plan_node({"handoff": handoff.model_dump(), "evidence": evidence, "started_at": 0.0})
-    assert result["status"] == "pending_human"
+    monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: pytest.fail("planner must not run after error budget"))
+    result = support_agent_node({"handoff": handoff.model_dump(), "evidence": evidence, "started_at": time.perf_counter()})
+    support_decision = SupportNextStep.model_validate(result["support_decision"])
+    assert support_decision.next_step == "human_support"
 
 
 def test_support_tool_list_has_no_connection_or_stock_write_capability() -> None:

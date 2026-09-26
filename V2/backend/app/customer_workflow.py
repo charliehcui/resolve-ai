@@ -157,3 +157,23 @@ def run_customer_workflow(question: str, user: UserContext, conversation_id: str
         result = workflow.invoke(initial_state, config=workflow_config)
 
     return CustomerAnswer.model_validate(result["answer"]), result.get("trace_id")
+
+
+# START
+# ↓
+# decide_query_next_step    生成 query_decision
+# ↓
+# choose_next_step    判断是不是需要搜索
+# ├── search
+# │   ↓
+# │   search_documents
+# │   ↓
+# │   generate_answer
+# │   ↓
+# │   END
+# │
+# └── clarify / handoff
+#     ↓
+#     build_non_search_answer
+#     ↓
+#     END

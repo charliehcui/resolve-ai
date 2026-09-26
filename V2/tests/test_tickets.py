@@ -5,10 +5,10 @@ import pytest
 
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, save_message
-from backend.app.handoff import handoff_to_support
+from backend.app.handoff import create_support_handoff
 from backend.app.support_cases import update_case
 from backend.app.support_evidence import EvidenceRecord, save_evidence
-from backend.app.support_workflow import run_support_graph
+from backend.app.support_workflow import run_support_workflow
 from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ticket, show_ticket
 
 
@@ -16,7 +16,7 @@ def unresolved_case(token: str) -> tuple[object, str, str]:
     user = authenticate(token)
     conversation_id = create_conversation(user.company_id, user.user_id)
     save_message(conversation_id, "user", "shop-a order O-800 did not sync")
-    _, case_id = handoff_to_support(user, conversation_id, "shop-a order O-800 did not sync", "I could not resolve it from product documentation.", [])
+    _, case_id = create_support_handoff(user, conversation_id, "shop-a order O-800 did not sync", [])
     update_case(case_id, "pending_human", "Evidence is insufficient", 2, 20)
     return user, conversation_id, case_id
 
@@ -103,15 +103,15 @@ def test_support_safe_stop_creates_ticket_without_model_write_access(seeded_data
 
     class FakeCompiled:
         def invoke(self, *_: object, **__: object) -> dict[str, object]:
-            return {"answer": "Investigation stopped with unresolved evidence.", "status": "pending_human", "evidence": [], "models_used": [], "usage": {}}
+            return {"answer": "Investigation stopped with unresolved evidence.", "status": "pending_human", "evidence": [], "usage": {}}
 
     class FakeGraph:
         def compile(self, **_: object) -> FakeCompiled:
             return FakeCompiled()
 
     monkeypatch.setattr("backend.app.support_workflow.PostgresSaver", FakeSaver)
-    monkeypatch.setattr("backend.app.support_workflow.build_support_investigation_graph", lambda: FakeGraph())
-    result = run_support_graph("continue", user, conversation_id)
+    monkeypatch.setattr("backend.app.support_workflow.build_support_workflow", lambda: FakeGraph())
+    result = run_support_workflow("continue", user, conversation_id)
     assert result.status == "pending_human"
     assert result.ticket_id is not None
     assert show_ticket(user, result.ticket_id)["trigger"] == "support_unresolved"
@@ -151,7 +151,7 @@ def test_shipment_ticket_recheck_closes_only_when_three_systems_match(seeded_dat
 def test_stock_ticket_recheck_uses_existing_stock_verification(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     merchant = authenticate(seeded_database["token_a"])
     conversation_id = create_conversation(merchant.company_id, merchant.user_id)
-    _, case_id = handoff_to_support(merchant, conversation_id, "shop-a 的 SKU-1 库存不同", "需要后台调查", [])
+    _, case_id = create_support_handoff(merchant, conversation_id, "shop-a 的 SKU-1 库存不同", [])
     update_case(case_id, "pending_human", "Stock evidence needs engineering", 1, 1)
     ticket = create_ticket(merchant, conversation_id, "support_unresolved", "Stock needs engineering")
     stock = {"merchant": {"empty": False, "rule": {"safety_stock": 5}}, "warehouse": {"physical_quantity": 80, "reserved_quantity": 10, "version": 1, "updated_at": "2026-09-18T00:00:00+00:00"}, "platform": {"quantity": 65, "source_version": 1}, "assessment": "consistent"}
