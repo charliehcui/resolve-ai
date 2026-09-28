@@ -12,7 +12,7 @@ from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
-from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, ReadToolResult
 from simulator.services import common
 from simulator.services.common import BusinessAuth, OrderCreate, PlatformShipmentUpdate, ShipmentCreate, ShipmentEvent, ShipmentRepairRequest, WarehouseOrderRequest
 from simulator.services.merchant import receive_shipment_event, receive_shipment_repair, store_order_event
@@ -21,18 +21,18 @@ from simulator.services.warehouse import create_shipment, receive_order
 from simulator.services.worker import process_next_dispatch_task, process_next_shipment_recovery_task, process_next_shipment_task, process_next_task, reconcile_next_unknown_shipment
 
 
-def shipment_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ToolResult:
+def shipment_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ReadToolResult:
     with get_connection() as connection:
-        if name == "GetShopStatus":
+        if name == "GetShopSyncStatus":
             row = connection.execute("SELECT company_id, shop_id, channel, sync_enabled, shipment_sync_enabled, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (user.company_id, shop_id)).fetchone()
         elif name == "GetOrder":
             row = connection.execute("SELECT event_id::text, payment_status, version FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (user.company_id, shop_id, order_id)).fetchone()
-        elif name == "GetShipment":
+        elif name == "GetWarehouseShipment":
             row = connection.execute("""SELECT o.warehouse_order_id::text, o.status AS warehouse_order_status, s.shipment_id::text, s.carrier, s.tracking_number,
                 s.version AS shipment_version, s.shipped_at, (SELECT COUNT(*) FROM warehouse.shipments c WHERE c.warehouse_order_id = o.warehouse_order_id) AS shipment_count
                 FROM warehouse.orders o LEFT JOIN warehouse.shipments s ON s.warehouse_order_id = o.warehouse_order_id
                 WHERE o.company_id = %s AND o.shop_id = %s AND o.external_order_id = %s""", (user.company_id, shop_id, order_id)).fetchone()
-        elif name == "GetShipmentRecords":
+        elif name == "GetShipmentProcessRecords":
             row = connection.execute("""SELECT r.shipment_id::text, t.status AS task_status, t.error_code, s.carrier, s.tracking_number, s.version
                 FROM merchant.shipment_event_receipts r JOIN merchant.shipment_tasks t ON t.shipment_id = r.shipment_id
                 LEFT JOIN merchant.shipments s ON s.shipment_id = r.shipment_id
@@ -40,7 +40,7 @@ def shipment_tool(name: str, user: UserContext, shop_id: str, order_id: str | No
         else:
             row = connection.execute("SELECT shipment_id::text, carrier, tracking_number, status, version FROM platform.shipments WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (user.company_id, shop_id, order_id)).fetchone()
     request = {"shop_id": shop_id, **({"order_id": order_id} if order_id else {})}
-    return ToolResult(tool_name=name, request=request, response=dict(row) if row else {}, source_service={"GetOrder": "platform", "GetShipment": "warehouse", "GetShipmentRecords": "merchant", "GetPlatformShipment": "platform", "GetShopStatus": "merchant"}[name], source_record_id=str(row.get("shipment_id") or row.get("event_id") or shop_id) if row else None, status="success" if row else "not_found", latency_ms=1)
+    return ReadToolResult(tool_name=name, request=request, response=dict(row) if row else {}, source_service={"GetOrder": "platform", "GetWarehouseShipment": "warehouse", "GetShipmentProcessRecords": "merchant", "GetPlatformShipment": "platform", "GetShopSyncStatus": "merchant"}[name], source_record_id=str(row.get("shipment_id") or row.get("event_id") or shop_id) if row else None, status="success" if row else "not_found", latency_ms=1)
 
 
 @pytest.fixture()
@@ -66,13 +66,13 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
     user = authenticate(seeded_database["token_a"])
     conversation_id = create_conversation(user.company_id, user.user_id)
     _, case_id = create_support_handoff(user, conversation_id, "shop-a 的订单 O-RECOVER-SHIP 仓库已发货但平台没更新", [])
-    for name in ("GetOrder", "GetShipment", "GetShipmentRecords", "GetPlatformShipment"):
-        monkeypatch.setitem(TOOL_FUNCTIONS, name, lambda user, shop_id, order_id, tool_name=name: shipment_tool(tool_name, user, shop_id, order_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda user, shop_id: shipment_tool("GetShopStatus", user, shop_id))
-    monkeypatch.setattr("backend.app.actions.get_shipment", lambda user, shop_id, order_id: shipment_tool("GetShipment", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shipment_records", lambda user, shop_id, order_id: shipment_tool("GetShipmentRecords", user, shop_id, order_id))
+    for name in ("GetOrder", "GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"):
+        monkeypatch.setitem(READ_TOOL_FUNCTIONS, name, lambda user, shop_id, order_id, tool_name=name: shipment_tool(tool_name, user, shop_id, order_id))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopSyncStatus", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
+    monkeypatch.setattr("backend.app.actions.get_warehouse_shipment", lambda user, shop_id, order_id: shipment_tool("GetWarehouseShipment", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.actions.get_shipment_process_records", lambda user, shop_id, order_id: shipment_tool("GetShipmentProcessRecords", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.actions.get_platform_shipment", lambda user, shop_id, order_id: shipment_tool("GetPlatformShipment", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shop_status", lambda user, shop_id: shipment_tool("GetShopStatus", user, shop_id))
+    monkeypatch.setattr("backend.app.actions.get_shop_sync_status", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
     monkeypatch.setattr("backend.app.actions.get_order", lambda user, shop_id, order_id: shipment_tool("GetOrder", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.actions.submit_shipment_repair", lambda payload: receive_shipment_repair(ShipmentRepairRequest(**payload), "test-service-token"))
 

@@ -14,8 +14,8 @@ from backend.app.models import UserContext
 from backend.app.support_agent import InvestigationComplete, SupportAgentResult, SupportNextStep, build_support_answer, decide_support_next_step
 from backend.app.support_cases import show_case
 from backend.app.support_evidence import EvidenceRecord
-from backend.app.support_tools import READ_TOOL_SCHEMAS, TOOL_FUNCTIONS, ToolResult, execute_tool_batch, get_order
-from backend.app.support_workflow import build_support_workflow, support_agent_node
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, READ_TOOL_SCHEMAS, ReadToolResult, execute_read_tool_batch, get_order
+from backend.app.support_workflow import build_support_workflow, decide_support_next_step_node
 from simulator.services import common
 from simulator.services.common import OrderEvent, payload_hash
 from simulator.services.merchant import app as merchant_app
@@ -64,11 +64,11 @@ def test_missing_identifier_requests_information_before_model_or_tools(seeded_da
     user, conversation_id, case_id = create_handoff(seeded_database, "订单 O-HANDOFF 仍然没有进入管理软件")
     handoff = get_support_handoff(conversation_id, user)
     monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: pytest.fail("planner must not run without shop_id"))
-    result = support_agent_node({"question": "继续调查", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": 0.0})
-    support_decision = SupportNextStep.model_validate(result["support_decision"])
-    assert support_decision.next_step == "request_information"
-    assert support_decision.missing_information is not None
-    assert "shop_id" in support_decision.missing_information.customer_message
+    result = decide_support_next_step_node({"question": "继续调查", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": 0.0})
+    support_next_step = SupportNextStep.model_validate(result["support_next_step"])
+    assert support_next_step.next_step == "request_information"
+    assert support_next_step.missing_information is not None
+    assert "shop_id" in support_next_step.missing_information.customer_message
 
 
 def test_internal_contract_distinguishes_scoped_result_and_empty_records(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,19 +107,19 @@ def test_tool_reports_service_unavailable_without_inventing_fact(monkeypatch: py
 def test_independent_read_tools_execute_as_parallel_evidence_batch(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     user, _, case_id = create_handoff(seeded_database)
 
-    def fake_order(user: UserContext, shop_id: str, order_id: str) -> ToolResult:
-        return ToolResult(tool_name="GetOrder", request={"shop_id": shop_id, "order_id": order_id}, response={"event_id": "event-1"}, source_service="platform", source_record_id="event-1", status="success", latency_ms=3)
+    def fake_order(user: UserContext, shop_id: str, order_id: str) -> ReadToolResult:
+        return ReadToolResult(tool_name="GetOrder", request={"shop_id": shop_id, "order_id": order_id}, response={"event_id": "event-1"}, source_service="platform", source_record_id="event-1", status="success", latency_ms=3)
 
-    def fake_shop(user: UserContext, shop_id: str) -> ToolResult:
-        return ToolResult(tool_name="GetShopStatus", request={"shop_id": shop_id}, response={"shop_id": shop_id, "sync_enabled": False}, source_service="merchant", source_record_id=shop_id, status="success", latency_ms=2)
+    def fake_shop(user: UserContext, shop_id: str) -> ReadToolResult:
+        return ReadToolResult(tool_name="GetShopSyncStatus", request={"shop_id": shop_id}, response={"shop_id": shop_id, "sync_enabled": False}, source_service="merchant", source_record_id=shop_id, status="success", latency_ms=2)
 
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetOrder", fake_order)
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", fake_shop)
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetOrder", fake_order)
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopSyncStatus", fake_shop)
     calls = [
         {"name": "GetOrder", "args": {"shop_id": "shop-a", "order_id": "O-HANDOFF"}, "id": "call-order"},
-        {"name": "GetShopStatus", "args": {"shop_id": "shop-a"}, "id": "call-shop"},
+        {"name": "GetShopSyncStatus", "args": {"shop_id": "shop-a"}, "id": "call-shop"},
     ]
-    evidence = execute_tool_batch(case_id, user, calls, "shop-a", "O-HANDOFF")
+    evidence = execute_read_tool_batch(case_id, user, calls, "shop-a", "O-HANDOFF")
     assert len(evidence) == 2
     assert all(record.parallel for record in evidence)
     assert {record.model_tool_call_id for record in evidence} == {"call-order", "call-shop"}
@@ -140,11 +140,11 @@ def test_tool_budget_stops_without_another_model_call(seeded_database: dict[str,
     handoff = get_support_handoff(conversation_id, user)
     evidence = [EvidenceRecord(evidence_id=str(uuid4()), sequence=index + 1, batch_id=str(uuid4()), parallel=False, tool_name="GetOrder", request={"shop_id": "shop-a", "order_id": f"O-{index}"}, response={"event_id": str(index)}, source_service="platform", status="success", latency_ms=1) for index in range(6)]
     monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: pytest.fail("planner must not run after budget"))
-    result = support_agent_node({"question": "继续", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in evidence], "usage": {}, "started_at": 0.0})
-    support_decision = SupportNextStep.model_validate(result["support_decision"])
-    assert support_decision.next_step == "human_support"
-    assert support_decision.human_support is not None
-    assert "预算" in support_decision.human_support.reason
+    result = decide_support_next_step_node({"question": "继续", "user": user.model_dump(), "conversation_id": conversation_id, "case_id": case_id, "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in evidence], "usage": {}, "started_at": 0.0})
+    support_next_step = SupportNextStep.model_validate(result["support_next_step"])
+    assert support_next_step.next_step == "human_support"
+    assert support_next_step.human_support is not None
+    assert "预算" in support_next_step.human_support.reason
 
 
 def test_support_agent_binds_only_registered_query_tools(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -177,12 +177,27 @@ def test_support_agent_binds_only_registered_query_tools(monkeypatch: pytest.Mon
         known_shop_id="shop-a",
         known_order_id="O-1",
     )
-    support_decision, usage = decide_support_next_step("Investigate", handoff, [], 6)
+    support_next_step, usage = decide_support_next_step("Investigate", handoff, [], 6)
     assert bound_tools == READ_TOOL_SCHEMAS
     assert {tool.__name__ for tool in bound_tools}.isdisjoint({"InvestigationComplete", "MissingInformationRequest", "HumanSupportRequired"})
-    assert support_decision.next_step == "use_tool"
-    assert support_decision.tool_calls[0]["name"] == "GetOrder"
+    assert support_next_step.next_step == "use_tool"
+    assert support_next_step.tool_calls[0]["name"] == "GetOrder"
     assert usage["total_tokens"] == 6
+
+
+def test_registered_read_tools_have_matching_functions_and_complete_descriptions() -> None:
+    required_sections = (
+        "What this tool reads:",
+        "When to use this tool:",
+        "What this tool cannot read or determine:",
+        "What is returned on success:",
+    )
+
+    assert {tool.__name__ for tool in READ_TOOL_SCHEMAS} == set(READ_TOOL_FUNCTIONS)
+
+    for tool in READ_TOOL_SCHEMAS:
+        description = str(tool.model_json_schema().get("description") or "")
+        assert all(section in description for section in required_sections), tool.__name__
 
 
 def test_support_agent_parses_finish_data_without_control_tool(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,11 +229,11 @@ def test_support_agent_parses_finish_data_without_control_tool(monkeypatch: pyte
         known_shop_id="shop-a",
         known_order_id="O-1",
     )
-    support_decision, usage = decide_support_next_step("Investigate", handoff, [], 6)
+    support_next_step, usage = decide_support_next_step("Investigate", handoff, [], 6)
     assert bound_tools == READ_TOOL_SCHEMAS
-    assert support_decision.next_step == "finish"
-    assert support_decision.investigation_complete is not None
-    assert support_decision.investigation_complete.summary == "已确认"
+    assert support_next_step.next_step == "finish"
+    assert support_next_step.investigation_complete is not None
+    assert support_next_step.investigation_complete.summary == "已确认"
     assert usage["total_tokens"] == 8
 
 
@@ -226,7 +241,7 @@ def test_support_workflow_executes_query_tool_then_returns_to_agent(monkeypatch:
     handoff = SupportHandoffRecord(handoff_id="handoff-1", conversation_id="conversation-1", company_id="company-a", customer_problem="Order did not sync", known_shop_id="shop-a", known_order_id="O-1")
     model_calls = 0
 
-    def fake_support_decision(*args):
+    def fake_support_next_step(*args):
         nonlocal model_calls
         model_calls += 1
 
@@ -236,11 +251,11 @@ def test_support_workflow_executes_query_tool_then_returns_to_agent(monkeypatch:
         investigation_complete = InvestigationComplete(summary="调查完成", confirmed_facts=[{"text": "平台存在订单", "evidence_ids": ["evidence-1"]}])
         return SupportNextStep(next_step="finish", investigation_complete=investigation_complete), {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
 
-    def fake_execute_tool_batch(*args):
+    def fake_execute_read_tool_batch(*args):
         return [EvidenceRecord(evidence_id="evidence-1", sequence=1, batch_id="batch-1", parallel=False, model_tool_call_id="call-1", tool_name="GetOrder", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"event_id": "event-1"}, source_service="platform", status="success", latency_ms=1)]
 
-    monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", fake_support_decision)
-    monkeypatch.setattr("backend.app.support_workflow.execute_tool_batch", fake_execute_tool_batch)
+    monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", fake_support_next_step)
+    monkeypatch.setattr("backend.app.support_workflow.execute_read_tool_batch", fake_execute_read_tool_batch)
     workflow = build_support_workflow().compile()
     result = workflow.invoke({"question": "继续调查", "user": UserContext(company_id="company-a", user_id="user-a", role="admin").model_dump(), "conversation_id": "conversation-1", "case_id": "case-1", "handoff": handoff.model_dump(), "evidence": [], "usage": {}, "started_at": time.perf_counter()})
     assert model_calls == 2
@@ -252,11 +267,11 @@ def test_conflicting_shipment_evidence_cannot_be_rendered_as_confirmed_root_caus
     first_id = str(uuid4())
     second_id = str(uuid4())
     records = [
-        EvidenceRecord(evidence_id=first_id, sequence=1, batch_id=str(uuid4()), parallel=True, tool_name="GetShipment", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"shipment_id": "S-1", "tracking_number": "TRACK-A"}, source_service="warehouse", status="success", latency_ms=1, object_type="shipment", object_id="O-1"),
+        EvidenceRecord(evidence_id=first_id, sequence=1, batch_id=str(uuid4()), parallel=True, tool_name="GetWarehouseShipment", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"shipment_id": "S-1", "tracking_number": "TRACK-A"}, source_service="warehouse", status="success", latency_ms=1, object_type="shipment", object_id="O-1"),
         EvidenceRecord(evidence_id=second_id, sequence=2, batch_id=str(uuid4()), parallel=True, tool_name="GetPlatformShipment", request={"shop_id": "shop-a", "order_id": "O-1"}, response={"shipment_id": "S-1", "tracking_number": "TRACK-B"}, source_service="platform", status="success", latency_ms=1, object_type="shipment", object_id="O-1"),
     ]
     investigation_complete = InvestigationComplete.model_validate({"summary": "已确认", "confirmed_facts": [{"text": "平台正确", "evidence_ids": [first_id, second_id]}]})
-    support_decision = SupportNextStep(next_step="finish", investigation_complete=investigation_complete)
-    answer, status = build_support_answer(support_decision, records)
+    support_next_step = SupportNextStep(next_step="finish", investigation_complete=investigation_complete)
+    answer, status = build_support_answer(support_next_step, records)
     assert status == "pending_human"
     assert "矛盾" in answer

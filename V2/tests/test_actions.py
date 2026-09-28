@@ -9,7 +9,7 @@ from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
-from backend.app.support_tools import TOOL_FUNCTIONS, ToolResult
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, ReadToolResult
 from simulator.services import common
 from simulator.services.common import OrderEvent, OrderRepairRequest
 from simulator.services.merchant import receive_order_repair, store_order_event
@@ -28,17 +28,17 @@ def create_missing_order_case(user: UserContext, order_id: str = "O-RECOVER") ->
     return case_id, event_id, conversation_id
 
 
-def business_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ToolResult:
+def business_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ReadToolResult:
     with get_connection() as connection:
         if name == "GetOrder":
             row = connection.execute("SELECT event_id::text, company_id, shop_id, external_order_id, sku, quantity, amount_minor, payment_status, version FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (user.company_id, shop_id, order_id)).fetchone()
-            return ToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {}, source_service="platform", source_record_id=row["event_id"] if row else None, status="success" if row else "not_found", latency_ms=1)
-        if name == "GetShopStatus":
+            return ReadToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {}, source_service="platform", source_record_id=row["event_id"] if row else None, status="success" if row else "not_found", latency_ms=1)
+        if name == "GetShopSyncStatus":
             row = connection.execute("SELECT company_id, shop_id, channel, sync_enabled, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (user.company_id, shop_id)).fetchone()
-            return ToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
-        if name == "CheckConnection":
+            return ReadToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
+        if name == "GetShopConnectionStatus":
             row = connection.execute("SELECT company_id, shop_id, channel, connection_status, version FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (user.company_id, shop_id)).fetchone()
-            return ToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
+            return ReadToolResult(tool_name=name, request={"shop_id": shop_id}, response=dict(row) if row else {}, source_service="merchant", source_record_id=shop_id if row else None, status="success" if row else "not_found", latency_ms=1)
         row = connection.execute(
             """SELECT r.event_id::text, r.payload->>'sku' AS platform_sku, (r.payload->>'quantity')::integer AS source_quantity,
             (r.payload->>'amount_minor')::integer AS source_amount_minor, t.status AS task_status, t.error_code,
@@ -49,23 +49,23 @@ def business_tool(name: str, user: UserContext, shop_id: str, order_id: str | No
             WHERE r.company_id = %s AND r.shop_id = %s AND r.external_order_id = %s""",
             (user.company_id, shop_id, order_id),
         ).fetchone()
-    return ToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {"empty": True}, source_service="merchant", source_record_id=row["event_id"] if row else None, status="success" if row else "empty", latency_ms=1)
+    return ReadToolResult(tool_name=name, request={"shop_id": shop_id, "order_id": order_id}, response=dict(row) if row else {"empty": True}, source_service="merchant", source_record_id=row["event_id"] if row else None, status="success" if row else "empty", latency_ms=1)
 
 
 @pytest.fixture()
 def action_runtime(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     monkeypatch.setattr(common, "read_service_token", lambda name: "test-service-token")
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetOrder", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetShopStatus", lambda user, shop_id: business_tool("GetShopStatus", user, shop_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "CheckConnection", lambda user, shop_id: business_tool("CheckConnection", user, shop_id))
-    monkeypatch.setitem(TOOL_FUNCTIONS, "GetProcessRecords", lambda user, shop_id, order_id: business_tool("GetProcessRecords", user, shop_id, order_id))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetOrder", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopSyncStatus", lambda user, shop_id: business_tool("GetShopSyncStatus", user, shop_id))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopConnectionStatus", lambda user, shop_id: business_tool("GetShopConnectionStatus", user, shop_id))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetOrderProcessRecords", lambda user, shop_id, order_id: business_tool("GetOrderProcessRecords", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.actions.get_order", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shop_status", lambda user, shop_id: business_tool("GetShopStatus", user, shop_id))
+    monkeypatch.setattr("backend.app.actions.get_shop_sync_status", lambda user, shop_id: business_tool("GetShopSyncStatus", user, shop_id))
 
-    def fake_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ToolResult:
+    def fake_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ReadToolResult:
         with get_connection() as connection:
             row = connection.execute("SELECT platform_sku, merchant_sku, active FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s", (user.company_id, shop_id, platform_sku)).fetchone()
-        return ToolResult(tool_name="GetSkuMapping", request={"shop_id": shop_id, "platform_sku": platform_sku}, response=dict(row) if row else {}, source_service="merchant", status="success" if row else "not_found", latency_ms=1)
+        return ReadToolResult(tool_name="GetSkuMapping", request={"shop_id": shop_id, "platform_sku": platform_sku}, response=dict(row) if row else {}, source_service="merchant", status="success" if row else "not_found", latency_ms=1)
 
     monkeypatch.setattr("backend.app.actions.get_sku_mapping", fake_mapping)
     monkeypatch.setattr("backend.app.actions.submit_order_repair", lambda payload: receive_order_repair(OrderRepairRequest(**payload), "test-service-token"))

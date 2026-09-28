@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from backend.app.database import get_connection
 from backend.app.handoff import SupportHandoffRecord
 from backend.app.support_agent import SupportNextStep
-from backend.app.support_tools import TOOL_FUNCTIONS, request_fact
-from backend.app.support_workflow import support_agent_node
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, call_read_service
+from backend.app.support_workflow import decide_support_next_step_node
 from simulator.services import common
 from simulator.services.common import OrderEvent
 from simulator.services.merchant import app as merchant_app
@@ -68,7 +68,7 @@ def test_connection_restore_requires_lab_operator_token(seeded_database: dict[st
     assert client.post("/lab/shops/shop-a/connection/restore", headers={"Authorization": f"Bearer {seeded_database['token_a']}"}).status_code == 401
     restored = client.post("/lab/shops/shop-a/connection/restore", headers={"X-Lab-Token": "lab-test-token"})
     assert restored.status_code == 200 and restored.json()["connection_status"] == "authorized"
-    assert all("restore" not in name.lower() and "connection" not in name.lower() or name == "CheckConnection" for name in TOOL_FUNCTIONS)
+    assert all("restore" not in name.lower() and "connection" not in name.lower() or name == "GetShopConnectionStatus" for name in READ_TOOL_FUNCTIONS)
 
 
 @pytest.mark.parametrize(
@@ -80,7 +80,7 @@ def test_tool_http_errors_keep_status_and_request_id(monkeypatch: pytest.MonkeyP
     request = httpx.Request("GET", "http://service/fact")
     response = httpx.Response(status_code, json={"detail": "controlled failure"}, request=request)
     monkeypatch.setattr("backend.app.support_tools.httpx.get", lambda *args, **kwargs: response)
-    result = request_fact("GetOrder", "platform", "http://service/fact", "company-a", {})
+    result = call_read_service("GetOrder", "platform", "http://service/fact", "company-a", {})
     assert result.status == status
     assert result.response["http_status"] == status_code
     assert result.response["error_code"] == error_code
@@ -90,7 +90,7 @@ def test_tool_http_errors_keep_status_and_request_id(monkeypatch: pytest.MonkeyP
 def test_tool_timeout_is_not_reported_as_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("backend.app.support_tools.read_service_token", lambda name: "test")
     monkeypatch.setattr("backend.app.support_tools.httpx.get", lambda *args, **kwargs: (_ for _ in ()).throw(httpx.ReadTimeout("late")))
-    result = request_fact("GetOrder", "platform", "http://service/fact", "company-a", {})
+    result = call_read_service("GetOrder", "platform", "http://service/fact", "company-a", {})
     assert result.status == "unavailable"
     assert result.response["error_code"] == "TIMEOUT"
     assert result.response["request_id"]
@@ -102,10 +102,10 @@ def test_error_budget_stops_before_another_model_call(monkeypatch: pytest.Monkey
     for index in range(3):
         evidence.append({"evidence_id": str(uuid4()), "sequence": index + 1, "batch_id": str(uuid4()), "parallel": False, "tool_name": "GetOrder", "request": {}, "response": {}, "source_service": "platform", "status": "error", "latency_ms": 1})
     monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: pytest.fail("planner must not run after error budget"))
-    result = support_agent_node({"handoff": handoff.model_dump(), "evidence": evidence, "started_at": time.perf_counter()})
-    support_decision = SupportNextStep.model_validate(result["support_decision"])
-    assert support_decision.next_step == "human_support"
+    result = decide_support_next_step_node({"handoff": handoff.model_dump(), "evidence": evidence, "started_at": time.perf_counter()})
+    support_next_step = SupportNextStep.model_validate(result["support_next_step"])
+    assert support_next_step.next_step == "human_support"
 
 
 def test_support_tool_list_has_no_connection_or_stock_write_capability() -> None:
-    assert set(TOOL_FUNCTIONS).isdisjoint({"RestoreConnection", "SetConnection", "SetStock", "PublishStock", "AdjustStock"})
+    assert set(READ_TOOL_FUNCTIONS).isdisjoint({"RestoreConnection", "SetConnection", "SetStock", "PublishStock", "AdjustStock"})

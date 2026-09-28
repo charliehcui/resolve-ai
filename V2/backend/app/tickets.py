@@ -7,7 +7,7 @@ from backend.app.auth import authorize_conversation
 from backend.app.database import get_connection
 from backend.app.models import UserContext
 from backend.app.support_evidence import EvidenceRecord
-from backend.app.support_tools import execute_tool_batch
+from backend.app.support_tools import execute_read_tool_batch
 from backend.app.verification import verify_order_facts, verify_shipment_facts, verify_stock_facts
 
 TicketTrigger = Literal["support_unresolved", "budget_reached", "evidence_insufficient", "unknown_error", "user_requested"]
@@ -60,13 +60,13 @@ def excluded_causes(evidence: list[dict[str, object]]) -> list[dict[str, object]
         response = item["response"]
         if item["status"] != "success" or not isinstance(response, dict):
             continue
-        if item["tool_name"] == "GetShopStatus" and response.get("sync_enabled") is True:
+        if item["tool_name"] == "GetShopSyncStatus" and response.get("sync_enabled") is True:
             excluded.append({"reason": "ORDER_SYNC_DISABLED", "evidence_id": item["evidence_id"]})
-        if item["tool_name"] == "CheckConnection" and response.get("connection_status") == "authorized":
+        if item["tool_name"] == "GetShopConnectionStatus" and response.get("connection_status") == "authorized":
             excluded.append({"reason": "CONNECTION_NOT_AUTHORIZED", "evidence_id": item["evidence_id"]})
         if item["tool_name"] == "GetOrder" and response.get("event_id"):
             excluded.append({"reason": "SOURCE_ORDER_MISSING", "evidence_id": item["evidence_id"]})
-        if item["tool_name"] == "GetShipment" and response.get("shipment_id"):
+        if item["tool_name"] == "GetWarehouseShipment" and response.get("shipment_id"):
             excluded.append({"reason": "WAREHOUSE_SHIPMENT_MISSING", "evidence_id": item["evidence_id"]})
     return excluded
 
@@ -382,23 +382,23 @@ def recheck_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
     if category == "order":
         calls = [
             {"name": "GetOrder", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-platform-order"},
-            {"name": "GetProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-order"},
+            {"name": "GetOrderProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-order"},
         ]
-        evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
+        evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
-        verification = verify_order_facts(facts["GetOrder"], facts["GetProcessRecords"], facts["GetOrder"].response)
+        verification = verify_order_facts(facts["GetOrder"], facts["GetOrderProcessRecords"], facts["GetOrder"].response)
     elif category == "shipment":
         calls = [
-            {"name": "GetShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-warehouse-shipment"},
-            {"name": "GetShipmentRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-shipment"},
+            {"name": "GetWarehouseShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-warehouse-shipment"},
+            {"name": "GetShipmentProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-merchant-shipment"},
             {"name": "GetPlatformShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-platform-shipment"},
         ]
-        evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
+        evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
-        verification = verify_shipment_facts(facts["GetShipment"], facts["GetShipmentRecords"], facts["GetPlatformShipment"], facts["GetShipment"].response)
+        verification = verify_shipment_facts(facts["GetWarehouseShipment"], facts["GetShipmentProcessRecords"], facts["GetPlatformShipment"], facts["GetWarehouseShipment"].response)
     else:
-        calls = [{"name": "GetStockFacts", "args": {"shop_id": shop_id, "sku": sku}, "id": "ticket-recheck-stock"}]
-        evidence = execute_tool_batch(case_id, user, calls, shop_id, "", sku)
+        calls = [{"name": "GetStockStatus", "args": {"shop_id": shop_id, "sku": sku}, "id": "ticket-recheck-stock"}]
+        evidence = execute_read_tool_batch(case_id, user, calls, shop_id, "", sku)
         stock = evidence[0]
         response = stock.response
         merchant = response.get("merchant") if isinstance(response.get("merchant"), dict) else {}

@@ -27,8 +27,8 @@ def tool_evidence(name: str, response: dict[str, object], status: str = "success
 
 def test_ticket_captures_grounded_investigation_and_deduplicates(seeded_database: dict[str, str]) -> None:
     user, conversation_id, case_id = unresolved_case(seeded_database["token_a"])
-    success = save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetShopStatus", {"shop_id": "shop-a"}, {"sync_enabled": True, "version": 3}, "merchant", "shop-a", "success", 2, None)
-    failure = save_evidence(case_id, "company-a", str(uuid4()), False, None, "CheckConnection", {"shop_id": "shop-a"}, {"error_code": "UPSTREAM_TIMEOUT"}, "merchant", "shop-a", "unavailable", 3000, None)
+    success = save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetShopSyncStatus", {"shop_id": "shop-a"}, {"sync_enabled": True, "version": 3}, "merchant", "shop-a", "success", 2, None)
+    failure = save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetShopConnectionStatus", {"shop_id": "shop-a"}, {"error_code": "UPSTREAM_TIMEOUT"}, "merchant", "shop-a", "unavailable", 3000, None)
 
     first = create_ticket(user, conversation_id, "evidence_insufficient", "Investigation cannot confirm the cause")
     second = create_ticket(user, conversation_id, "support_unresolved", "Repeated escalation")
@@ -123,7 +123,7 @@ def test_order_ticket_recheck_closes_and_failed_recheck_reopens(seeded_database:
     engineer = authenticate(seeded_database["token_engineer_a"])
     platform = {"event_id": "event-1", "sku": "SKU-1", "quantity": 2, "amount_minor": 2000}
     merchant_order = {"event_id": "event-1", "platform_sku": "SKU-1", "quantity": 2, "source_quantity": 2, "amount_minor": 2000, "source_amount_minor": 2000, "merchant_order_count": 1, "task_status": "completed"}
-    monkeypatch.setattr("backend.app.tickets.execute_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetOrder", platform), tool_evidence("GetProcessRecords", merchant_order, sequence=2)])
+    monkeypatch.setattr("backend.app.tickets.execute_read_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetOrder", platform), tool_evidence("GetOrderProcessRecords", merchant_order, sequence=2)])
 
     closed = recheck_ticket(engineer, ticket["ticket_id"])
     assert closed["status"] == "closed" and closed["recheck_status"] == "RESOLVED"
@@ -136,12 +136,12 @@ def test_order_ticket_recheck_closes_and_failed_recheck_reopens(seeded_database:
 
 def test_shipment_ticket_recheck_closes_only_when_three_systems_match(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     merchant, conversation_id, case_id = unresolved_case(seeded_database["token_a"])
-    save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetShipment", {"shop_id": "shop-a", "order_id": "O-800"}, {"shipment_id": "shipment-1"}, "warehouse", "shipment-1", "success", 1, None)
+    save_evidence(case_id, "company-a", str(uuid4()), False, None, "GetWarehouseShipment", {"shop_id": "shop-a", "order_id": "O-800"}, {"shipment_id": "shipment-1"}, "warehouse", "shipment-1", "success", 1, None)
     ticket = create_ticket(merchant, conversation_id, "support_unresolved", "Shipment needs engineering")
     shipment = {"shipment_id": "shipment-1", "carrier": "test-express", "tracking_number": "TRACK-1", "shipment_count": 1}
     merchant_shipment = {**shipment, "task_status": "completed"}
     platform_shipment = {key: shipment[key] for key in ("shipment_id", "carrier", "tracking_number")}
-    monkeypatch.setattr("backend.app.tickets.execute_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetShipment", shipment), tool_evidence("GetShipmentRecords", merchant_shipment, sequence=2), tool_evidence("GetPlatformShipment", platform_shipment, sequence=3)])
+    monkeypatch.setattr("backend.app.tickets.execute_read_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetWarehouseShipment", shipment), tool_evidence("GetShipmentProcessRecords", merchant_shipment, sequence=2), tool_evidence("GetPlatformShipment", platform_shipment, sequence=3)])
 
     result = recheck_ticket(authenticate(seeded_database["token_engineer_a"]), ticket["ticket_id"])
     assert result["category"] == "shipment" and result["status"] == "closed"
@@ -155,7 +155,7 @@ def test_stock_ticket_recheck_uses_existing_stock_verification(seeded_database: 
     update_case(case_id, "pending_human", "Stock evidence needs engineering", 1, 1)
     ticket = create_ticket(merchant, conversation_id, "support_unresolved", "Stock needs engineering")
     stock = {"merchant": {"empty": False, "rule": {"safety_stock": 5}}, "warehouse": {"physical_quantity": 80, "reserved_quantity": 10, "version": 1, "updated_at": "2026-09-18T00:00:00+00:00"}, "platform": {"quantity": 65, "source_version": 1}, "assessment": "consistent"}
-    monkeypatch.setattr("backend.app.tickets.execute_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetStockFacts", stock)])
+    monkeypatch.setattr("backend.app.tickets.execute_read_tool_batch", lambda *_args, **_kwargs: [tool_evidence("GetStockStatus", stock)])
 
     result = recheck_ticket(authenticate(seeded_database["token_engineer_a"]), ticket["ticket_id"])
     assert result["category"] == "stock" and result["status"] == "closed"

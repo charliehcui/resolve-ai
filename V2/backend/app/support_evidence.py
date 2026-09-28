@@ -44,23 +44,23 @@ def optional_integer(value: object) -> int | None:
 
 
 def evidence_metadata(tool_name: str, request: dict[str, object], response: dict[str, object]) -> tuple[str | None, str | None, int | None]:
-    if tool_name == "GetStockFacts":
+    if tool_name == "GetStockStatus":
         object_id = optional_string(request.get("sku"))
         source_version = optional_integer(response.get("source_version"))
         return "stock", object_id, source_version
 
-    if tool_name in {"GetShipment", "GetShipmentRecords", "GetPlatformShipment"}:
+    if tool_name in {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"}:
         version = response.get("shipment_version") or response.get("version")
         object_id = optional_string(request.get("order_id"))
         source_version = optional_integer(version)
         return "shipment", object_id, source_version
 
-    if tool_name in {"GetOrder", "GetProcessRecords"}:
+    if tool_name in {"GetOrder", "GetOrderProcessRecords"}:
         object_id = optional_string(request.get("order_id"))
         source_version = optional_integer(response.get("version"))
         return "order", object_id, source_version
 
-    if tool_name in {"GetShopStatus", "CheckConnection"}:
+    if tool_name in {"GetShopSyncStatus", "GetShopConnectionStatus"}:
         object_id = optional_string(request.get("shop_id"))
         source_version = optional_integer(response.get("version"))
         return "shop", object_id, source_version

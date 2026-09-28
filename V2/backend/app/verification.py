@@ -8,7 +8,7 @@ from backend.app.database import get_connection
 from backend.app.models import UserContext
 from backend.app.stock import assess_stock_facts
 from backend.app.support_evidence import EvidenceRecord
-from backend.app.support_tools import ToolResult, execute_tool_batch
+from backend.app.support_tools import ReadToolResult, execute_read_tool_batch
 from backend.app.trace import current_trace_id
 
 
@@ -44,7 +44,7 @@ def verify_stock_facts(merchant: dict[str, object], warehouse: dict[str, object]
     return assess_stock_facts(merchant, warehouse, platform, **options)
 
 
-def verify_order_facts(platform: ToolResult, merchant: ToolResult, expected: dict[str, object]) -> dict[str, object]:
+def verify_order_facts(platform: ReadToolResult, merchant: ReadToolResult, expected: dict[str, object]) -> dict[str, object]:
     quantity_matches = merchant.response.get("quantity") == expected.get("quantity")
     source_quantity_matches = merchant.response.get("source_quantity") == expected.get("quantity")
     amount_matches = merchant.response.get("amount_minor") == expected.get("amount_minor")
@@ -63,7 +63,7 @@ def verify_order_facts(platform: ToolResult, merchant: ToolResult, expected: dic
     return {"resolved": all_checks_passed(checks), "checks": checks}
 
 
-def verify_shipment_facts(warehouse: ToolResult, merchant: ToolResult, platform: ToolResult, expected: dict[str, object]) -> dict[str, object]:
+def verify_shipment_facts(warehouse: ReadToolResult, merchant: ReadToolResult, platform: ReadToolResult, expected: dict[str, object]) -> dict[str, object]:
     shipment_fields = ("shipment_id", "carrier", "tracking_number")
     checks = {
         "warehouse_available": warehouse.status == "success",
@@ -96,12 +96,12 @@ def verify_order_recovery(user: UserContext, action_id: str, final: bool = False
         raise PermissionError("Action is not available in this company scope")
     calls = [
         {"name": "GetOrder", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-platform"},
-        {"name": "GetProcessRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant"},
+        {"name": "GetOrderProcessRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant"},
     ]
-    evidence = execute_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
+    evidence = execute_read_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
     facts = index_tool_results(evidence)
     platform = facts["GetOrder"]
-    merchant = facts["GetProcessRecords"]
+    merchant = facts["GetOrderProcessRecords"]
     snapshot = action["source_snapshot"]
     verification = verify_order_facts(platform, merchant, snapshot)
     checks = verification["checks"]
@@ -142,14 +142,14 @@ def verify_shipment_recovery(user: UserContext, action_id: str) -> dict[str, obj
     if action is None:
         raise PermissionError("Shipment action is not available in this company scope")
     calls = [
-        {"name": "GetShipment", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-warehouse-shipment"},
-        {"name": "GetShipmentRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant-shipment"},
+        {"name": "GetWarehouseShipment", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-warehouse-shipment"},
+        {"name": "GetShipmentProcessRecords", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-merchant-shipment"},
         {"name": "GetPlatformShipment", "args": {"shop_id": action["shop_id"], "order_id": action["external_order_id"]}, "id": "verify-platform-shipment"},
     ]
-    evidence = execute_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
+    evidence = execute_read_tool_batch(action["case_id"], user, calls, action["shop_id"], action["external_order_id"])
     facts = index_tool_results(evidence)
-    warehouse = facts["GetShipment"]
-    merchant = facts["GetShipmentRecords"]
+    warehouse = facts["GetWarehouseShipment"]
+    merchant = facts["GetShipmentProcessRecords"]
     platform = facts["GetPlatformShipment"]
     expected = action["source_snapshot"]
     verification = verify_shipment_facts(warehouse, merchant, platform, expected)

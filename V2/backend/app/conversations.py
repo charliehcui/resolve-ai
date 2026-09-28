@@ -6,7 +6,7 @@ from backend.app.customer_workflow import run_customer_workflow
 from backend.app.database import create_conversation, load_messages, save_agent_run, save_message
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext, provider_for_task
-from backend.app.support_tools import create_ticket
+from backend.app.support_tools import create_engineer_ticket
 from backend.app.support_workflow import run_support_workflow
 from backend.app.tickets import is_human_request
 from backend.app.trace import current_trace_id
@@ -27,7 +27,7 @@ def process_conversation_message(user: UserContext, question: str, conversation_
     started = time.perf_counter()
 
     if is_human_request(question):
-        ticket = create_ticket(user, conversation_id, "user_requested", question)
+        ticket = create_engineer_ticket(user, conversation_id, "user_requested", question)
         answer = "Your request has been sent to the assigned engineer queue."
         save_message(conversation_id, "assistant", answer, {"agent_role": conversation["active_role"], "ticket_id": ticket["ticket_id"], "status": "pending_human"})
         run_id = save_agent_run(conversation_id, "code", "none", "engineer_handoff", "succeeded", int((time.perf_counter() - started) * 1000), {}, current_trace_id())

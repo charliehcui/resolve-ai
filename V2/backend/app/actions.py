@@ -11,7 +11,16 @@ from backend.app.database import get_connection
 from backend.app.models import UserContext
 from backend.app.support_cases import update_case
 from backend.app.support_evidence import EvidenceRecord, save_evidence
-from backend.app.support_tools import ToolResult, execute_tool_batch, get_order, get_platform_shipment, get_shipment, get_shipment_records, get_shop_status, request_fact
+from backend.app.support_tools import (
+    ReadToolResult,
+    call_read_service,
+    execute_read_tool_batch,
+    get_order,
+    get_platform_shipment,
+    get_shipment_process_records,
+    get_shop_sync_status,
+    get_warehouse_shipment,
+)
 from backend.app.trace import current_trace_id
 from simulator.services.common import read_service_token
 
@@ -37,14 +46,14 @@ def load_case_scope(case_id: str, user: UserContext) -> dict[str, object]:
     return dict(row)
 
 
-def get_sku_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ToolResult:
+def get_sku_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ReadToolResult:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
-    result = request_fact("GetSkuMapping", "merchant", f"{base_url}/internal/shops/{shop_id}/mappings/{platform_sku}", user.company_id, {})
+    result = call_read_service("GetSkuMapping", "merchant", f"{base_url}/internal/shops/{shop_id}/mappings/{platform_sku}", user.company_id, {})
     result.request = {"shop_id": shop_id, "platform_sku": platform_sku}
     return result
 
 
-def save_tool_evidence(case_id: str, user: UserContext, result: ToolResult) -> str:
+def save_tool_evidence(case_id: str, user: UserContext, result: ReadToolResult) -> str:
     record = save_evidence(case_id, user.company_id, str(uuid4()), False, None, result.tool_name, result.request, result.response, result.source_service, result.source_record_id, result.status, result.latency_ms, result.trace_id)
     return record.evidence_id
 
@@ -94,16 +103,16 @@ def propose_order_recovery(user: UserContext, case_id: str, enable_order_sync: b
     order_id = str(scope["known_order_id"])
     calls = [
         {"name": "GetOrder", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-order"},
-        {"name": "GetProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-process"},
-        {"name": "GetShopStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
-        {"name": "CheckConnection", "args": {"shop_id": shop_id}, "id": "proposal-connection"},
+        {"name": "GetOrderProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-process"},
+        {"name": "GetShopSyncStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
+        {"name": "GetShopConnectionStatus", "args": {"shop_id": shop_id}, "id": "proposal-connection"},
     ]
-    evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
+    evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
     facts = evidence_by_tool(evidence)
     source = facts["GetOrder"]
-    process = facts["GetProcessRecords"]
-    shop = facts["GetShopStatus"]
-    connection_status = facts["CheckConnection"]
+    process = facts["GetOrderProcessRecords"]
+    shop = facts["GetShopSyncStatus"]
+    connection_status = facts["GetShopConnectionStatus"]
     if source.status != "success":
         raise ValueError("Recoverable source order was not found")
     source_data = source.response
@@ -153,18 +162,18 @@ def propose_shipment_recovery(user: UserContext, case_id: str, enable_shipment_s
     order_id = str(scope["known_order_id"])
     calls = [
         {"name": "GetOrder", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-source-order"},
-        {"name": "GetShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-warehouse-shipment"},
-        {"name": "GetShipmentRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-merchant-shipment"},
+        {"name": "GetWarehouseShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-warehouse-shipment"},
+        {"name": "GetShipmentProcessRecords", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-merchant-shipment"},
         {"name": "GetPlatformShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "proposal-platform-shipment"},
-        {"name": "GetShopStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
+        {"name": "GetShopSyncStatus", "args": {"shop_id": shop_id}, "id": "proposal-shop"},
     ]
-    evidence = execute_tool_batch(case_id, user, calls, shop_id, order_id)
+    evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
     facts = evidence_by_tool(evidence)
     source_order = facts["GetOrder"]
-    warehouse = facts["GetShipment"]
-    merchant = facts["GetShipmentRecords"]
+    warehouse = facts["GetWarehouseShipment"]
+    merchant = facts["GetShipmentProcessRecords"]
     platform = facts["GetPlatformShipment"]
-    shop = facts["GetShopStatus"]
+    shop = facts["GetShopSyncStatus"]
     if source_order.status != "success" or source_order.response.get("payment_status") != "paid":
         raise ValueError("Only a currently paid source order can receive shipment recovery")
     if warehouse.status != "success" or not warehouse.response.get("shipment_id") or warehouse.response.get("shipment_count") != 1:
@@ -283,7 +292,7 @@ def claim_action_execution(action_id: str, request_id: str) -> str:
 def reconcile_action_receipt(action: dict[str, object]) -> dict[str, object] | None:
     base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
     resource = "shipments" if action["action_type"] == "recover_shipment" else "orders"
-    result = request_fact("GetRecoveryReceipt", "merchant", f"{base_url}/repairs/{resource}/{action['action_id']}", str(action["company_id"]), {})
+    result = call_read_service("GetRecoveryReceipt", "merchant", f"{base_url}/repairs/{resource}/{action['action_id']}", str(action["company_id"]), {})
     if result.status == "success":
         return result.response
     return None
@@ -317,7 +326,7 @@ def execute_order_recovery(user: UserContext, action_id: str) -> dict[str, objec
     if action["status"] not in {"approved", "executing"}:
         raise ValueError("Action is not approved")
     current_order = get_order(user, action["shop_id"], action["external_order_id"])
-    current_shop = get_shop_status(user, action["shop_id"])
+    current_shop = get_shop_sync_status(user, action["shop_id"])
     order_evidence_id = save_tool_evidence(str(action["case_id"]), user, current_order)
     shop_evidence_id = save_tool_evidence(str(action["case_id"]), user, current_shop)
     snapshot = action["source_snapshot"]
@@ -408,10 +417,10 @@ def execute_shipment_recovery(user: UserContext, action_id: str) -> dict[str, ob
         raise ValueError("Action is not approved")
     shop_id = str(action["shop_id"])
     order_id = str(action["external_order_id"])
-    warehouse = get_shipment(user, shop_id, order_id)
-    merchant = get_shipment_records(user, shop_id, order_id)
+    warehouse = get_warehouse_shipment(user, shop_id, order_id)
+    merchant = get_shipment_process_records(user, shop_id, order_id)
     platform = get_platform_shipment(user, shop_id, order_id)
-    shop = get_shop_status(user, shop_id)
+    shop = get_shop_sync_status(user, shop_id)
     source_order = get_order(user, shop_id, order_id)
 
     evidence_ids: list[str] = []

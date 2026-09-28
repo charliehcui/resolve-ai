@@ -8,7 +8,7 @@ from backend.app.database import get_connection
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
 from backend.app.stock import assess_stock_facts
-from backend.app.support_tools import TOOL_FUNCTIONS, get_stock_facts, validate_tool_call
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, get_stock_status, validate_read_tool_call
 from simulator.services import common, merchant, worker
 from simulator.services.merchant import app as merchant_app
 from simulator.services.platform import app as platform_app
@@ -70,7 +70,7 @@ def test_real_stock_publish_computes_65_and_platform_keeps_source_version(seeded
 
     monkeypatch.setattr("backend.app.support_tools.read_service_token", lambda name: "service-test-token")
     monkeypatch.setattr("backend.app.support_tools.httpx.get", read_router)
-    facts = get_stock_facts(UserContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "SKU-1")
+    facts = get_stock_status(UserContext(company_id="company-a", user_id="admin-a", role="admin"), "shop-a", "SKU-1")
     assert facts.status == "success"
     assert facts.response["assessment"] == "consistent" and facts.response["expected_quantity"] == 65
 
@@ -122,8 +122,8 @@ def test_stock_handoff_and_tool_scope_need_shop_and_sku_not_order(seeded_databas
     handoff, _ = create_support_handoff(user, conversation_id, "shop-a 的 SKU-1 库存为什么不同", [])
     assert handoff.known_shop_id == "shop-a" and handoff.known_sku == "SKU-1"
     assert handoff.known_order_id is None and handoff.missing_fields == []
-    assert validate_tool_call({"name": "GetStockFacts", "args": {"shop_id": "shop-a", "sku": "SKU-1"}}, "shop-a", "", "SKU-1") is None
-    assert set(TOOL_FUNCTIONS).isdisjoint({"SetStock", "PublishStock", "AdjustStock"})
+    assert validate_read_tool_call({"name": "GetStockStatus", "args": {"shop_id": "shop-a", "sku": "SKU-1"}}, "shop-a", "", "SKU-1") is None
+    assert set(READ_TOOL_FUNCTIONS).isdisjoint({"SetStock", "PublishStock", "AdjustStock"})
 
 
 def test_stock_handoff_without_sku_requests_sku_not_order(seeded_database: dict[str, str]) -> None:
