@@ -14,7 +14,7 @@ from backend.app.conversations import process_conversation_message
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
-from backend.app.support_action_approvals import authorize_action_decision, decide_action_plan, explicit_confirmation
+from backend.app.support_action_approvals import authorize_action_decision, decide_action_plan, execute_action_plan, explicit_confirmation, get_action_details, respond_to_action_plan
 from backend.app.support_action_plans import create_action_plan
 from backend.app.support_action_registry import ACTION_REGISTRY
 from backend.app.support_action_verification import verify_background_action, verify_order_recovery, verify_shipment_recovery
@@ -122,7 +122,7 @@ def investigate(user, scenario):
 
 @pytest.mark.parametrize("name", ["order_sync_failure", "shipment_sync_failure", "inventory_mismatch", "worker_task_stuck"])
 def test_agent_recommendation_user_confirmation_execution_and_verification(scenario_runtime, monkeypatch, name):
-    user, _ = scenario_runtime
+    user, admin = scenario_runtime
     scenario = scenarios.seed_scenario(name)
     calls = []
     scripted_model(monkeypatch, scenario, calls)
@@ -141,9 +141,14 @@ def test_agent_recommendation_user_confirmation_execution_and_verification(scena
     assert len(calls) == 2  # No model calls for approval, execution or verification.
     duplicate = decide_action_plan(user, plan["action_id"], "approve")
     assert duplicate["status"] == "verified_resolved"
+    assert decide_action_plan(admin, plan["action_id"], "approve")["status"] == "verified_resolved"
     with get_connection() as connection:
         assert connection.execute("SELECT COUNT(*) AS count FROM support.action_executions WHERE action_id = %s", (plan["action_id"],)).fetchone()["count"] == 1
         assert connection.execute("SELECT decided_by FROM support.action_decisions WHERE action_id = %s", (plan["action_id"],)).fetchone()["decided_by"] == user.user_id
+        approvals = connection.execute("SELECT status, details FROM support.action_steps WHERE action_id = %s AND step_name = 'human_approval'", (plan["action_id"],)).fetchall()
+        assert len(approvals) == 1
+        assert approvals[0]["details"]["decided_by"] == user.user_id
+        assert approvals[0]["details"]["risk_level"] == "low"
     if name == "inventory_mismatch":
         facts = scenarios.stock_facts(scenario["shop_id"], "SKU-1", "MERCHANT-SKU-DEMO-inventory")
         assert facts["platform"]["quantity"] == 65
@@ -180,16 +185,22 @@ def test_model_cannot_assign_permissions_or_forge_evidence(scenario_runtime):
         create_action_plan(user, case_id, CandidateAction(action_type="delete_account", reason="unsupported", evidence_ids=[]))
 
 
-def test_high_risk_policy_requires_admin_without_fake_high_risk_backend(scenario_runtime, monkeypatch):
+@pytest.mark.parametrize("risk", ["medium", "high"])
+def test_privileged_risk_policy_requires_admin_without_fake_backend(scenario_runtime, monkeypatch, risk):
     user, admin = scenario_runtime
     # Exercise the policy gate using an existing demonstrable operation.
-    monkeypatch.setitem(ACTION_REGISTRY, "retry_order_sync", {**ACTION_REGISTRY["retry_order_sync"], "risk_level": "high", "approval_requirement": "admin"})
+    monkeypatch.setitem(ACTION_REGISTRY, "retry_order_sync", {**ACTION_REGISTRY["retry_order_sync"], "risk_level": risk, "approval_requirement": "admin"})
     scenario = scenarios.seed_scenario("order_sync_failure")
     scripted_model(monkeypatch, scenario, [])
-    _, result = investigate(user, scenario)
+    conversation_id, result = investigate(user, scenario)
     action_id = result["action_plan_id"]
     with pytest.raises(PermissionError, match="admin"):
         decide_action_plan(user, action_id, "approve")
+    pending = process_conversation_message(user, "确认执行", conversation_id)
+    assert pending["status"] == "proposed"
+    assert "管理员" in pending["answer"]
+    assert pending["action_plan"]["decision"] is None
+    assert pending["action_plan"]["execution"] is None
     assert decide_action_plan(admin, action_id, "approve")["status"] == "verified_resolved"
 
 
@@ -255,7 +266,6 @@ def test_low_risk_does_not_allow_agent_identity(scenario_runtime):
 @pytest.mark.parametrize("name", ["inventory_mismatch", "worker_task_stuck"])
 def test_lost_repair_response_is_reconciled_without_second_effect(scenario_runtime, monkeypatch, name):
     from backend.app import support_action_execution
-    from backend.app.support_action_approvals import execute_action_plan
 
     user, _ = scenario_runtime
     scenario = scenarios.seed_scenario(name)
@@ -306,3 +316,88 @@ def test_reauthorization_recheck_reads_fresh_facts_and_retains_old_evidence(scen
     assert second["status"] == "diagnosed"
     connections = [record.response["connection_status"] for record in load_evidence(first["case_id"]) if record.tool_name == "GetShopConnectionStatus"]
     assert connections[0] == "auth_expired" and connections[-1] == "authorized"
+
+
+def test_unapproved_plan_never_dispatches_to_executor(scenario_runtime, monkeypatch):
+    user, _ = scenario_runtime
+    scenario = scenarios.seed_scenario("order_sync_failure")
+    scripted_model(monkeypatch, scenario, [])
+    _, result = investigate(user, scenario)
+    writes = []
+    monkeypatch.setattr("backend.app.support_action_execution.execute_order_recovery", lambda *args: writes.append(args))
+    with pytest.raises(ValueError, match="not approved"):
+        execute_action_plan(user, result["action_plan_id"])
+    assert writes == []
+    assert get_action_details(user, result["action_plan_id"])["decision"] is None
+
+
+def test_chat_confirmation_cannot_use_another_conversations_plan(scenario_runtime, monkeypatch):
+    user, _ = scenario_runtime
+    scenario = scenarios.seed_scenario("worker_task_stuck")
+    scripted_model(monkeypatch, scenario, [])
+    _, result = investigate(user, scenario)
+    another_conversation = create_conversation(user.company_id, user.user_id)
+    history = [{"role": "assistant", "metadata": {"action_plan_id": result["action_plan_id"]}}]
+    with pytest.raises(PermissionError, match="conversation"):
+        respond_to_action_plan(user, another_conversation, "yes", history)
+    details = get_action_details(user, result["action_plan_id"])
+    assert details["decision"] is None and details["execution"] is None
+
+
+@pytest.mark.parametrize("latest", [{"role": "user"}, {"role": "assistant", "metadata": {}}])
+def test_chat_confirmation_does_not_reuse_a_plan_from_older_messages(latest):
+    user = UserContext(company_id="company-a", user_id="staff-a", role="staff")
+    history = [{"role": "assistant", "metadata": {"action_plan_id": str(uuid4())}}, latest]
+    assert respond_to_action_plan(user, str(uuid4()), "yes", history) is None
+
+
+def test_rejected_plan_cannot_be_approved_again(scenario_runtime, monkeypatch):
+    user, admin = scenario_runtime
+    scenario = scenarios.seed_scenario("worker_task_stuck")
+    scripted_model(monkeypatch, scenario, [])
+    conversation_id, result = investigate(user, scenario)
+    rejected = process_conversation_message(user, "取消", conversation_id)
+    assert rejected["status"] == "rejected"
+    repeated = decide_action_plan(admin, result["action_plan_id"], "approve")
+    assert repeated["status"] == "rejected" and repeated["execution"] is None
+    assert repeated["decision"]["decision"] == "rejected"
+    assert repeated["decision"]["decided_by"] == user.user_id
+    assert len([step for step in repeated["steps"] if step["step_name"] == "human_approval"]) == 1
+
+
+def test_approved_but_unsubmitted_expired_plan_does_not_execute(scenario_runtime, monkeypatch):
+    user, _ = scenario_runtime
+    scenario = scenarios.seed_scenario("order_sync_failure")
+    scripted_model(monkeypatch, scenario, [])
+    _, result = investigate(user, scenario)
+    writes = []
+
+    def defer_execution(actor, action_id):
+        writes.append(action_id)
+        return get_action_details(actor, action_id)
+
+    monkeypatch.setattr("backend.app.support_action_approvals.execute_action_plan", defer_execution)
+    assert decide_action_plan(user, result["action_plan_id"], "approve")["status"] == "approved"
+    with get_connection() as connection:
+        connection.execute("UPDATE support.action_proposals SET expires_at = %s WHERE action_id = %s", (datetime.now(UTC) - timedelta(seconds=1), result["action_plan_id"]))
+    expired = decide_action_plan(user, result["action_plan_id"], "approve")
+    assert expired["status"] == "expired" and len(writes) == 1
+    assert expired["decision"]["decided_by"] == user.user_id
+    steps = [step for step in expired["steps"] if step["step_name"] == "human_approval"]
+    assert [step["status"] for step in steps] == ["approved", "expired"]
+    assert "decided_by" not in steps[-1]["details"]
+
+
+@pytest.mark.parametrize("setting", ["enable_order_sync", "enable_shipment_sync"])
+def test_shop_wide_changes_require_admin(setting):
+    user = UserContext(company_id="company-a", user_id="staff-a", role="staff")
+    action = {"action_type": "retry_order_sync", setting: True, "risk_level": "low", "approval_requirement": "user_confirmation"}
+    with pytest.raises(PermissionError, match="admin"):
+        authorize_action_decision(user, action)
+    authorize_action_decision(UserContext(company_id=user.company_id, user_id="admin-a", role="admin"), action)
+
+
+def test_reauthorization_cannot_be_approved_as_backend_write():
+    user = UserContext(company_id="company-a", user_id="admin-a", role="admin")
+    with pytest.raises(ValueError, match="outside the Agent"):
+        authorize_action_decision(user, {"action_type": "request_reauthorization"})
