@@ -12,6 +12,7 @@ from langsmith import traceable
 from backend.app.config import PROJECT_ROOT, get_settings
 from backend.app.database import get_connection
 
+
 PRODUCT_DOCUMENTS_DIR = PROJECT_ROOT / "docs" / "product"
 
 
@@ -34,7 +35,7 @@ def normalize_embedding_vector(values: list[float]) -> list[float]:
     return normalized_values
 
 
-@traceable(name="generate_text_embeddings", run_type="embedding")
+@traceable(name="google_embedding", run_type="embedding")
 def generate_text_embeddings(texts: list[str], task_type: str) -> list[list[float]]:
     settings = get_settings()
     client = genai.Client(api_key=settings.google_api_key)
@@ -352,3 +353,19 @@ def import_product_documents() -> dict[str, int]:
 # normalize
 # ↓
 # PostgreSQL / pgvector
+
+
+# Document Loading / Splitting
+# → 可以用 LangChain
+
+# Embedding
+# → 可以直接用官方 SDK
+
+# Storage
+# → 自己 PostgreSQL + pgvector
+
+# Retrieval
+# → 自己控制 SQL / Hybrid / Rerank
+
+# Evaluation
+# → 自己统一测试
