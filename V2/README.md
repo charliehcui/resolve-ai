@@ -4,6 +4,8 @@ ResolveAI V2 是一个用于演示 AI Application Engineering 的电商商家管
 
 Phase 9 的 Dataset、Eval Runner 和 Dry Run 保留。176 次对照、Holdout 30×3、批量真实模型调用和远端 LangSmith 验收当前不执行，也不阻塞本地交付。
 
+Support 的当前流程为诊断（Diagnosis）→ 动作计划（Action Plan）→ 审批（Approval）→ 执行（Execution）→ 验证（Verification）。诊断（Diagnosis）的最后一次模型响应同时给出结论和候选动作（Candidate Action），后续安全检查与写入全部由确定性代码（Deterministic Code）控制。订单、发货、库存刷新和已有任务重试支持用户确认后执行；授权过期要求用户重新授权，限流或外部故障等待恢复，缺失可信映射转人工。复现命令、文件职责和验证说明见 [Agent 与模拟器演示](docs/agent-simulator.md)。
+
 ## 当前真实数据流
 
 ```text
@@ -41,7 +43,7 @@ Merchant order → dispatch task → Warehouse order
   → Warehouse Shipment Event → Merchant receipt/task/shipment
   → Worker 推送 Platform → 三端独立查询
   → 异常时 Support Agent 使用只读 Shipment Tools 收集 Evidence
-  → recover_shipment Proposal → Policy Check → Human Approval
+  → resend_shipment Action Plan → Policy Check → Scoped User Confirmation
   → Scope/Version Recheck → Merchant repair receipt/task
   → 补传既有 Shipment → Receipt Reconciliation → 三端 Verification
 ```
@@ -266,7 +268,7 @@ npm install
 npm run dev
 ```
 
-页面使用 merchant token 展示会话、当前 Agent、Citation、Evidence、Proposal、Approval、Verification 和 Ticket；Engineer token 只能加载显式分配给该工程师的 Ticket，并可运行确定性复查。关闭后的 Ticket 仍会显示在会话和工程师队列中。没有 customer selector，也不能手工切换 Agent。
+页面使用 merchant token 展示会话、当前 Agent、Citation、Evidence、Action Plan、Approval、Verification 和 Ticket；Engineer token 只能加载显式分配给该工程师的 Ticket，并可运行确定性复查。关闭后的 Ticket 仍会显示在会话和工程师队列中。没有 customer selector，也不能手工切换 Agent。
 
 最小 Playwright E2E 使用直接人工请求，不调用 Groq 或 Google：浏览器创建商家会话和 Ticket，授权 Engineer 读取并复查；由于没有业务标识符，结果必须为 `NEEDS_INFO` 且保持打开。
 

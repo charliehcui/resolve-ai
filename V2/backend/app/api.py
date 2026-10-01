@@ -5,12 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from backend.app.actions import decide_recovery_action, execute_recovery_action, get_action_details, propose_order_recovery, propose_shipment_recovery
+from backend.app import support_action_plans
 from backend.app.auth import authenticate, authorize_conversation
 from backend.app.conversations import process_conversation_message
 from backend.app.database import create_conversation, get_connection, load_messages
 from backend.app.models import UserContext
 from backend.app.report import render_ticket_html
+from backend.app.support_action_approvals import decide_action_plan, execute_action_plan, get_action_details
+from backend.app.support_action_registry import ACTION_ALIASES, action_policy
 from backend.app.support_cases import show_case
 from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ticket, show_ticket
 
@@ -25,8 +27,8 @@ class TicketRequest(BaseModel):
     reason: str = "User requested engineer support"
 
 
-class ProposalRequest(BaseModel):
-    action_type: Literal["recover_order", "recover_shipment"]
+class ActionPlanRequest(BaseModel):
+    action_type: str
     enable_order_sync: bool = False
     enable_shipment_sync: bool = False
 
@@ -98,10 +100,15 @@ def send_message(conversation_id: str, request: MessageRequest, user: AuthDepend
 
 
 @app.post("/api/v1/cases/{case_id}/actions")
-def propose_action(case_id: str, request: ProposalRequest, user: AuthDependency) -> dict[str, object]:
-    if request.action_type == "recover_shipment":
-        return propose_shipment_recovery(user, case_id, request.enable_shipment_sync)
-    return propose_order_recovery(user, case_id, request.enable_order_sync)
+def create_action_plan(case_id: str, request: ActionPlanRequest, user: AuthDependency) -> dict[str, object]:
+    action_type = ACTION_ALIASES.get(request.action_type, request.action_type)
+    policy = action_policy({"action_type": action_type})
+    builder = getattr(support_action_plans, policy["builder"])
+    if action_type == "resend_shipment":
+        return builder(user, case_id, request.enable_shipment_sync)
+    if action_type in {"retry_order_sync", "retry_failed_task"}:
+        return builder(user, case_id, request.enable_order_sync, action_type)
+    return builder(user, case_id)
 
 
 @app.get("/api/v1/actions/{action_id}")
@@ -111,12 +118,12 @@ def get_action(action_id: str, user: AuthDependency) -> dict[str, object]:
 
 @app.post("/api/v1/actions/{action_id}/decision")
 def action_decision(action_id: str, request: DecisionRequest, user: AuthDependency) -> dict[str, object]:
-    return decide_recovery_action(user, action_id, request.decision)
+    return decide_action_plan(user, action_id, request.decision)
 
 
 @app.post("/api/v1/actions/{action_id}/execute")
 def action_execution(action_id: str, user: AuthDependency) -> dict[str, object]:
-    return execute_recovery_action(user, action_id)
+    return execute_action_plan(user, action_id)
 
 
 @app.post("/api/v1/tickets")

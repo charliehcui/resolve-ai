@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.database import get_connection
 from backend.app.handoff import SupportHandoffRecord
-from backend.app.support_agent import SupportNextStep
+from backend.app.support_diagnosis import SupportNextStep
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, call_read_service
 from backend.app.support_workflow import decide_support_next_step_node
 from simulator.services import common

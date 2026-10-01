@@ -35,19 +35,18 @@ def extract_support_ids(text: str) -> tuple[str | None, str | None, str | None]:
 
 def find_missing_support_ids(shop_id: str | None, order_id: str | None, sku: str | None, text: str) -> list[str]: #判断 Support Agent 现在还缺什么重要编号
     text_lower = text.lower()
-    is_stock_question = "库存" in text or "stock" in text_lower or "sku" in text_lower
+    is_stock_question = "库存" in text or "stock" in text_lower or "inventory" in text_lower or "sku" in text_lower
+    is_connection_question = any(word in text_lower for word in ("授权", "连接", "限流", "故障", "authorization", "reauthorization", "outage", "rate limit", "connection"))
 
     missing_fields: list[str] = []
 
     if shop_id is None:
         missing_fields.append("shop_id")
 
-    if is_stock_question is True:
-        if sku is None:
-            missing_fields.append("sku")
-    else:
-        if order_id is None:
-            missing_fields.append("order_id")
+    if is_stock_question is True and sku is None:
+        missing_fields.append("sku")
+    if is_stock_question is False and is_connection_question is False and order_id is None:
+        missing_fields.append("order_id")
 
     return missing_fields
 

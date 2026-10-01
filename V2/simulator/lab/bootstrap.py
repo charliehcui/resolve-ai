@@ -35,6 +35,12 @@ def bootstrap() -> Path:
         connection.execute("""INSERT INTO merchant.stock_rules (company_id, shop_id, platform_sku, warehouse_sku, safety_stock)
             VALUES ('company-a', 'shop-a', 'SKU-1', 'MERCHANT-SKU-1', 5), ('company-a', 'shop-b', 'SKU-1', 'MERCHANT-SKU-1', 5), ('company-b', 'shop-b-company', 'SKU-1', 'MERCHANT-SKU-1', 5)
             ON CONFLICT (company_id, shop_id, platform_sku) DO UPDATE SET warehouse_sku = EXCLUDED.warehouse_sku, safety_stock = EXCLUDED.safety_stock, active = TRUE""")
+        for label in ("order", "shipment", "inventory", "worker", "authorization", "outage", "rate-limit", "mapping"):
+            shop_id = f"shop-demo-{label}"
+            warehouse_sku = f"MERCHANT-SKU-DEMO-{label}"
+            connection.execute("INSERT INTO merchant.shops (company_id, shop_id, channel, sync_enabled, shipment_sync_enabled, connection_status) VALUES ('company-a', %s, 'B', TRUE, TRUE, 'authorized') ON CONFLICT DO NOTHING", (shop_id,))
+            connection.execute("INSERT INTO merchant.sku_mappings (company_id, shop_id, platform_sku, merchant_sku) VALUES ('company-a', %s, 'SKU-1', %s) ON CONFLICT DO NOTHING", (shop_id, warehouse_sku))
+            connection.execute("INSERT INTO merchant.stock_rules (company_id, shop_id, platform_sku, warehouse_sku, safety_stock) VALUES ('company-a', %s, 'SKU-1', %s, 5) ON CONFLICT DO NOTHING", (shop_id, warehouse_sku))
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(json.dumps(tokens, ensure_ascii=False, indent=2), encoding="utf-8")
     service_tokens = json.loads(SERVICE_TOKEN_FILE.read_text(encoding="utf-8")) if SERVICE_TOKEN_FILE.exists() else {}

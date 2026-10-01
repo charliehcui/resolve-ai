@@ -19,7 +19,7 @@
 ## 2. 主要文件
 
 - 数据库：`db/003_actions.sql`
-- 业务逻辑：`app/actions.py`、`app/verify.py`
+- 业务逻辑：`app/support_actions.py`、`app/support_action_proposals.py`、`app/support_action_execution.py`、`app/verify.py`
 - CLI：`app/cli.py`
 - 服务与 Worker：`services/common.py`、`services/platform.py`、`services/merchant.py`、`services/worker.py`
 - 测试：`tests/test_actions.py`、`tests/test_verify.py`、`tests/conftest.py`

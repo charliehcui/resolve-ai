@@ -71,7 +71,17 @@ class GetStockStatus(BaseModel):  # 查询并综合判断商品库存状态
     sku: str = Field(description="The exact known platform SKU")
 
 
-READ_TOOL_SCHEMAS = [GetShopSyncStatus, GetOrder, GetOrderProcessRecords, GetShopConnectionStatus, GetWarehouseShipment, GetShipmentProcessRecords, GetPlatformShipment, GetStockStatus]
+class GetWorkerTask(BaseModel):
+    """What this tool reads: The existing order processing task and its version, attempts and last update.
+    When to use this tool: An order task appears failed or stuck.
+    What this tool cannot read or determine: It cannot retry tasks or bypass authorization.
+    What is returned on success: Task identity, status, error code, version and whether a safe retry is possible.
+    """
+    shop_id: str = Field(description="The exact known shop ID")
+    order_id: str = Field(description="The exact known external order ID")
+
+
+READ_TOOL_SCHEMAS = [GetShopSyncStatus, GetOrder, GetOrderProcessRecords, GetShopConnectionStatus, GetWarehouseShipment, GetShipmentProcessRecords, GetPlatformShipment, GetStockStatus, GetWorkerTask]
 
 
 class ReadToolResult(BaseModel):  # 一个只读查询工具执行后的结果
@@ -407,7 +417,15 @@ def get_stock_status(user: UserContext, shop_id: str, sku: str) -> ReadToolResul
     )
 
 
+def get_worker_task(user: UserContext, shop_id: str, order_id: str) -> ReadToolResult:
+    base_url = os.getenv("MERCHANT_URL", "http://127.0.0.1:8002")
+    result = call_read_service("GetWorkerTask", "merchant", f"{base_url}/internal/tasks/{order_id}", user.company_id, {"shop_id": shop_id})
+    result.request = {"shop_id": shop_id, "order_id": order_id}
+    return result
+
+
 READ_TOOL_FUNCTIONS: dict[str, Callable[..., ReadToolResult]] = {
+    "GetWorkerTask": get_worker_task,
     "GetShopSyncStatus": get_shop_sync_status,
     "GetOrder": get_order,
     "GetOrderProcessRecords": get_order_process_records,
@@ -435,6 +453,7 @@ def validate_read_tool_call(tool_call: dict[str, object], shop_id: str, order_id
         return "SHOP_SCOPE_MISMATCH"
 
     order_tools = {
+        "GetWorkerTask",
         "GetOrder",
         "GetOrderProcessRecords",
         "GetWarehouseShipment",

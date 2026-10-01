@@ -119,6 +119,8 @@ def set_stock(warehouse_sku: str, update: WarehouseStockUpdate, company_id: str 
             row = connection.execute("SELECT company_id, warehouse_sku, physical_quantity, reserved_quantity, version, updated_at FROM warehouse.stock_items WHERE company_id = %s AND warehouse_sku = %s", (company_id, warehouse_sku)).fetchone()
         else:
             row = connection.execute("UPDATE warehouse.stock_items SET physical_quantity = %s, reserved_quantity = %s, version = version + 1, updated_at = NOW() WHERE company_id = %s AND warehouse_sku = %s RETURNING company_id, warehouse_sku, physical_quantity, reserved_quantity, version, updated_at", (update.physical_quantity, update.reserved_quantity, company_id, warehouse_sku)).fetchone()
+        if update.observed_seconds_ago:
+            row = connection.execute("UPDATE warehouse.stock_items SET updated_at = NOW() - %s * INTERVAL '1 second' WHERE company_id = %s AND warehouse_sku = %s RETURNING company_id, warehouse_sku, physical_quantity, reserved_quantity, version, updated_at", (update.observed_seconds_ago, company_id, warehouse_sku)).fetchone()
     return dict(row)
 
 

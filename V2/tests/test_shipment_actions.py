@@ -7,11 +7,13 @@ import httpx
 import pytest
 from fastapi.encoders import jsonable_encoder
 
-from backend.app.actions import acquire_action_execution, decide_recovery_action, propose_shipment_recovery
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext
+from backend.app.support_action_approvals import decide_action_plan
+from backend.app.support_action_execution import acquire_action_execution
+from backend.app.support_action_plans import build_shipment_action_plan
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, ReadToolResult
 from simulator.services import common
 from simulator.services.common import BusinessAuth, OrderCreate, PlatformShipmentUpdate, ShipmentCreate, ShipmentEvent, ShipmentRepairRequest, WarehouseOrderRequest
@@ -19,6 +21,7 @@ from simulator.services.merchant import receive_shipment_event, receive_shipment
 from simulator.services.platform import accept_shipment, create_order
 from simulator.services.warehouse import create_shipment, receive_order
 from simulator.services.worker import process_next_dispatch_task, process_next_shipment_recovery_task, process_next_shipment_task, process_next_task, reconcile_next_unknown_shipment
+from tests.test_actions import business_tool
 
 
 def shipment_tool(name: str, user: UserContext, shop_id: str, order_id: str | None = None) -> ReadToolResult:
@@ -69,12 +72,13 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
     for name in ("GetOrder", "GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"):
         monkeypatch.setitem(READ_TOOL_FUNCTIONS, name, lambda user, shop_id, order_id, tool_name=name: shipment_tool(tool_name, user, shop_id, order_id))
     monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopSyncStatus", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
-    monkeypatch.setattr("backend.app.actions.get_warehouse_shipment", lambda user, shop_id, order_id: shipment_tool("GetWarehouseShipment", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shipment_process_records", lambda user, shop_id, order_id: shipment_tool("GetShipmentProcessRecords", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_platform_shipment", lambda user, shop_id, order_id: shipment_tool("GetPlatformShipment", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.get_shop_sync_status", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
-    monkeypatch.setattr("backend.app.actions.get_order", lambda user, shop_id, order_id: shipment_tool("GetOrder", user, shop_id, order_id))
-    monkeypatch.setattr("backend.app.actions.submit_shipment_repair", lambda payload: receive_shipment_repair(ShipmentRepairRequest(**payload), "test-service-token"))
+    monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetShopConnectionStatus", lambda user, shop_id: business_tool("GetShopConnectionStatus", user, shop_id))
+    monkeypatch.setattr("backend.app.support_action_execution.get_warehouse_shipment", lambda user, shop_id, order_id: shipment_tool("GetWarehouseShipment", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.support_action_execution.get_shipment_process_records", lambda user, shop_id, order_id: shipment_tool("GetShipmentProcessRecords", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.support_action_execution.get_platform_shipment", lambda user, shop_id, order_id: shipment_tool("GetPlatformShipment", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.support_action_execution.get_shop_sync_status", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
+    monkeypatch.setattr("backend.app.support_action_execution.get_order", lambda user, shop_id, order_id: shipment_tool("GetOrder", user, shop_id, order_id))
+    monkeypatch.setattr("backend.app.support_action_execution.submit_shipment_repair", lambda payload: receive_shipment_repair(ShipmentRepairRequest(**payload), "test-service-token"))
 
     def platform_post(url: str, json: dict[str, object], **kwargs: object) -> httpx.Response:
         return httpx.Response(200, json=jsonable_encoder(accept_shipment(PlatformShipmentUpdate(**json), "test-service-token")))
@@ -83,18 +87,18 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
 
     def process_then_verify(user: UserContext, action_id: str, timeout_seconds: float = 15) -> dict[str, object]:
         assert process_next_shipment_recovery_task()["status"] == "completed"
-        from backend.app.verification import verify_shipment_recovery
+        from backend.app.support_action_verification import verify_shipment_recovery
 
         return verify_shipment_recovery(user, action_id)
 
-    monkeypatch.setattr("backend.app.verification.wait_for_shipment_verification", process_then_verify)
+    monkeypatch.setattr("backend.app.support_action_verification.wait_for_shipment_verification", process_then_verify)
     return user, case_id
 
 
 def test_approved_shipment_recovery_updates_platform_without_second_warehouse_shipment(shipment_action_runtime: tuple[UserContext, str]) -> None:
     user, case_id = shipment_action_runtime
-    proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
-    completed = decide_recovery_action(user, proposed["action_id"], "approve")
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
+    completed = decide_action_plan(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:
         warehouse_count = connection.execute("SELECT COUNT(*) AS count FROM warehouse.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
@@ -105,7 +109,7 @@ def test_approved_shipment_recovery_updates_platform_without_second_warehouse_sh
 
 def test_unapproved_shipment_proposal_performs_no_write(shipment_action_runtime: tuple[UserContext, str]) -> None:
     user, case_id = shipment_action_runtime
-    proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
     with get_connection() as connection:
         receipt_count = connection.execute("SELECT COUNT(*) AS count FROM merchant.shipment_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"]
         platform_count = connection.execute("SELECT COUNT(*) AS count FROM platform.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
@@ -115,7 +119,7 @@ def test_unapproved_shipment_proposal_performs_no_write(shipment_action_runtime:
 
 def test_response_lost_after_platform_commit_reconciles_without_second_shipment(shipment_action_runtime: tuple[UserContext, str], monkeypatch: pytest.MonkeyPatch) -> None:
     user, case_id = shipment_action_runtime
-    proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
 
     def commit_then_lose_response(url: str, json: dict[str, object], **kwargs: object) -> httpx.Response:
         accept_shipment(PlatformShipmentUpdate(**json), "test-service-token")
@@ -132,12 +136,12 @@ def test_response_lost_after_platform_commit_reconciles_without_second_shipment(
     def recover_then_verify(user: UserContext, action_id: str, timeout_seconds: float = 15) -> dict[str, object]:
         assert process_next_shipment_recovery_task()["status"] == "unknown"
         assert reconcile_next_unknown_shipment()["status"] == "completed"
-        from backend.app.verification import verify_shipment_recovery
+        from backend.app.support_action_verification import verify_shipment_recovery
 
         return verify_shipment_recovery(user, action_id)
 
-    monkeypatch.setattr("backend.app.verification.wait_for_shipment_verification", recover_then_verify)
-    completed = decide_recovery_action(user, proposed["action_id"], "approve")
+    monkeypatch.setattr("backend.app.support_action_verification.wait_for_shipment_verification", recover_then_verify)
+    completed = decide_action_plan(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:
         platform_count = connection.execute("SELECT COUNT(*) AS count FROM platform.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
@@ -147,10 +151,10 @@ def test_response_lost_after_platform_commit_reconciles_without_second_shipment(
 
 def test_changed_order_after_approval_blocks_shipment_recovery(shipment_action_runtime: tuple[UserContext, str]) -> None:
     user, case_id = shipment_action_runtime
-    proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
     with get_connection() as connection:
         connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE company_id = 'company-a' AND external_order_id = 'O-RECOVER-SHIP'")
-    blocked = decide_recovery_action(user, proposed["action_id"], "approve")
+    blocked = decide_action_plan(user, proposed["action_id"], "approve")
     assert blocked["status"] == "blocked"
     with get_connection() as connection:
         assert connection.execute("SELECT COUNT(*) AS count FROM merchant.shipment_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"] == 0
@@ -158,13 +162,13 @@ def test_changed_order_after_approval_blocks_shipment_recovery(shipment_action_r
 
 def test_terminated_execution_process_releases_work_only_after_lease_expiry(shipment_action_runtime: tuple[UserContext, str]) -> None:
     user, case_id = shipment_action_runtime
-    proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
     action_id = proposed["action_id"]
     request_id = str(uuid5(NAMESPACE_URL, proposed["idempotency_key"]))
     with get_connection() as connection:
         connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), action_id, user.user_id))
         connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (action_id,))
-    code = f"from backend.app.actions import acquire_action_execution; import time; print(acquire_action_execution('{action_id}', '{request_id}'), flush=True); time.sleep(60)"
+    code = f"from backend.app.support_action_execution import acquire_action_execution; import time; print(acquire_action_execution('{action_id}', '{request_id}'), flush=True); time.sleep(60)"
     child = subprocess.Popen([sys.executable, "-c", code], cwd=str(__import__("pathlib").Path(__file__).parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert child.stdout is not None
     assert child.stdout.readline().strip() == "acquired"

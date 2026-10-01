@@ -47,7 +47,7 @@
 - Migration：`db/004_shipments.sql`
 - Warehouse：`services/warehouse.py`
 - Platform / Merchant / Worker：`services/platform.py`、`services/merchant.py`、`services/worker.py`、`services/common.py`
-- Agent / Evidence / Action / Verification：`app/tools.py`、`app/evidence.py`、`app/support.py`、`app/actions.py`、`app/verify.py`
+- Agent / Evidence / Action / Verification：`app/tools.py`、`app/evidence.py`、`app/support.py`、`app/support_actions.py`、`app/support_action_proposals.py`、`app/support_action_execution.py`、`app/verify.py`
 - CLI / 场景：`app/cli.py`、`lab/cli.py`、`lab/scenarios.py`、`compose.yaml`
 - 测试：`tests/test_shipments.py`、`tests/test_shipment_actions.py`、`tests/test_actions.py`、`tests/test_handoff.py`
 - 产品与评估资料：`docs/product/06-shipment-facts.md`、`prompts/support.md`、`evals/dev.jsonl`

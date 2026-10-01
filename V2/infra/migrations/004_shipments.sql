@@ -8,7 +8,7 @@ ALTER TABLE support.evidence ADD COLUMN IF NOT EXISTS source_version INTEGER;
 ALTER TABLE merchant.shops ADD COLUMN IF NOT EXISTS shipment_sync_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE support.action_proposals ADD COLUMN IF NOT EXISTS enable_shipment_sync BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE support.action_proposals DROP CONSTRAINT IF EXISTS action_proposals_action_type_check;
-ALTER TABLE support.action_proposals ADD CONSTRAINT action_proposals_action_type_check CHECK (action_type IN ('recover_order', 'recover_shipment'));
+ALTER TABLE support.action_proposals ADD CONSTRAINT action_proposals_action_type_check CHECK (action_type IN ('recover_order', 'recover_shipment', 'retry_order_sync', 'resend_shipment', 'refresh_inventory', 'retry_failed_task'));
 ALTER TABLE support.action_executions DROP CONSTRAINT IF EXISTS action_executions_status_check;
 ALTER TABLE support.action_executions ADD CONSTRAINT action_executions_status_check CHECK (status IN ('claimed', 'submitted', 'unknown', 'failed'));
 

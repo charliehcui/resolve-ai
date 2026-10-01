@@ -219,7 +219,7 @@ Support Agent
 
 **文件与工作：**
 
-- 创建 `app/actions.py`、`app/verify.py`、`db/003_actions.sql`，扩展 `app/graph.py`、`app/tools.py` 与批准命令。
+- 创建 `app/support_actions.py`、`app/support_action_proposals.py`、`app/support_action_execution.py`、`app/verify.py`、`db/003_actions.sql`，扩展 `app/graph.py`、`app/tools.py` 与批准命令。
 - 提案只针对一笔订单，是否开启店铺开关单列，明确其影响后续订单。
 - 扩展 `services/merchant.py` 的 `POST /repairs/orders` 和回执读取、`services/worker.py` 的恢复任务。按固定编号去重，批准与执行状态单独保存。
 - 程序复查源订单资格、映射与版本，保存每步结果；验证器对比平台及管理软件商品、数量、金额和唯一记录。
@@ -292,7 +292,7 @@ Support Agent
 
 **文件与工作：**
 
-- 扩展 `app/actions.py`、`app/verify.py`、`app/tools.py` 和 `services/merchant.py` 的发货恢复接口。
+- 扩展 `app/support_actions.py`、`app/support_action_proposals.py`、`app/support_action_execution.py`、`app/verify.py`、`app/tools.py` 和 `services/merchant.py` 的发货恢复接口。
 - 每个步骤使用稳定请求编号；平台按回执及业务约束去重；已有相同结果时不重新发送。
 - 将“开启店铺同步”和“补传指定订单”分别写入方案步骤。后台执行只处理批准的订单，不扫描并修复整店历史问题。
 - 扩展 `tests/test_actions.py`、`tests/test_verify.py`、`tests/test_shipments.py`，增加“平台接受但目标状态仍未满足”的等待案例。
@@ -319,7 +319,7 @@ Support Agent
 - `lab/scenarios.py` 加 `shipment_response_lost`、批准后改源版本、同一操作两个执行者等受控情况。
 - `shipment_response_lost` 先关闭发货同步，让仓库真实出库且管理软件任务受阻；下一次批准补传才触发“平台提交后延迟响应”。案例创建完成时平台必须仍待发货，确保演示的批准恢复确实有必要。另测平台已正常的只读调查，不为它强行创建修复动作。
 - 扩展 `services/platform.py`，必须先提交真实业务事务后再延迟响应；不是直接返回一个写好的“超时”字符串。
-- 扩展 `app/actions.py`、`app/graph.py`、`services/worker.py` 的领取期限、步骤回执和结果对账。跨进程只一个获得执行权。
+- 扩展 `app/support_action_execution.py`、`app/graph.py`、`services/worker.py` 的领取期限、步骤回执和结果对账。跨进程只一个获得执行权。
 - `tests/test_recovery.py` 使用实际子进程终止和重启；不同阶段重复验证。`lab/checks.py` 直接统计业务结果。
 - 在 `docs/product/` 明确结果未知与确定失败的区别，在 `README.md` 加恢复命令。
 

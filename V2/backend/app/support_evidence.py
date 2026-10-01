@@ -59,6 +59,8 @@ def extract_evidence_metadata(
     response: dict[str, object],
 ) -> tuple[str | None, str | None, int | None]:
 
+    if tool_name == "GetWorkerTask":
+        return "task", to_optional_string(response.get("task_id")), to_optional_integer(response.get("version"))
     if tool_name == "GetStockStatus":
         object_id = to_optional_string(request.get("sku"))
         source_version = to_optional_integer(response.get("source_version"))

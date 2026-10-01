@@ -6,6 +6,7 @@ from backend.app.customer_workflow import run_customer_workflow
 from backend.app.database import create_conversation, load_messages, save_agent_run, save_message
 from backend.app.handoff import create_support_handoff
 from backend.app.models import UserContext, provider_for_task
+from backend.app.support_action_approvals import respond_to_action_plan
 from backend.app.support_tools import create_engineer_ticket
 from backend.app.support_workflow import run_support_workflow
 from backend.app.tickets import is_human_request
@@ -34,10 +35,16 @@ def process_conversation_message(user: UserContext, question: str, conversation_
         return {"conversation_id": conversation_id, "run_id": run_id, "active_role": conversation["active_role"], "answer": answer, "ticket_id": ticket["ticket_id"], "status": "pending_human", "evidence_ids": [], "usage": {}}
 
     if conversation["active_role"] == "SUPPORT":
+        action_result = respond_to_action_plan(user, conversation_id, question, history)
+        if action_result is not None:
+            metadata = {"agent_role": "SUPPORT", "case_id": action_result["case_id"], "status": action_result["status"], "action_plan_id": action_result["action_plan_id"]}
+            save_message(conversation_id, "assistant", action_result["answer"], metadata)
+            run_id = save_agent_run(conversation_id, "code", "none", "support_action", "succeeded", int((time.perf_counter() - started) * 1000), {}, current_trace_id())
+            return {"conversation_id": conversation_id, "run_id": run_id, "active_role": "SUPPORT", **action_result}
         try:
             result = run_support_workflow(question, user, conversation_id)
             latency_ms = int((time.perf_counter() - started) * 1000)
-            metadata = {"agent_role": "SUPPORT", "case_id": result.case_id, "status": result.status, "evidence_ids": result.evidence_ids, "tool_path": result.tool_path, "ticket_id": result.ticket_id}
+            metadata = {"agent_role": "SUPPORT", "case_id": result.case_id, "status": result.status, "evidence_ids": result.evidence_ids, "tool_path": result.tool_path, "ticket_id": result.ticket_id, "action_plan_id": result.action_plan_id}
             save_message(conversation_id, "assistant", result.answer, metadata)
             provider = provider_for_task("support_investigation") if len(result.usage) > 0 else "code"
             model_name = settings.google_model if len(result.usage) > 0 else "none"

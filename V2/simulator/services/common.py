@@ -38,6 +38,24 @@ class ConnectionUpdate(BaseModel):
 class WarehouseStockUpdate(BaseModel):
     physical_quantity: int = Field(ge=0)
     reserved_quantity: int = Field(ge=0)
+    observed_seconds_ago: int = Field(default=0, ge=0, le=300)
+
+
+class TaskFaultUpdate(BaseModel):
+    fault: Literal["order_sync_failure", "shipment_sync_failure", "worker_task_stuck"]
+
+
+class BackgroundRepairRequest(BaseModel):
+    action_id: str
+    request_id: str
+    company_id: str
+    shop_id: str
+    object_id: str
+    source_snapshot: dict[str, object]
+    shop_version: int
+    approval_id: str
+    approved_by: str
+    approval_expires_at: datetime
 
 
 class StockPublishRequest(BaseModel):

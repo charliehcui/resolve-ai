@@ -6,7 +6,7 @@ from pathlib import Path
 
 from langsmith import traceable
 
-from backend.app.actions import decide_recovery_action, execute_recovery_action, get_action_details, propose_order_recovery, propose_shipment_recovery
+from backend.app import support_action_plans
 from backend.app.auth import authenticate
 from backend.app.config import get_settings
 from backend.app.conversations import process_conversation_message
@@ -14,6 +14,8 @@ from backend.app.customer_document_ingestion import generate_text_embeddings, im
 from backend.app.database import database_is_ready, initialize_database
 from backend.app.models import DoctorPlatformStatusRequest, DoctorShopStatusRequest, DoctorStatusResult, create_google_model, create_groq_model
 from backend.app.report import export_ticket_html
+from backend.app.support_action_approvals import decide_action_plan, execute_action_plan, get_action_details
+from backend.app.support_action_registry import ACTION_ALIASES, ACTION_REGISTRY, action_policy
 from backend.app.support_cases import show_case
 from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ticket, show_ticket
 from backend.app.trace import current_trace_id, wait_for_langsmith_run
@@ -114,20 +116,27 @@ def case_show_command(token: str, case_id: str) -> None:
     print(json.dumps(show_case(case_id, user), ensure_ascii=False, indent=2, default=str))
 
 
-def action_propose_command(token: str, case_id: str, action_type: str, enable_order_sync: bool, enable_shipment_sync: bool) -> None:
+def action_plan_command(token: str, case_id: str, action_type: str, enable_order_sync: bool, enable_shipment_sync: bool) -> None:
     user = authenticate(token)
-    result = propose_shipment_recovery(user, case_id, enable_shipment_sync) if action_type == "recover_shipment" else propose_order_recovery(user, case_id, enable_order_sync)
+    action_type = ACTION_ALIASES.get(action_type, action_type)
+    builder = getattr(support_action_plans, action_policy({"action_type": action_type})["builder"])
+    if action_type == "resend_shipment":
+        result = builder(user, case_id, enable_shipment_sync)
+    elif action_type in {"retry_order_sync", "retry_failed_task"}:
+        result = builder(user, case_id, enable_order_sync, action_type)
+    else:
+        result = builder(user, case_id)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 def action_decide_command(token: str, action_id: str, decision: str) -> None:
     user = authenticate(token)
-    print(json.dumps(decide_recovery_action(user, action_id, decision), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(decide_action_plan(user, action_id, decision), ensure_ascii=False, indent=2, default=str))
 
 
 def action_execute_command(token: str, action_id: str) -> None:
     user = authenticate(token)
-    print(json.dumps(execute_recovery_action(user, action_id), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(execute_action_plan(user, action_id), ensure_ascii=False, indent=2, default=str))
 
 
 def action_show_command(token: str, action_id: str) -> None:
@@ -179,12 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     case_show.add_argument("--token", default=os.getenv("RESOLVEAI_TOKEN"))
     action = commands.add_parser("action")
     action_commands = action.add_subparsers(dest="action_command", required=True)
-    action_propose = action_commands.add_parser("propose")
-    action_propose.add_argument("case_id")
-    action_propose.add_argument("--type", choices=["recover_order", "recover_shipment"], default="recover_order")
-    action_propose.add_argument("--enable-order-sync", action="store_true")
-    action_propose.add_argument("--enable-shipment-sync", action="store_true")
-    action_propose.add_argument("--token", default=os.getenv("RESOLVEAI_TOKEN"))
+    action_plan = action_commands.add_parser("plan", aliases=["propose"])
+    action_plan.add_argument("case_id")
+    action_plan.add_argument("--type", choices=[*ACTION_REGISTRY, *ACTION_ALIASES], default="retry_order_sync")
+    action_plan.add_argument("--enable-order-sync", action="store_true")
+    action_plan.add_argument("--enable-shipment-sync", action="store_true")
+    action_plan.add_argument("--token", default=os.getenv("RESOLVEAI_TOKEN"))
     action_decide = action_commands.add_parser("decide")
     action_decide.add_argument("action_id")
     action_decide.add_argument("--decision", choices=["approve", "reject"], required=True)
@@ -242,8 +251,8 @@ def main() -> None:
             chat_command(args.token or "", args.question, args.conversation, args.mode)
         elif args.command == "case" and args.case_command == "show":
             case_show_command(args.token or "", args.case_id)
-        elif args.command == "action" and args.action_command == "propose":
-            action_propose_command(args.token or "", args.case_id, args.type, args.enable_order_sync, args.enable_shipment_sync)
+        elif args.command == "action" and args.action_command in {"plan", "propose"}:
+            action_plan_command(args.token or "", args.case_id, args.type, args.enable_order_sync, args.enable_shipment_sync)
         elif args.command == "action" and args.action_command == "decide":
             action_decide_command(args.token or "", args.action_id, args.decision)
         elif args.command == "action" and args.action_command == "execute":

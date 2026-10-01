@@ -12,6 +12,7 @@ from langsmith import traceable
 from backend.app.database import get_connection
 from backend.app.trace import current_trace_id
 from simulator.services.common import (
+    BackgroundRepairRequest,
     BusinessAuth,
     ConnectionUpdate,
     OrderEvent,
@@ -20,6 +21,7 @@ from simulator.services.common import (
     ShipmentRepairRequest,
     ShopSyncUpdate,
     StockPublishRequest,
+    TaskFaultUpdate,
     current_user,
     payload_hash,
     read_service_token,
@@ -27,6 +29,109 @@ from simulator.services.common import (
 )
 
 app = FastAPI(title="ResolveAI Merchant Simulator")
+
+
+@app.post("/lab/shops/{shop_id}/task-fault")
+def arm_task_fault(shop_id: str, update: TaskFaultUpdate, company_id: str = "company-a", x_lab_token: str | None = Header(default=None)) -> dict[str, object]:
+    require_token(x_lab_token, "lab-control")
+    column = "shipment_fault" if update.fault == "shipment_sync_failure" else "order_fault"
+    with get_connection() as connection:
+        row = connection.execute(f"UPDATE merchant.shops SET {column} = %s WHERE company_id = %s AND shop_id = %s RETURNING shop_id", (update.fault, company_id, shop_id)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    return {"shop_id": shop_id, "fault": update.fault, "one_shot": True}
+
+
+def task_retryable(task: dict[str, object]) -> bool:
+    if task["status"] == "failed":
+        return task.get("error_code") in {"TRANSIENT_PROCESSING_ERROR", "WORKER_INTERRUPTED"}
+    return task["status"] == "processing" and (datetime.now(UTC) - task["updated_at"]).total_seconds() > 60
+
+
+@app.get("/internal/tasks/{external_order_id}")
+def internal_worker_task(external_order_id: str, shop_id: str, x_company_id: Annotated[str, Header()], x_service_token: Annotated[str | None, Header()] = None) -> dict[str, object]:
+    require_token(x_service_token, "support-read")
+    with get_connection() as connection:
+        row = connection.execute("SELECT task_id::text, event_id::text, status, error_code, attempts, version, updated_at FROM merchant.order_tasks WHERE company_id = %s AND shop_id = %s AND external_order_id = %s", (x_company_id, shop_id, external_order_id)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {**dict(row), "retryable": task_retryable(row)}
+
+
+@app.post("/repairs/inventory")
+def receive_inventory_repair(request: BackgroundRepairRequest, x_service_token: str | None = Header(default=None)) -> dict[str, object]:
+    return receive_background_repair(request, "refresh_inventory", x_service_token)
+
+
+@app.post("/repairs/tasks")
+def receive_task_retry(request: BackgroundRepairRequest, x_service_token: str | None = Header(default=None)) -> dict[str, object]:
+    return receive_background_repair(request, "retry_failed_task", x_service_token)
+
+
+def receive_background_repair(request: BackgroundRepairRequest, action_type: str, token: str | None) -> dict[str, object]:
+    require_token(token, "support-write")
+    if request.approval_expires_at <= datetime.now(UTC):
+        raise HTTPException(status_code=409, detail="Approval expired")
+    canonical = json.dumps(request.model_dump(mode="json"), sort_keys=True)
+    request_hash = hashlib.sha256(canonical.encode()).hexdigest()
+    snapshot = request.source_snapshot
+    with get_connection() as connection:
+        # Serializes duplicate submissions even before a receipt exists.
+        shop = connection.execute("SELECT version, connection_status, sync_enabled FROM merchant.shops WHERE company_id = %s AND shop_id = %s FOR UPDATE", (request.company_id, request.shop_id)).fetchone()
+        existing = connection.execute("SELECT request_hash, action_type, receipt FROM merchant.action_repair_receipts WHERE action_id = %s AND company_id = %s", (request.action_id, request.company_id)).fetchone()
+        if existing:
+            if existing["request_hash"] != request_hash or existing["action_type"] != action_type:
+                raise HTTPException(status_code=409, detail="Action content conflict")
+            return {**existing["receipt"], "duplicate": True}
+        if shop is None or shop["version"] != request.shop_version or shop["connection_status"] != "authorized":
+            raise HTTPException(status_code=409, detail="Shop state changed")
+        if action_type == "refresh_inventory":
+            rule = connection.execute("SELECT warehouse_sku, safety_stock, version FROM merchant.stock_rules WHERE company_id = %s AND shop_id = %s AND platform_sku = %s AND active FOR UPDATE", (request.company_id, request.shop_id, request.object_id)).fetchone()
+            stock = connection.execute("SELECT physical_quantity, reserved_quantity, version FROM warehouse.stock_items WHERE company_id = %s AND warehouse_sku = %s FOR UPDATE", (request.company_id, snapshot.get("warehouse_sku"))).fetchone()
+            valid = rule is not None and stock is not None and rule["warehouse_sku"] == snapshot.get("warehouse_sku") and rule["version"] == snapshot.get("rule_version") and rule["safety_stock"] == snapshot.get("safety_stock")
+            valid = valid and stock["version"] == snapshot.get("warehouse_version") and stock["physical_quantity"] == snapshot.get("physical_quantity") and stock["reserved_quantity"] == snapshot.get("reserved_quantity")
+            if not valid:
+                raise HTTPException(status_code=409, detail="Inventory source changed")
+            expected = max(stock["physical_quantity"] - stock["reserved_quantity"] - rule["safety_stock"], 0)
+            if expected != snapshot.get("expected_quantity"):
+                raise HTTPException(status_code=409, detail="Inventory target changed")
+            task = connection.execute("SELECT task_id::text, status FROM merchant.stock_publish_tasks WHERE company_id = %s AND shop_id = %s AND platform_sku = %s AND warehouse_version = %s FOR UPDATE", (request.company_id, request.shop_id, request.object_id, stock["version"])).fetchone()
+            if task:
+                if task["status"] in {"pending", "processing"}:
+                    raise HTTPException(status_code=409, detail="Inventory publish is active")
+                connection.execute("UPDATE merchant.stock_publish_tasks SET status = 'pending', request_id = %s, error_code = NULL, expected_quantity = %s, safety_stock = %s, updated_at = NOW() WHERE task_id = %s", (request.request_id, expected, rule["safety_stock"], task["task_id"]))
+                task_id = task["task_id"]
+            else:
+                task_id = str(uuid4())
+                connection.execute("""INSERT INTO merchant.stock_publish_tasks (task_id, request_id, company_id, shop_id, platform_sku, warehouse_sku, warehouse_version, physical_quantity, reserved_quantity, safety_stock, expected_quantity)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (task_id, request.request_id, request.company_id, request.shop_id, request.object_id, rule["warehouse_sku"], stock["version"], stock["physical_quantity"], stock["reserved_quantity"], rule["safety_stock"], expected))
+        else:
+            task = connection.execute("SELECT task_id::text, event_id::text, status, error_code, attempts, version, updated_at FROM merchant.order_tasks WHERE company_id = %s AND shop_id = %s AND external_order_id = %s FOR UPDATE", (request.company_id, request.shop_id, request.object_id)).fetchone()
+            expected_task = snapshot.get("worker_task") or {}
+            if task is None or not task_retryable(task) or any(task.get(field) != expected_task.get(field) for field in ("task_id", "version", "status", "attempts")):
+                raise HTTPException(status_code=409, detail="Task is no longer safely retryable")
+            order = connection.execute("SELECT event_id::text, version, sku, quantity, amount_minor, payment_status FROM platform.orders WHERE company_id = %s AND shop_id = %s AND external_order_id = %s FOR UPDATE", (request.company_id, request.shop_id, request.object_id)).fetchone()
+            if not shop["sync_enabled"] or order is None or order["payment_status"] != "paid" or any(order[field] != snapshot.get(field) for field in order):
+                raise HTTPException(status_code=409, detail="Order source changed")
+            mapping = connection.execute("SELECT merchant_sku FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s AND active", (request.company_id, request.shop_id, order["sku"])).fetchone()
+            if mapping is None or mapping["merchant_sku"] != snapshot.get("merchant_sku"):
+                raise HTTPException(status_code=409, detail="SKU mapping changed")
+            task_id = task["task_id"]
+            connection.execute("UPDATE merchant.order_tasks SET status = 'pending', error_code = NULL, version = version + 1, updated_at = NOW() WHERE task_id = %s", (task_id,))
+        receipt = {"accepted": True, "duplicate": False, "action_id": request.action_id, "request_id": request.request_id, "task_id": task_id, "task_status": "pending"}
+        connection.execute("INSERT INTO merchant.action_repair_receipts (action_id, request_id, company_id, action_type, request_hash, receipt) VALUES (%s, %s, %s, %s, %s, %s::jsonb)", (request.action_id, request.request_id, request.company_id, action_type, request_hash, json.dumps(receipt)))
+    return receipt
+
+
+@app.get("/repairs/inventory/{action_id}")
+@app.get("/repairs/tasks/{action_id}")
+def get_background_receipt(action_id: str, x_company_id: Annotated[str, Header()], x_service_token: Annotated[str | None, Header()] = None) -> dict[str, object]:
+    require_token(x_service_token, "support-read")
+    with get_connection() as connection:
+        row = connection.execute("SELECT receipt FROM merchant.action_repair_receipts WHERE action_id = %s AND company_id = %s", (action_id, x_company_id)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Repair receipt not found")
+    return row["receipt"]
 
 
 @app.get("/health")

@@ -32,7 +32,7 @@ def queue_dispatch(connection, event_id: str) -> None:
 
 def finish_task(connection, task_id: str, status: str, error_code: str | None = None, http_status: int | None = None, failure_request_id: str | None = None) -> dict[str, object]:
     connection.execute(
-        "UPDATE merchant.order_tasks SET status = %s, error_code = %s, http_status = %s, failure_request_id = %s, worker_trace_id = %s, updated_at = NOW() WHERE task_id = %s",
+        "UPDATE merchant.order_tasks SET status = %s, error_code = %s, http_status = %s, failure_request_id = %s, worker_trace_id = %s, version = version + 1, updated_at = NOW() WHERE task_id = %s",
         (status, error_code, http_status, failure_request_id, current_trace_id(), task_id),
     )
     result = {"task_id": task_id, "status": status, "error_code": error_code}
@@ -70,9 +70,15 @@ def process_next_task() -> dict[str, object] | None:
         if task is None:
             return None
         connection.execute("UPDATE merchant.order_tasks SET status = 'processing', attempts = attempts + 1, updated_at = NOW() WHERE task_id = %s", (task["task_id"],))
-        shop = connection.execute("SELECT sync_enabled, channel, connection_status FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"])).fetchone()
+        shop = connection.execute("SELECT sync_enabled, channel, connection_status, order_fault FROM merchant.shops WHERE company_id = %s AND shop_id = %s FOR UPDATE", (task["company_id"], task["shop_id"])).fetchone()
         if shop is None:
             return finish_task(connection, task["task_id"], "failed", "UNKNOWN_SHOP")
+        if shop["order_fault"]:
+            connection.execute("UPDATE merchant.shops SET order_fault = NULL WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"]))
+            if shop["order_fault"] == "worker_task_stuck":
+                connection.execute("UPDATE merchant.order_tasks SET error_code = 'WORKER_INTERRUPTED', version = version + 1, updated_at = NOW() - INTERVAL '2 minutes' WHERE task_id = %s", (task["task_id"],))
+                return {"task_id": task["task_id"], "status": "processing", "error_code": "WORKER_INTERRUPTED"}
+            return finish_task(connection, task["task_id"], "failed", "TRANSIENT_PROCESSING_ERROR")
         if not shop["sync_enabled"]:
             return finish_task(connection, task["task_id"], "blocked", "ORDER_SYNC_DISABLED")
         failure = channel_failure(shop["connection_status"])
@@ -160,6 +166,8 @@ def process_next_recovery_task() -> dict[str, object] | None:
         mapping = connection.execute("SELECT merchant_sku FROM merchant.sku_mappings WHERE company_id = %s AND shop_id = %s AND platform_sku = %s AND active", (task["company_id"], task["shop_id"], platform_order["sku"])).fetchone()
         if mapping is None:
             return finish_recovery_task(connection, task["task_id"], "blocked", "SKU_MAPPING_MISSING")
+        if snapshot.get("merchant_sku") is not None and mapping["merchant_sku"] != snapshot["merchant_sku"]:
+            return finish_recovery_task(connection, task["task_id"], "blocked", "SKU_MAPPING_CHANGED")
         if not shop["sync_enabled"] and task["enable_order_sync"]:
             connection.execute("UPDATE merchant.shops SET sync_enabled = TRUE, version = version + 1 WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"]))
         event = OrderEvent(event_id=platform_order["event_id"], company_id=task["company_id"], shop_id=task["shop_id"], external_order_id=task["external_order_id"], sku=platform_order["sku"], quantity=platform_order["quantity"], amount_minor=platform_order["amount_minor"], payment_status=platform_order["payment_status"])
@@ -229,9 +237,12 @@ def process_next_shipment_task() -> dict[str, object] | None:
             return finish_shipment_task(connection, task["task_id"], "failed", "SHIPMENT_CONTENT_CONFLICT")
         connection.execute("""INSERT INTO merchant.shipments (merchant_shipment_id, shipment_id, company_id, shop_id, external_order_id, carrier, tracking_number, version)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (shipment_id) DO NOTHING""", (str(uuid4()), task["shipment_id"], task["company_id"], task["shop_id"], task["external_order_id"], payload["carrier"], payload["tracking_number"], payload["version"]))
-        shop = connection.execute("SELECT shipment_sync_enabled, channel, connection_status FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"])).fetchone()
+        shop = connection.execute("SELECT shipment_sync_enabled, channel, connection_status, shipment_fault FROM merchant.shops WHERE company_id = %s AND shop_id = %s FOR UPDATE", (task["company_id"], task["shop_id"])).fetchone()
         if shop is None:
             return finish_shipment_task(connection, task["task_id"], "failed", "UNKNOWN_SHOP")
+        if shop["shipment_fault"]:
+            connection.execute("UPDATE merchant.shops SET shipment_fault = NULL WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"]))
+            return finish_shipment_task(connection, task["task_id"], "failed", "TRANSIENT_PROCESSING_ERROR")
         if not shop["shipment_sync_enabled"]:
             return finish_shipment_task(connection, task["task_id"], "blocked", "SHIPMENT_SYNC_DISABLED")
         failure = channel_failure(shop["connection_status"])
@@ -366,6 +377,11 @@ def process_next_stock_task() -> dict[str, object] | None:
         if task is None:
             return None
         connection.execute("UPDATE merchant.stock_publish_tasks SET status = 'processing', attempts = attempts + 1, updated_at = NOW() WHERE task_id = %s", (task["task_id"],))
+        current = connection.execute("""SELECT w.version, w.physical_quantity, w.reserved_quantity, r.safety_stock FROM merchant.stock_rules r
+            JOIN warehouse.stock_items w ON w.company_id = r.company_id AND w.warehouse_sku = r.warehouse_sku
+            WHERE r.company_id = %s AND r.shop_id = %s AND r.platform_sku = %s AND r.active FOR UPDATE OF r, w""", (task["company_id"], task["shop_id"], task["platform_sku"])).fetchone()
+        if current is None or current["version"] != task["warehouse_version"] or max(current["physical_quantity"] - current["reserved_quantity"] - current["safety_stock"], 0) != task["expected_quantity"]:
+            return finish_stock_task(connection, task["task_id"], "blocked", "SOURCE_VERSION_CHANGED")
         shop = connection.execute("SELECT channel, connection_status FROM merchant.shops WHERE company_id = %s AND shop_id = %s", (task["company_id"], task["shop_id"])).fetchone()
         if shop is None:
             return finish_stock_task(connection, task["task_id"], "failed", "UNKNOWN_SHOP")

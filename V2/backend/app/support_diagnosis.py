@@ -24,11 +24,20 @@ class ClaimWithEvidence(BaseModel):  # 一个结论，以及支持这个结论�
     evidence_ids: list[str]
 
 
+class CandidateAction(BaseModel):
+    model_config = {"extra": "forbid"}
+    action_type: str
+    reason: str
+    evidence_ids: list[str]
+
+
 class InvestigationComplete(BaseModel):  # 当前证据已经足够，可以结束自动调查
     summary: str
     confirmed_facts: list[ClaimWithEvidence]
     possible_causes: list[ClaimWithEvidence] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    recommended_action: CandidateAction | None = None
+    outcome: Literal["diagnosed", "retry_later", "user_action_required"] = "diagnosed"
 
 
 class MissingInformationRequest(BaseModel):  # 缺少必要信息，需要向用户补问
@@ -52,7 +61,7 @@ class SupportNextStep(BaseModel):  # Support Agent 决定下一步做什么
 
 class SupportAgentResult(BaseModel):  # Support Agent 最终返回结果
     answer: str
-    status: Literal["needs_info", "diagnosed", "pending_human"]
+    status: str
     case_id: str
     evidence_ids: list[str]
     tool_path: list[str]
@@ -60,6 +69,8 @@ class SupportAgentResult(BaseModel):  # Support Agent 最终返回结果
     usage: dict[str, int | None]
     trace_id: str | None = None
     ticket_id: str | None = None
+    action_plan_id: str | None = None
+    action_plan: dict[str, object] | None = None
 
 
 def get_support_prompt_path():
@@ -89,6 +100,8 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
         "human_support": HumanSupportRequired.model_json_schema(),
     }
     terminal_schemas_text = json.dumps(terminal_schemas, ensure_ascii=False)
+    from backend.app.support_action_registry import ACTION_REGISTRY
+    candidate_actions = ", ".join(ACTION_REGISTRY)
 
     message = f"""Handoff:
 {handoff_text}
@@ -103,6 +116,9 @@ Remaining tool budget:
 {remaining_calls}
 
 Choose exactly one next step.
+The finish response may include recommended_action with action_type, reason and real evidence_ids.
+Supported Candidate Actions: {candidate_actions}.
+Return diagnosis and recommendation in this SAME response. Never specify risk, permission or approval policy.
 
 When more evidence is required, call one or more bound read-only query tools. Do not describe a tool call in text.
 
@@ -211,7 +227,7 @@ def build_human_support_answer(decision: HumanSupportRequired) -> tuple[str, Lit
     return answer, "pending_human"
 
 
-def build_investigation_answer(decision: InvestigationComplete, evidence: list[EvidenceRecord]) -> tuple[str, Literal["diagnosed", "pending_human"]]:
+def build_investigation_answer(decision: InvestigationComplete, evidence: list[EvidenceRecord]) -> tuple[str, str]:
     if has_shipment_evidence_conflict(evidence) is True:
         return "仓库、管理软件或平台的发货证据存在矛盾，需要人工进一步确认。", "pending_human"
 
@@ -243,10 +259,10 @@ def build_investigation_answer(decision: InvestigationComplete, evidence: list[E
         for unknown in decision.unknowns:
             lines.append(f"- {unknown}")
 
-    return "\n".join(lines), "diagnosed"
+    return "\n".join(lines), decision.outcome
 
 
-def build_support_answer(next_step: SupportNextStep, evidence: list[EvidenceRecord]) -> tuple[str, Literal["needs_info", "diagnosed", "pending_human"]]:
+def build_support_answer(next_step: SupportNextStep, evidence: list[EvidenceRecord]) -> tuple[str, str]:
     if next_step.next_step == "request_information":
         if next_step.missing_information is None:
             return "还需要补充必要的订单、店铺或商品信息。", "needs_info"

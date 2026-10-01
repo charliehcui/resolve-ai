@@ -3,6 +3,7 @@ import json
 import sys
 
 from simulator.lab.scenarios import (
+    SCENARIOS,
     create_order,
     create_shipment,
     dispatch_order,
@@ -70,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     stock_publish.add_argument("--physical", type=int, required=True)
     stock_publish.add_argument("--reserved", type=int, required=True)
     seed = commands.add_parser("seed")
-    seed.add_argument("--scenario", choices=["shipment_response_lost"], required=True)
+    seed.add_argument("--scenario", choices=SCENARIOS, required=True)
     return parser
 
 

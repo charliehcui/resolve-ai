@@ -10,7 +10,9 @@ from backend.app.config import get_settings
 from backend.app.customer_agent import sum_token_usage
 from backend.app.handoff import SupportHandoffRecord, update_support_ids
 from backend.app.models import UserContext
-from backend.app.support_agent import (
+from backend.app.support_action_plans import create_action_plan
+from backend.app.support_cases import get_case_id, update_case
+from backend.app.support_diagnosis import (
     MAX_CONSECUTIVE_ERRORS,
     MAX_INVESTIGATION_MS,
     MAX_TOOL_CALLS,
@@ -22,7 +24,6 @@ from backend.app.support_agent import (
     build_support_answer,
     decide_support_next_step,
 )
-from backend.app.support_cases import get_case_id, update_case
 from backend.app.support_evidence import EvidenceRecord, load_evidence
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, create_engineer_ticket, execute_read_tool_batch
 from backend.app.trace import current_trace_id
@@ -41,6 +42,7 @@ class SupportWorkflowState(TypedDict, total=False):
     status: str
     usage: dict[str, int | None]
     started_at: float
+    action_plan: dict[str, object] | None
 
 
 ERROR_EVIDENCE_STATUSES = {"forbidden", "unavailable", "error"}
@@ -255,11 +257,29 @@ def build_investigation_answer_node(state: SupportWorkflowState) -> SupportWorkf
     support_next_step = SupportNextStep.model_validate(state["support_next_step"])
     evidence = load_evidence_records(state.get("evidence", []))
     answer, status = build_support_answer(support_next_step, evidence)
-
-    return {
-        "answer": answer,
-        "status": status,
-    }
+    diagnosis = support_next_step.investigation_complete
+    if status == "pending_human" or diagnosis is None or diagnosis.recommended_action is None:
+        return {"answer": answer, "status": status, "action_plan": None}
+    user = UserContext.model_validate(state["user"])
+    try:
+        plan = create_action_plan(user, state["case_id"], diagnosis.recommended_action)
+    except ValueError as error:
+        return {"answer": f"{answer}\n建议动作未通过当前事实检查：{error}。需要人工进一步确认。", "status": "pending_human", "action_plan": None}
+    if plan["status"] == "user_action_required":
+        answer += f"\n{plan['instructions']}"
+        status = "user_action_required"
+    elif plan["status"] == "no_action_needed":
+        answer += "\n当前后台事实已满足目标，无需执行修复。"
+        status = "diagnosed"
+    elif plan["status"] == "proposed":
+        if plan["approval_requirement"] == "user_confirmation":
+            answer += f"\n建议执行 {plan['action_type']}。是否确认执行这项修复？"
+        else:
+            answer += f"\n建议执行 {plan['action_type']}，需要公司管理员审批。"
+        status = "awaiting_confirmation"
+    else:
+        answer += f"\n已有计划的当前状态：{plan['status']}。"
+    return {"answer": answer, "status": status, "action_plan": plan, "evidence": dump_evidence_records(load_evidence(state["case_id"]))}
 
 
 def build_human_support_answer_node(state: SupportWorkflowState) -> SupportWorkflowState:
@@ -310,7 +330,8 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
 
     handoff = update_support_ids(conversation_id, user, question)
     case_id = get_case_id(conversation_id, user)
-    evidence = load_evidence(case_id)
+    # Historical Evidence remains persisted. Each new investigation reads current facts.
+    evidence = []
 
     with PostgresSaver.from_conn_string(settings.postgres_url) as checkpointer:
         checkpointer.setup()
@@ -327,6 +348,7 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
             "evidence": dump_evidence_records(evidence),
             "usage": {},
             "started_at": started_at,
+            "action_plan": None,
         }
 
         workflow_config = {
@@ -378,6 +400,8 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
         usage=result.get("usage", {}),
         trace_id=current_trace_id(),
         ticket_id=ticket_id,
+        action_plan=result.get("action_plan"),
+        action_plan_id=(result.get("action_plan") or {}).get("action_id"),
     )
 
 

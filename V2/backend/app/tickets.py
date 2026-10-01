@@ -6,9 +6,10 @@ from uuid import uuid4
 from backend.app.auth import authorize_conversation
 from backend.app.database import get_connection
 from backend.app.models import UserContext
+from backend.app.stock import assess_stock_facts
+from backend.app.support_action_verification import check_order_recovery_facts, check_shipment_recovery_facts
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import execute_read_tool_batch
-from backend.app.verification import verify_order_facts, verify_shipment_facts, verify_stock_facts
 
 TicketTrigger = Literal["support_unresolved", "budget_reached", "evidence_insufficient", "unknown_error", "user_requested"]
 TicketRecheckStatus = Literal["RESOLVED", "UNRESOLVED", "NEEDS_INFO"]
@@ -386,7 +387,7 @@ def recheck_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
         ]
         evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
-        verification = verify_order_facts(facts["GetOrder"], facts["GetOrderProcessRecords"], facts["GetOrder"].response)
+        verification = check_order_recovery_facts(facts["GetOrder"], facts["GetOrderProcessRecords"], facts["GetOrder"].response)
     elif category == "shipment":
         calls = [
             {"name": "GetWarehouseShipment", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "ticket-recheck-warehouse-shipment"},
@@ -395,7 +396,7 @@ def recheck_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
         ]
         evidence = execute_read_tool_batch(case_id, user, calls, shop_id, order_id)
         facts = records_by_tool(evidence)
-        verification = verify_shipment_facts(facts["GetWarehouseShipment"], facts["GetShipmentProcessRecords"], facts["GetPlatformShipment"], facts["GetWarehouseShipment"].response)
+        verification = check_shipment_recovery_facts(facts["GetWarehouseShipment"], facts["GetShipmentProcessRecords"], facts["GetPlatformShipment"], facts["GetWarehouseShipment"].response)
     else:
         calls = [{"name": "GetStockStatus", "args": {"shop_id": shop_id, "sku": sku}, "id": "ticket-recheck-stock"}]
         evidence = execute_read_tool_batch(case_id, user, calls, shop_id, "", sku)
@@ -404,7 +405,7 @@ def recheck_ticket(user: UserContext, ticket_id: str) -> dict[str, object]:
         merchant = response.get("merchant") if isinstance(response.get("merchant"), dict) else {}
         warehouse = response.get("warehouse") if isinstance(response.get("warehouse"), dict) else None
         platform = response.get("platform") if isinstance(response.get("platform"), dict) else None
-        stock_result = verify_stock_facts(merchant, warehouse, platform)
+        stock_result = assess_stock_facts(merchant, warehouse, platform)
         verification = {"resolved": stock.status == "success" and stock_result["assessment"] == "consistent", "stock": stock_result}
         if stock_result["assessment"] == "insufficient_information":
             details = {"category": category, "target": target, "verification": verification, "summary": "Ticket remains open because current stock facts are incomplete."}

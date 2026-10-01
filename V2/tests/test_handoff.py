@@ -11,8 +11,8 @@ from backend.app.cli import chat_command
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import SupportHandoffRecord, create_support_handoff, get_support_handoff
 from backend.app.models import UserContext
-from backend.app.support_agent import InvestigationComplete, SupportAgentResult, SupportNextStep, build_support_answer, decide_support_next_step
 from backend.app.support_cases import show_case
+from backend.app.support_diagnosis import InvestigationComplete, SupportAgentResult, SupportNextStep, build_support_answer, decide_support_next_step
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, READ_TOOL_SCHEMAS, ReadToolResult, execute_read_tool_batch, get_order
 from backend.app.support_workflow import build_support_workflow, decide_support_next_step_node
@@ -168,7 +168,7 @@ def test_support_agent_binds_only_registered_query_tools(monkeypatch: pytest.Mon
         assert max_retries == 2
         return FakeBoundModel()
 
-    monkeypatch.setattr("backend.app.support_agent.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_diagnosis.create_google_model", fake_google_model)
     handoff = SupportHandoffRecord(
         handoff_id="handoff-1",
         conversation_id="conversation-1",
@@ -220,7 +220,7 @@ def test_support_agent_parses_finish_data_without_control_tool(monkeypatch: pyte
     def fake_google_model(*, max_retries: int):
         return FakeBoundModel()
 
-    monkeypatch.setattr("backend.app.support_agent.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_diagnosis.create_google_model", fake_google_model)
     handoff = SupportHandoffRecord(
         handoff_id="handoff-1",
         conversation_id="conversation-1",

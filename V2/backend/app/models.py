@@ -17,7 +17,7 @@ TaskName = Literal[
     "complex_tool_calling",
     "parallel_tool_calling",
     "evidence_conflict",
-    "complex_action_proposal",
+    "complex_action_plan",
 ]
 
 
