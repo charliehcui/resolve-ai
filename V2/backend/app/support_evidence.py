@@ -7,13 +7,14 @@ from pydantic import BaseModel
 
 from backend.app.database import get_connection
 
+#把 Tool 查到的结果正式保存成 Evidence，并且以后可以重新读取给 Support Agent 使用
 EvidenceStatus = Literal["success", "empty", "not_found", "forbidden", "unavailable", "error"]
 
 
 class EvidenceRecord(BaseModel):
-    evidence_id: str
-    sequence: int
-    batch_id: str
+    evidence_id: str   # 这条 Evidence 自己的唯一编号
+    sequence: int     #这个 Case 的第几条 Evidence
+    batch_id: str   #这条 Evidence 属于哪一批查询
     parallel: bool
     model_tool_call_id: str | None = None
     tool_name: str
@@ -30,54 +31,167 @@ class EvidenceRecord(BaseModel):
     source_version: int | None = None
 
 
-def optional_string(value: object) -> str | None:
-    text = str(value or "")
-    if not text:
+def to_optional_string(value: object) -> str | None:
+    if value is None:
         return None
+
+    text = str(value)
+
+    if text == "":
+        return None
+
     return text
 
 
-def optional_integer(value: object) -> int | None:
+def to_optional_integer(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+
     if isinstance(value, int):
         return value
+
     return None
 
+#根据 Tool 类型，自动判断这条 Evidence 描述的是什么
+def extract_evidence_metadata(
+    tool_name: str,
+    request: dict[str, object],
+    response: dict[str, object],
+) -> tuple[str | None, str | None, int | None]:
 
-def evidence_metadata(tool_name: str, request: dict[str, object], response: dict[str, object]) -> tuple[str | None, str | None, int | None]:
     if tool_name == "GetStockStatus":
-        object_id = optional_string(request.get("sku"))
-        source_version = optional_integer(response.get("source_version"))
+        object_id = to_optional_string(request.get("sku"))
+        source_version = to_optional_integer(response.get("source_version"))
+
         return "stock", object_id, source_version
 
     if tool_name in {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"}:
-        version = response.get("shipment_version") or response.get("version")
-        object_id = optional_string(request.get("order_id"))
-        source_version = optional_integer(version)
+        version = response.get("shipment_version")
+
+        if version is None:
+            version = response.get("version")
+
+        object_id = to_optional_string(request.get("order_id"))
+        source_version = to_optional_integer(version)
+
         return "shipment", object_id, source_version
 
     if tool_name in {"GetOrder", "GetOrderProcessRecords"}:
-        object_id = optional_string(request.get("order_id"))
-        source_version = optional_integer(response.get("version"))
+        object_id = to_optional_string(request.get("order_id"))
+        source_version = to_optional_integer(response.get("version"))
+
         return "order", object_id, source_version
 
     if tool_name in {"GetShopSyncStatus", "GetShopConnectionStatus"}:
-        object_id = optional_string(request.get("shop_id"))
-        source_version = optional_integer(response.get("version"))
+        object_id = to_optional_string(request.get("shop_id"))
+        source_version = to_optional_integer(response.get("version"))
+
         return "shop", object_id, source_version
 
     return None, None, None
 
+#把 Tool Result 正式变成 Evidence 并保存到数据库
+def save_evidence(
+    case_id: str,
+    company_id: str,
+    batch_id: str,
+    parallel: bool,
+    model_tool_call_id: str | None,
+    tool_name: str,
+    request: dict[str, object],
+    response: dict[str, object],
+    source_service: str,
+    source_record_id: str | None,
+    status: EvidenceStatus,
+    latency_ms: int,
+    trace_id: str | None,
+) -> EvidenceRecord:
 
-def save_evidence(case_id: str, company_id: str, batch_id: str, parallel: bool, model_tool_call_id: str | None, tool_name: str, request: dict[str, object], response: dict[str, object], source_service: str, source_record_id: str | None, status: EvidenceStatus, latency_ms: int, trace_id: str | None) -> EvidenceRecord:
     evidence_id = str(uuid4())
-    object_type, object_id, source_version = evidence_metadata(tool_name, request, response)
+
+    object_type, object_id, source_version = extract_evidence_metadata(
+        tool_name,
+        request,
+        response,
+    )
+
     with get_connection() as connection:
-        sequence = connection.execute("SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM support.evidence WHERE case_id = %s", (case_id,)).fetchone()["next_sequence"]
+        sequence_row = connection.execute(
+            """
+            SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
+            FROM support.evidence
+            WHERE case_id = %s
+            """,
+            (case_id,),
+        ).fetchone()
+
+        sequence = sequence_row["next_sequence"]
+
         connection.execute(
-            """INSERT INTO support.evidence (evidence_id, case_id, company_id, sequence, batch_id, parallel, model_tool_call_id, tool_name, request, response, source_service, source_record_id, status, latency_ms, trace_id, object_type, object_id, source_version)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (evidence_id, case_id, company_id, sequence, batch_id, parallel, model_tool_call_id, tool_name, json.dumps(request, default=str), json.dumps(response, default=str), source_service, source_record_id, status, latency_ms, trace_id, object_type, object_id, source_version),
+            """
+            INSERT INTO support.evidence (
+                evidence_id,
+                case_id,
+                company_id,
+                sequence,
+                batch_id,
+                parallel,
+                model_tool_call_id,
+                tool_name,
+                request,
+                response,
+                source_service,
+                source_record_id,
+                status,
+                latency_ms,
+                trace_id,
+                object_type,
+                object_id,
+                source_version
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s::jsonb,
+                %s::jsonb,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+            """,
+            (
+                evidence_id,
+                case_id,
+                company_id,
+                sequence,
+                batch_id,
+                parallel,
+                model_tool_call_id,
+                tool_name,
+                json.dumps(request, default=str),
+                json.dumps(response, default=str),
+                source_service,
+                source_record_id,
+                status,
+                latency_ms,
+                trace_id,
+                object_type,
+                object_id,
+                source_version,
+            ),
         )
+
     return EvidenceRecord(
         evidence_id=evidence_id,
         sequence=sequence,
@@ -100,10 +214,81 @@ def save_evidence(case_id: str, company_id: str, batch_id: str, parallel: bool, 
 
 def load_evidence(case_id: str) -> list[EvidenceRecord]:
     with get_connection() as connection:
-        rows = connection.execute("""SELECT evidence_id::text, sequence, batch_id::text, parallel, model_tool_call_id, tool_name, request, response, source_service, source_record_id, status, latency_ms, trace_id, object_type, object_id, observed_at, source_version
-            FROM support.evidence WHERE case_id = %s ORDER BY sequence""", (case_id,)).fetchall()
+        rows = connection.execute(
+            """
+            SELECT
+                evidence_id::text,
+                sequence,
+                batch_id::text,
+                parallel,
+                model_tool_call_id,
+                tool_name,
+                request,
+                response,
+                source_service,
+                source_record_id,
+                status,
+                latency_ms,
+                trace_id,
+                object_type,
+                object_id,
+                observed_at,
+                source_version
+            FROM support.evidence
+            WHERE case_id = %s
+            ORDER BY sequence
+            """,
+            (case_id,),
+        ).fetchall()
+
     evidence: list[EvidenceRecord] = []
+
     for row in rows:
-        evidence.append(EvidenceRecord(**row))
+        evidence.append(EvidenceRecord.model_validate(row))
 
     return evidence
+
+
+
+
+# LLM
+# ↓
+# 决定调用 GetOrder
+# ↓
+# validate_read_tool_call()
+# 检查能不能查
+# ↓
+# execute_read_tool()
+# 找到 get_order()
+# ↓
+# get_order()
+# ↓
+# call_read_service()
+# ↓
+# 后台返回订单数据
+# ↓
+# ReadToolResult
+
+
+# ReadToolResult
+# ↓
+# save_evidence()
+# ↓
+# 生成 evidence_id
+# ↓
+# 判断 object_type / object_id / version
+# ↓
+# 保存 PostgreSQL
+# ↓
+# EvidenceRecord
+
+
+# EvidenceRecord
+# ↓
+# Support Workflow State
+# ↓
+# 下一轮 decide_support_next_step()
+# ↓
+# LLM 看到已有 Evidence
+# ↓
+# 继续决定下一步

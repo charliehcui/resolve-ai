@@ -41,7 +41,7 @@ def fetch_visible_chunks(user: UserContext, product: str | None = None, version:
 
 
 def vector_search(query: str, user: UserContext, product: str | None = None, version: str | None = None, limit: int = 15) -> list[RetrievedChunk]:
-    query_vector = customer_document_ingestion.embed_texts([query], "RETRIEVAL_QUERY")[0]
+    query_vector = customer_document_ingestion.generate_text_embeddings([query], "RETRIEVAL_QUERY")[0]
     where, parameters = filter_sql(user, product, version)
     parameters.update({"query_vector": json.dumps(query_vector), "limit": limit})
     with get_connection() as connection:

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi.encoders import jsonable_encoder
 
-from backend.app.actions import claim_action_execution, decide_action, propose_shipment_recovery
+from backend.app.actions import acquire_action_execution, decide_recovery_action, propose_shipment_recovery
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
@@ -94,7 +94,7 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
 def test_approved_shipment_recovery_updates_platform_without_second_warehouse_shipment(shipment_action_runtime: tuple[UserContext, str]) -> None:
     user, case_id = shipment_action_runtime
     proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
-    completed = decide_action(user, proposed["action_id"], "approve")
+    completed = decide_recovery_action(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:
         warehouse_count = connection.execute("SELECT COUNT(*) AS count FROM warehouse.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
@@ -137,7 +137,7 @@ def test_response_lost_after_platform_commit_reconciles_without_second_shipment(
         return verify_shipment_recovery(user, action_id)
 
     monkeypatch.setattr("backend.app.verification.wait_for_shipment_verification", recover_then_verify)
-    completed = decide_action(user, proposed["action_id"], "approve")
+    completed = decide_recovery_action(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:
         platform_count = connection.execute("SELECT COUNT(*) AS count FROM platform.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
@@ -150,7 +150,7 @@ def test_changed_order_after_approval_blocks_shipment_recovery(shipment_action_r
     proposed = propose_shipment_recovery(user, case_id, enable_shipment_sync=True)
     with get_connection() as connection:
         connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE company_id = 'company-a' AND external_order_id = 'O-RECOVER-SHIP'")
-    blocked = decide_action(user, proposed["action_id"], "approve")
+    blocked = decide_recovery_action(user, proposed["action_id"], "approve")
     assert blocked["status"] == "blocked"
     with get_connection() as connection:
         assert connection.execute("SELECT COUNT(*) AS count FROM merchant.shipment_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"] == 0
@@ -164,16 +164,16 @@ def test_terminated_execution_process_releases_work_only_after_lease_expiry(ship
     with get_connection() as connection:
         connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), action_id, user.user_id))
         connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (action_id,))
-    code = f"from backend.app.actions import claim_action_execution; import time; print(claim_action_execution('{action_id}', '{request_id}'), flush=True); time.sleep(60)"
+    code = f"from backend.app.actions import acquire_action_execution; import time; print(acquire_action_execution('{action_id}', '{request_id}'), flush=True); time.sleep(60)"
     child = subprocess.Popen([sys.executable, "-c", code], cwd=str(__import__("pathlib").Path(__file__).parents[1]), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert child.stdout is not None
     assert child.stdout.readline().strip() == "acquired"
     child.terminate()
     child.wait(timeout=5)
-    assert claim_action_execution(action_id, request_id) == "busy"
+    assert acquire_action_execution(action_id, request_id) == "busy"
     with get_connection() as connection:
         connection.execute("UPDATE support.action_executions SET claim_until = %s WHERE action_id = %s", (datetime.now(UTC) - timedelta(seconds=1), action_id))
-    assert claim_action_execution(action_id, request_id) == "acquired"
+    assert acquire_action_execution(action_id, request_id) == "acquired"
     with get_connection() as connection:
         execution = connection.execute("SELECT attempts, request_id::text FROM support.action_executions WHERE action_id = %s", (action_id,)).fetchone()
         warehouse_count = connection.execute("SELECT COUNT(*) AS count FROM warehouse.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]

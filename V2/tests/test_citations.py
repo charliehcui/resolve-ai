@@ -1,12 +1,12 @@
 from backend.app.auth import authenticate
 from backend.app.citations import validate_claims
-from backend.app.customer_document_ingestion import import_product_docs
+from backend.app.customer_document_ingestion import import_product_documents
 from backend.app.customer_retrieval import fetch_visible_chunks
 from backend.app.models import AnswerClaim, ClaimValidationOutput, ClaimValidationResult
 
 
 def test_forged_citation_is_removed(seeded_database: dict[str, str], fake_embeddings: None) -> None:
-    import_product_docs()
+    import_product_documents()
     user = authenticate(seeded_database["token_a"])
     chunks = fetch_visible_chunks(user)
     claim = AnswerClaim(text="伪造结论", cited_chunk_ids=["00000000-0000-0000-0000-000000000000"])
@@ -16,7 +16,7 @@ def test_forged_citation_is_removed(seeded_database: dict[str, str], fake_embedd
 
 
 def test_other_company_cannot_validate_citation(seeded_database: dict[str, str], fake_embeddings: None) -> None:
-    import_product_docs()
+    import_product_documents()
     auth_a = authenticate(seeded_database["token_a"])
     auth_b = authenticate(seeded_database["token_b"])
     chunks = fetch_visible_chunks(auth_a)
@@ -26,7 +26,7 @@ def test_other_company_cannot_validate_citation(seeded_database: dict[str, str],
 
 
 def test_semantically_unsupported_claim_is_removed(seeded_database: dict[str, str], fake_embeddings: None, monkeypatch) -> None:
-    import_product_docs()
+    import_product_documents()
     user = authenticate(seeded_database["token_a"])
     chunks = fetch_visible_chunks(user)
     claim = AnswerClaim(text="同步会自动补回所有历史订单", cited_chunk_ids=[chunks[0].chunk_id])

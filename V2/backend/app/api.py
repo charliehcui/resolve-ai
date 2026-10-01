@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from backend.app.actions import decide_action, execute_action, propose_order_recovery, propose_shipment_recovery, show_action
+from backend.app.actions import decide_recovery_action, execute_recovery_action, get_action_details, propose_order_recovery, propose_shipment_recovery
 from backend.app.auth import authenticate, authorize_conversation
 from backend.app.conversations import process_conversation_message
 from backend.app.database import create_conversation, get_connection, load_messages
@@ -69,7 +69,7 @@ def conversation_snapshot(user: UserContext, conversation_id: str) -> dict[str, 
         "conversation": {**conversation, "conversation_id": str(conversation["conversation_id"])},
         "messages": load_messages(conversation_id, limit=100),
         "case": show_case(case_row["case_id"], user) if case_row else None,
-        "actions": [show_action(user, row["action_id"]) for row in action_rows],
+        "actions": [get_action_details(user, row["action_id"]) for row in action_rows],
         "ticket": show_ticket(user, ticket_row["ticket_id"]) if ticket_row else None,
     }
 
@@ -106,17 +106,17 @@ def propose_action(case_id: str, request: ProposalRequest, user: AuthDependency)
 
 @app.get("/api/v1/actions/{action_id}")
 def get_action(action_id: str, user: AuthDependency) -> dict[str, object]:
-    return show_action(user, action_id)
+    return get_action_details(user, action_id)
 
 
 @app.post("/api/v1/actions/{action_id}/decision")
 def action_decision(action_id: str, request: DecisionRequest, user: AuthDependency) -> dict[str, object]:
-    return decide_action(user, action_id, request.decision)
+    return decide_recovery_action(user, action_id, request.decision)
 
 
 @app.post("/api/v1/actions/{action_id}/execute")
 def action_execution(action_id: str, user: AuthDependency) -> dict[str, object]:
-    return execute_action(user, action_id)
+    return execute_recovery_action(user, action_id)
 
 
 @app.post("/api/v1/tickets")

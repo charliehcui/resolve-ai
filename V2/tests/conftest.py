@@ -79,4 +79,4 @@ def fake_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
             vectors.append(vector)
         return vectors
 
-    monkeypatch.setattr("backend.app.customer_document_ingestion.embed_texts", embed)
+    monkeypatch.setattr("backend.app.customer_document_ingestion.generate_text_embeddings", embed)

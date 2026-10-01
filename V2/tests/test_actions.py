@@ -4,7 +4,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from backend.app.actions import decide_action, execute_order_recovery, propose_order_recovery, show_action
+from backend.app.actions import decide_recovery_action, execute_order_recovery, get_action_details, propose_order_recovery
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
@@ -91,8 +91,8 @@ def test_approved_recovery_is_verified_and_duplicate_approval_has_one_effect(act
     user = authenticate(action_runtime["token_a"])
     case_id, event_id, _ = create_missing_order_case(user)
     proposed = propose_order_recovery(user, case_id)
-    completed = decide_action(user, proposed["action_id"], "approve")
-    duplicate = decide_action(user, proposed["action_id"], "approve")
+    completed = decide_recovery_action(user, proposed["action_id"], "approve")
+    duplicate = decide_recovery_action(user, proposed["action_id"], "approve")
     assert completed["status"] == "verified_resolved"
     assert completed["verification"]["status"] == "verified_resolved"
     assert duplicate["status"] == "verified_resolved"
@@ -113,10 +113,10 @@ def test_staff_cannot_approve_and_rejection_creates_no_repair(action_runtime: di
     case_id, _, _ = create_missing_order_case(admin, "O-REJECT")
     proposed = propose_order_recovery(admin, case_id)
     with pytest.raises(PermissionError, match="admin"):
-        decide_action(staff, proposed["action_id"], "approve")
+        decide_recovery_action(staff, proposed["action_id"], "approve")
     with pytest.raises(PermissionError, match="company scope"):
-        show_action(other_company, proposed["action_id"])
-    rejected = decide_action(admin, proposed["action_id"], "reject")
+        get_action_details(other_company, proposed["action_id"])
+    rejected = decide_recovery_action(admin, proposed["action_id"], "reject")
     assert rejected["status"] == "rejected"
     with get_connection() as connection:
         count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id = %s", (proposed["action_id"],)).fetchone()["count"]
@@ -129,12 +129,12 @@ def test_expired_approval_and_changed_source_do_not_execute(action_runtime: dict
     expired = propose_order_recovery(user, expired_case)
     with get_connection() as connection:
         connection.execute("UPDATE support.action_proposals SET expires_at = %s WHERE action_id = %s", (datetime.now(UTC) - timedelta(seconds=1), expired["action_id"]))
-    assert decide_action(user, expired["action_id"], "approve")["status"] == "expired"
+    assert decide_recovery_action(user, expired["action_id"], "approve")["status"] == "expired"
     changed_case, _, _ = create_missing_order_case(user, "O-CHANGED")
     changed = propose_order_recovery(user, changed_case)
     with get_connection() as connection:
         connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE company_id = %s AND external_order_id = 'O-CHANGED'", (user.company_id,))
-    assert decide_action(user, changed["action_id"], "approve")["status"] == "blocked"
+    assert decide_recovery_action(user, changed["action_id"], "approve")["status"] == "blocked"
     with get_connection() as connection:
         count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id IN (%s, %s)", (expired["action_id"], changed["action_id"])).fetchone()["count"]
     assert count == 0
@@ -170,7 +170,7 @@ def test_enabling_sync_requires_explicit_proposal_scope(action_runtime: dict[str
         propose_order_recovery(user, case_id)
     proposed = propose_order_recovery(user, case_id, enable_order_sync=True)
     assert proposed["enable_order_sync"] is True
-    result = decide_action(user, proposed["action_id"], "approve")
+    result = decide_recovery_action(user, proposed["action_id"], "approve")
     assert result["status"] == "verified_resolved"
     with get_connection() as connection:
         shop = connection.execute("SELECT sync_enabled FROM merchant.shops WHERE company_id = %s AND shop_id = 'shop-a'", (user.company_id,)).fetchone()
@@ -200,7 +200,7 @@ def test_order_repair_response_lost_is_reconciled_after_resume(action_runtime: d
         raise httpx.ReadTimeout("response lost", request=httpx.Request("POST", "http://merchant/repairs/orders"))
 
     monkeypatch.setattr("backend.app.actions.submit_order_repair", commit_then_lose)
-    unknown = decide_action(user, proposed["action_id"], "approve")
+    unknown = decide_recovery_action(user, proposed["action_id"], "approve")
     assert unknown["status"] == "executing"
     assert unknown["execution"]["status"] == "unknown"
 
@@ -211,7 +211,7 @@ def test_order_repair_response_lost_is_reconciled_after_resume(action_runtime: d
                 WHERE r.action_id = %s""", (action["action_id"],)).fetchone()
         return {"accepted": True, "duplicate": True, **dict(row)}
 
-    monkeypatch.setattr("backend.app.actions.reconcile_action_receipt", receipt_from_merchant)
+    monkeypatch.setattr("backend.app.actions.get_existing_recovery_receipt", receipt_from_merchant)
     completed = execute_order_recovery(user, proposed["action_id"])
     assert completed["status"] == "verified_resolved"
     with get_connection() as connection:

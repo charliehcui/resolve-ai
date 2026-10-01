@@ -120,9 +120,9 @@ def verify_order_recovery(user: UserContext, action_id: str, final: bool = False
         with get_connection() as connection:
             connection.execute("UPDATE support.action_proposals SET status = %s, updated_at = NOW() WHERE action_id = %s", (status, action_id))
             connection.execute("INSERT INTO support.action_steps (step_id, action_id, step_name, status, details, evidence_id, trace_id) VALUES (%s, %s, 'verification', %s, %s::jsonb, %s, %s)", (str(uuid4()), action_id, status, json.dumps(details), evidence_ids[0], current_trace_id()))
-    from backend.app.actions import show_action
+    from backend.app.actions import get_action_details
 
-    return show_action(user, action_id)
+    return get_action_details(user, action_id)
 
 
 def wait_for_order_verification(user: UserContext, action_id: str, timeout_seconds: float = 6) -> dict[str, object]:
@@ -167,9 +167,9 @@ def verify_shipment_recovery(user: UserContext, action_id: str) -> dict[str, obj
         with get_connection() as connection:
             connection.execute("UPDATE support.action_proposals SET status = 'verified_resolved', updated_at = NOW() WHERE action_id = %s", (action_id,))
             connection.execute("INSERT INTO support.action_steps (step_id, action_id, step_name, status, details, evidence_id, trace_id) VALUES (%s, %s, 'verification', 'verified_resolved', %s::jsonb, %s, %s)", (str(uuid4()), action_id, json.dumps(details), evidence_ids[0], current_trace_id()))
-    from backend.app.actions import show_action
+    from backend.app.actions import get_action_details
 
-    return show_action(user, action_id)
+    return get_action_details(user, action_id)
 
 
 def wait_for_shipment_verification(user: UserContext, action_id: str, timeout_seconds: float = 15) -> dict[str, object]:

@@ -6,11 +6,11 @@ from pathlib import Path
 
 from langsmith import traceable
 
-from backend.app.actions import decide_action, execute_action, propose_order_recovery, propose_shipment_recovery, show_action
+from backend.app.actions import decide_recovery_action, execute_recovery_action, get_action_details, propose_order_recovery, propose_shipment_recovery
 from backend.app.auth import authenticate
 from backend.app.config import get_settings
 from backend.app.conversations import process_conversation_message
-from backend.app.customer_document_ingestion import embed_texts, import_product_docs
+from backend.app.customer_document_ingestion import generate_text_embeddings, import_product_documents
 from backend.app.database import database_is_ready, initialize_database
 from backend.app.models import DoctorPlatformStatusRequest, DoctorShopStatusRequest, DoctorStatusResult, create_google_model, create_groq_model
 from backend.app.report import export_ticket_html
@@ -73,7 +73,7 @@ def run_doctor_checks() -> dict[str, object]:
     settings = get_settings()
     if not database_is_ready():
         raise RuntimeError("PostgreSQL is not ready")
-    vector = embed_texts(["ResolveAI Phase 1 doctor"], "RETRIEVAL_QUERY")[0]
+    vector = generate_text_embeddings(["ResolveAI Phase 1 doctor"], "RETRIEVAL_QUERY")[0]
     groq_result = create_groq_model().with_structured_output(DoctorStatusResult).invoke("Return status ok.")
     google_model = create_google_model()
     google_result = google_model.with_structured_output(DoctorStatusResult).invoke("Return status ok.")
@@ -122,17 +122,17 @@ def action_propose_command(token: str, case_id: str, action_type: str, enable_or
 
 def action_decide_command(token: str, action_id: str, decision: str) -> None:
     user = authenticate(token)
-    print(json.dumps(decide_action(user, action_id, decision), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(decide_recovery_action(user, action_id, decision), ensure_ascii=False, indent=2, default=str))
 
 
 def action_execute_command(token: str, action_id: str) -> None:
     user = authenticate(token)
-    print(json.dumps(execute_action(user, action_id), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(execute_recovery_action(user, action_id), ensure_ascii=False, indent=2, default=str))
 
 
 def action_show_command(token: str, action_id: str) -> None:
     user = authenticate(token)
-    print(json.dumps(show_action(user, action_id), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(get_action_details(user, action_id), ensure_ascii=False, indent=2, default=str))
 
 
 def ticket_create_command(token: str, conversation_id: str, reason: str) -> None:
@@ -235,7 +235,7 @@ def main() -> None:
             initialize_database()
             print("Database migrations applied.")
         elif args.command == "docs" and args.docs_command == "import":
-            print(json.dumps(import_product_docs(), ensure_ascii=False))
+            print(json.dumps(import_product_documents(), ensure_ascii=False))
         elif args.command == "doctor":
             doctor_command()
         elif args.command == "chat":
