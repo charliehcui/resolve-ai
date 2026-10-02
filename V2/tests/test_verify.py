@@ -2,8 +2,8 @@ from uuid import uuid4
 
 from backend.app.auth import authenticate
 from backend.app.database import get_connection
-from backend.app.support_action_plans import build_order_action_plan
-from backend.app.support_action_verification import verify_order_recovery
+from backend.app.support_action_proposals import propose_order_recovery
+from V2.backend.app.support_action_verification import verify_order_recovery
 from tests.test_actions import action_runtime as setup_action_runtime
 from tests.test_actions import create_missing_order_case
 
@@ -12,10 +12,10 @@ def test_failed_readback_never_marks_action_resolved(seeded_database: dict[str, 
     action_runtime = setup_action_runtime.__wrapped__(seeded_database, monkeypatch)
     user = authenticate(action_runtime["token_a"])
     case_id, _, _ = create_missing_order_case(user, "O-VERIFY-FAIL")
-    proposed = build_order_action_plan(user, case_id)
+    proposed = propose_order_recovery(user, case_id)
     with get_connection() as connection:
         connection.execute("UPDATE support.action_proposals SET status = 'awaiting_verification' WHERE action_id = %s", (proposed["action_id"],))
         connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), proposed["action_id"], user.user_id))
-    result = verify_order_recovery(user, proposed["action_id"], final_check=True)
+    result = verify_order_recovery(user, proposed["action_id"], final=True)
     assert result["status"] == "verification_failed"
     assert result["verification"]["status"] == "verification_failed"

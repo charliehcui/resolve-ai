@@ -253,44 +253,53 @@ def load_evidence(case_id: str) -> list[EvidenceRecord]:
 
 
 
-# LLM
-# ↓
-# 决定调用 GetOrder
-# ↓
-# validate_read_tool_call()
-# 检查能不能查
-# ↓
-# execute_read_tool()
-# 找到 get_order()
-# ↓
-# get_order()
-# ↓
-# call_read_service()
-# ↓
-# 后台返回订单数据
-# ↓
+# support_evidence.py
+# 【负责 Evidence 的整理、保存和读取】
+#
+#
 # ReadToolResult
-
-
-# ReadToolResult
+# 【刚刚执行完一次 Read Tool 得到的临时查询结果】
 # ↓
+#
 # save_evidence()
+# 【把临时结果正式变成 Evidence】
 # ↓
+#
 # 生成 evidence_id
+# 【给这条 Evidence 一个唯一编号】
 # ↓
-# 判断 object_type / object_id / version
+#
+# extract_evidence_metadata()
+# 【根据 Tool 类型判断这条 Evidence 描述的是什么对象】
+#
+# 例如：
+# GetOrder → order
+# GetWarehouseShipment → shipment
+# GetStockStatus → stock
+# GetWorkerTask → task
 # ↓
-# 保存 PostgreSQL
+#
+# 得到：
+# object_type / object_id / source_version
+# 【是什么对象 / 哪个对象 / 当时是什么版本】
 # ↓
+#
+# 生成 sequence
+# 【这是当前 Case 的第几条 Evidence】
+# ↓
+#
+# 保存到 PostgreSQL
+# ↓
+#
 # EvidenceRecord
-
-
-# EvidenceRecord
+# 【Data Model：正式保存的调查证据】
+#
+#
+# 之后需要重新读取时：
+#
+# load_evidence(case_id)
+# 【读取这个 Case 已经保存的 Evidence】
 # ↓
-# Support Workflow State
-# ↓
-# 下一轮 decide_support_next_step()
-# ↓
-# LLM 看到已有 Evidence
-# ↓
-# 继续决定下一步
+#
+# EvidenceRecord[]
+# 【按 sequence 顺序返回】

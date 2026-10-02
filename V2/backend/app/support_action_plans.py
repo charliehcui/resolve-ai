@@ -350,74 +350,83 @@ def build_shipment_action_plan(user: UserContext, case_id: str, enable_shipment_
 
 
 
-# build_order_action_plan()
-# → 订单恢复方案   解决： 订单应该进入 Merchant，但是没进去
+# support_action_plans.py
+# 【把 CandidateAction 检查并转换成正式 Action Plan】
+# LLM 提议“怎么修”，这个文件负责确认“现在到底能不能这样修”，然后生成正式修复方案。
+#
+#
+# CandidateAction
+# 【Data Model：Diagnosis Agent 推荐的 Action】
+#
+# 例如：
+# action_type = "retry_order_sync"
+# evidence_ids = [...]
+# ↓
+#
+# create_action_plan(user, case_id, candidate)
+# 【创建 Action Plan 的总入口】
+# ↓
+#
+# get_recovery_case_context()
+# 【找到这个 Case 对应的 shop_id / order_id / sku】
+# ↓
+#
+# action_policy()
+# 【根据 action_type 找到这个 Action 的固定规则】
+# ↓
+#
+# load_evidence(case_id)
+# 【读取这个 Case 已经保存的 Evidence】
+# ↓
+#
+# 检查 CandidateAction 引用的 Evidence
+#
+# ├── Evidence ID 真的属于这个 Case？
+# ├── shop_id / order_id / sku 对得上？
+# └── 是否包含这个 Action 必须有的 Evidence？
+#
+# ↓
+#
+# 检查不通过
+# → 不创建 Action Plan
+#
+# 检查通过
+# ↓
+#
+# 根据 Registry 找到对应 Builder   负责针对某一种修复操作，创建对应 Action Plan 的函数。
+# ↓        Builder = 创建修复计划
+#
+# ├── retry_order_sync / retry_failed_task
+# │   → build_order_action_plan()
+# │
+# ├── resend_shipment
+# │   → build_shipment_action_plan()
+# │
+# ├── refresh_inventory
+# │   → build_inventory_action_plan()
+# │
+# └── request_reauthorization
+#     → build_reauthorization_action()
+#创建 Action Plan 时会： 重新查询最新后台状态
 
-# build_shipment_action_plan()
-# → 发货恢复方案    解决： 仓库已经发货，但发货信息没有正确到达 Platform
 
 
+# LLM
+# ↓
+# CandidateAction
+# “我建议重新同步订单”
+# ↓
+# create_action_plan()
+# ↓
+# 检查证据
+# ↓
+# Builder 再查一次最新状态
+# ↓
+# Python 判断是否满足修复条件
+# ↓
+# 生成 Action Plan
+# ↓
+# status = proposed
+# ↓
+# 等用户 Approval
 
-# Support Case
-# ↓
-# 取得 shop_id / order_id
-# ↓
-# 重新查询最新后台状态
-# ↓
-# 得到新的 Evidence
-# ↓
-# 检查当前情况是否允许修
-# ↓
-# 如果已经好了
-# → no_action_needed
-
-# 如果不能安全修
-# → 拒绝创建 Action Plan
-
-# 如果可以修
-# ↓
-# 记录当前数据快照
-# ↓
-# 生成 action_id
-# ↓
-# 生成防重复 key
-# ↓
-# 设置 10 分钟审批有效期
-# ↓
-# 保存 Action Plan
-# ↓
-# 等待 Approval
-
-
-# Diagnosis Evidence
-# ↓
-# 用户决定要修
-
-# Action Plan
-# ↓
-# 重新读取最新后台状态
-# ↓
-# 新的 Evidence
-# ↓
-# 普通代码检查能不能修
-# ↓
-# 保存当前 Snapshot / Version
-# ↓
-# Action Plan
-# ↓
-# 等待 Approval
-
-# Support Diagnosis
-# = 哪里坏了？
-
-# Action Plan
-# = 现在还能不能这样修？
-
-# Approval
-# = 谁允许修？
-
-# Execution
-# = 真正修
-
-# Verification
-# = 修成功了吗？

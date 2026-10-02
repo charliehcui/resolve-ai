@@ -122,3 +122,83 @@ def action_turn(details: dict[str, object]) -> dict[str, object]:
     if details["status"] == "proposed" and (policy["risk_level"] in {"medium", "high"} or policy["approval_requirement"] == "admin"):
         answer = "这项修复计划需要公司管理员批准，请联系管理员处理。"
     return {"answer": answer, "status": details["status"], "case_id": details["case_id"], "action_plan_id": details["action_id"], "action_plan": details, "evidence_ids": details["evidence_ids"], "usage": {}}
+
+
+
+# support_action_approvals.py
+# 【负责 Action Plan 的确认、拒绝、权限检查，并在批准后进入执行】
+# 负责判断用户有没有权限批准/拒绝 Action Plan，并把明确的“确认执行 / 取消”转换成真正的审批结果
+#
+# 用户回复
+# 例如：
+# “确认执行”
+# “取消”
+# ↓
+#
+# respond_to_action_plan()   判断用户是不是在确认某个 Plan
+# 【判断用户这句话是不是在回复一个正在等待确认的 Action Plan】
+# ↓
+#
+# 检查上一条 Assistant Message
+# 【只认最近展示给用户的 Action Plan】
+# ↓
+#
+# 取得 metadata.action_plan_id
+# 【确定用户到底在确认哪个 Plan】
+# ↓
+#
+# get_action_plan()
+# 【读取这个 Action Plan】
+# ↓
+#
+# 检查这个 Plan 是否属于当前 Conversation
+# ↓
+#
+# explicit_confirmation()  用户文字 → approve / reject
+# 【把用户文字转换成明确决定】
+#
+# “确认执行” → approve
+# “取消”     → reject
+# “可以考虑” → None
+# ↓
+#
+# ├── 不是明确确认/拒绝
+# │
+# │   如果 Plan 仍然是 proposed
+# │   → 再次提示用户“确认执行”或“取消”
+# │
+# │   否则
+# │   → 不处理
+# │
+# └── 是明确 approve / reject
+#        ↓
+#
+#     检查 Risk + Approval Requirement
+#        ↓
+#
+#     ├── Staff 遇到需要 Admin 的 Plan
+#     │   → 不允许审批
+#     │   → 返回“需要管理员批准”
+#     │
+#     └── 当前用户有权限
+#            ↓
+#
+#         decide_action_plan()
+#         【真正记录 approve / reject】
+#            ↓
+#
+#         检查 Plan 是否过期
+#            │
+#            ├── 已过期
+#            │   → status = expired
+#            │
+#            ├── reject
+#            │   → status = rejected
+#            │
+#            └── approve
+#                → status = approved
+#                    ↓
+#                execute_action_plan()
+#                【批准后直接进入真正执行】
+
+

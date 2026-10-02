@@ -21,3 +21,8 @@ def action_policy(action: dict[str, object]) -> dict[str, object]:
     if action.get("enable_order_sync") or action.get("enable_shipment_sync"):
         policy.update(risk_level="medium", approval_requirement="admin")
     return policy
+
+
+# support_action_registry.py
+# 【定义系统支持哪些 Action，以及每个 Action 的固定执行规则】
+#【查这个 Action 应该按什么规则处理】

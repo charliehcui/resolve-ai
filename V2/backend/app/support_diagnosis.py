@@ -282,44 +282,170 @@ def build_support_answer(next_step: SupportNextStep, evidence: list[EvidenceReco
 
 
 
-# Handoff + Evidence + 用户消息
+# support_diagnosis.py
+# Support Agent 的“判断和诊断层”
+#
+# 1. 让 LLM 决定下一步做什么
+# 2. 定义 Agent 返回的数据格式
+# 3. 调查完成后，检查 Diagnosis 是否有 Evidence 支持
+#
+#
+# decide_support_next_step(question, handoff, evidence, remaining_calls)
+# 【Diagnosis Agent 核心入口：根据当前问题和已有证据决定下一步】
 # ↓
-# decide_support_next_step()
+#
+# get_support_prompt_path()
+# 【读取 Support Agent 的 System Prompt】
 # ↓
-# 如果需要查数据
-# → 调工具
-# → 得到新 Evidence
-# → 再决定一次
+#
+# 准备给 LLM 的输入
+# │
+# ├── Handoff
+# │   【之前已经知道的问题背景】
+# │
+# ├── Current User Message
+# │   【用户最新说了什么】
+# │
+# ├── Evidence
+# │   【目前已经查到的事实】
+# │
+# ├── Remaining Tool Budget
+# │   【还允许继续查询多少次】
+# │
+# ├── ACTION_REGISTRY
+# │   【告诉 LLM 当前有哪些 Action 可以推荐】
+# │
+# └── Terminal Schemas
+#     【告诉 LLM 最终结果必须按照什么格式返回】
+#
+# ↓
+#
+# call_support_model()
+# 【真正调用 LLM】
+# ↓
+#
+# model.bind_tools(READ_TOOL_SCHEMAS)
+# 【告诉 LLM 当前有哪些 Read Tools 可以申请调用】
+# ↓
+#
+# LLM Response
+# ↓
+#
+# ├── 有 Tool Calls
+# │   【LLM 认为证据还不够，需要继续查后台找原因】
+# │
+# │   例如：
+# │   GetOrder(order_id="123")
+# │
+# │   注意：
+# │   Tool Call = LLM “申请调用这个工具”
+# │   这里还没有真正执行 Tool
+# │
+# │      ↓
+# │
+# │   SupportNextStep    可以是：1. "use_tool"  2. "request_information"  3. "finish"  4. "human_support"
+# │   【Data Model：统一记录 Agent 下一步决定】
+# │
+# │   next_step = "use_tool"
+# │   tool_calls = [...]
+# │
+# │   【意思：下一步继续调用这些 Read Tools 获取新的 Evidence】
+# │
+# │
+# └── 没有 Tool Calls
+#     【LLM 认为现在不需要继续查询后台，可以直接做下一步决定】
+#        ↓
+#
+#     LLM 返回 JSON
+#     【直接说明：问用户 / 完成诊断 / 转人工】
+#        ↓
+#
+#     SupportNextStep
+#     【Data Model：统一记录 Agent 下一步决定】
+#        ↓
+#
+#        ├── next_step = "request_information"
+#        │      ↓
+#        │   MissingInformationRequest
+#        │   【Data Model：记录缺什么信息，以及应该怎么问用户】
+#        │
+#        │
+#        ├── next_step = "finish"
+#        │      ↓
+#        │   InvestigationComplete
+#        │   【Data Model：完整 Diagnosis 结果】
+#        │
+#        │   summary / confirmed_facts / possible_causes /
+#        │   unknowns / outcome / recommended_action
+#        │
+#        │      ↓
+#        │   recommended_action 有值？
+#        │
+#        │   ├── No
+#        │   │   【只给出 Diagnosis，不建议自动操作】
+#        │   │
+#        │   └── Yes
+#        │       ↓
+#        │     CandidateAction
+#        │     【Data Model：LLM 建议下一步执行什么 Action】
+#        │
+#        │     action_type / reason / evidence_ids
+#        │
+#        │
+#        └── next_step = "human_support"
+#               ↓
+#            HumanSupportRequired
+#            【Data Model：记录为什么自动调查无法继续，需要人工】
+#
+# ↓
+#
+# 返回 SupportNextStep + Token Usage
+# 【这次 Diagnosis Agent 的决定完成】
 
-# 如果信息不足
-# → 问用户
-
-# 如果证据足够
-# → 生成最终答案
-
-# 如果自动调查不能继续
-# → 转人工
 
 
-# Handoff
-# +
-# Evidence
-# +
-# 用户最新消息
-#         ↓
-# decide_support_next_step()
-#         ↓
-#    SupportNextStep
-#         ↓
-#  ┌──────┼──────────┬───────────┐
-#  │      │          │           │
-# use   request     finish      human
-# tool  information              support
-#  │      │          │           │
-#  ↓      ↓          ↓           ↓
-# 查询   问用户     生成结果      人工
-#  │
-#  ↓
-# Evidence
-#  │
-#  └────────→ 再次 decide_support_next_step()
+#检查这个 Diagnosis 靠不靠谱，并整理成回复
+# build_support_answer(next_step, evidence)
+# 【根据 Agent 最终决定，生成对应结果】
+# ↓
+#
+# ├── request_information
+# │      ↓
+# │   返回 customer_message
+# │   【告诉用户还缺什么信息】
+# │
+# ├── human_support
+# │      ↓
+# │   build_human_support_answer()
+# │   【生成“需要人工处理”的回复】
+# │      ↓
+# │   status = pending_human
+# │
+# └── finish
+#        ↓
+#     build_investigation_answer()
+#     【检查最终 Diagnosis 有没有真实 Evidence 支持】
+#        ↓
+#
+#     Evidence 是否可靠？
+#        │
+#        ├── No
+#        │   【Evidence 冲突 / 没有足够证据支持结论】
+#        │      ↓
+#        │   status = pending_human
+#        │
+#        └── Yes
+#               ↓
+#            生成最终 Diagnosis Answer
+#            【保留有 Evidence 支持的事实和可能原因】
+#               ↓
+#            answer + outcome
+
+
+# 让 Agent 判断
+# ↓
+# 得到 Diagnosis
+# ↓
+# 再用 Evidence 检查 Diagnosis
+# ↓
+# 输出可信结果

@@ -405,46 +405,111 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
     )
 
 
-# 开始
+# run_support_workflow()
+# 【一轮 Support Agent 的总入口】
 # ↓
-# 检查现在能不能继续调查
+# 创建 SupportWorkflowState
+# 【保存 question / user / handoff / case / evidence 等流程数据】
 # ↓
-# 让 Google 决定下一步
-# ↓
-# ┌─ use_tool → 查询 → 得到 Evidence → 回来重新判断
-# │
-# ├─ request_information → 问用户 → 结束本轮
-# │
-# ├─ finish → 生成调查结果 → 结束
-# │
-# └─ human_support → 转人工 → 结束
-
-
-
 # START
 # ↓
-# decide_support_next_step
+# decide_support_next_step_node()
+# 【检查是否还能继续调查，然后让 Agent 决定下一步】
 # ↓
-#           ┌─ use_tool
-#           │     ↓
-#           │ execute_read_tools
-#           │     ↓
-#           │ 回到 decide_support_next_step
-#           │
-#           ├─ request_information
-#           │     ↓
-#           │ build_missing_information_answer
-#           │     ↓
-#           │ END
-#           │
-#           ├─ finish
-#           │     ↓
-#           │ build_investigation_answer
-#           │     ↓
-#           │ END
-#           │
-#           └─ human_support
-#                 ↓
-#              build_human_support_answer
-#                 ↓
-#                END
+# decide_support_next_step()
+# 【LLM 根据 Handoff + 用户消息 + Evidence 做决定】
+# ↓
+# SupportNextStep
+# 【决定走哪条 LangGraph 分支】
+# ↓
+#
+# ├── use_tool
+# │      ↓
+# │   execute_read_tools_node()
+# │   【执行 Agent 选择的 Read Tools】
+# │      ↓
+# │   Evidence
+# │   【把后台查询结果保存成调查证据】
+# │      ↓
+# │   回到 decide_support_next_step_node()
+# │   【带着新 Evidence 继续判断】
+# │
+# │
+# ├── request_information
+# │      ↓
+# │   MissingInformationRequest
+# │   【记录缺少 shop_id / order_id / sku 等信息】
+# │      ↓
+# │   build_missing_information_answer_node()
+# │   【生成向用户补问信息的回复】
+# │      ↓
+# │   END
+# │   【等待用户下一条消息】
+# │
+# │
+# ├── finish
+# │      ↓
+# │   InvestigationComplete
+# │   【完整 Diagnosis：事实、原因、未知项、建议 Action】
+# │      ↓
+# │   build_investigation_answer_node()
+# │   【生成诊断结果，并处理 recommended_action】
+# │      ↓
+# │   recommended_action？
+# │      │
+# │      ├── No
+# │      │      ↓
+# │      │   返回 Diagnosis
+# │      │      ↓
+# │      │     END
+# │      │
+# │      └── Yes
+# │             ↓
+# │         CandidateAction
+# │         【LLM 建议执行什么，以及依据哪些 Evidence】
+# │             ↓
+# │         create_action_plan()
+# │         【Python 验证建议，并创建正式 Action Plan】
+# │             ↓
+# │         Action Plan
+# │             │
+# │             ├── user_action_required
+# │             │   【需要用户自己操作】
+# │             │
+# │             ├── no_action_needed
+# │             │   【当前已经正常，不需要修复】
+# │             │
+# │             └── proposed
+# │                 【可以执行，等待 User / Admin Approval】
+# │             ↓
+# │            END
+# │
+# │
+# └── human_support
+#        ↓
+#    HumanSupportRequired
+#    【记录为什么自动调查无法继续】
+#        ↓
+#    build_human_support_answer_node()
+#    【生成转人工回复】
+#        ↓
+#    status = pending_human
+#        ↓
+#       END
+#
+#
+# LangGraph 结束
+# ↓
+# update_case()
+# 【保存这一轮调查状态和结果】
+# ↓
+# pending_human？    LangGraph 整个流程结束后， 在外部判断是否需要人工介入， LangGraph 内部只负责把状态标记为 pending_human
+# │
+# ├── Yes → create_engineer_ticket()
+# │          【创建人工工程师 Ticket】
+# │
+# └── No
+#
+# ↓
+# SupportAgentResult
+# 【整轮 Support Workflow 最终返回结果】

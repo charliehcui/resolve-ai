@@ -250,45 +250,73 @@ def wait_for_shipment_verification(user: UserContext, action_id: str, timeout_se
     return verify_shipment_recovery(user, action_id)
 
 
-# Support Agent
-# ↓
-# Read Tools
-# ↓
-# Evidence
-# ↓
-# Diagnosis
-# ↓
-# 目前：外部选择修复类型
-# 以后：Agent 推荐 Candidate Action
-# ↓
-# Action Plan
-# 重新检查是否可以这样修
-# ↓
-# Approval
-# 允许执行？
-# ↓
-# Execution
-# 真正调用 Write API
+#Execution 只是说明“修复请求已经提交”，这个文件负责重新查后台，确认问题到底有没有真的修好。
+
+# Write API
 # ↓
 # Receipt
-# 后台说“请求收到”
+# 【后台说：请求收到了】
 # ↓
 # Verification
-# 重新调用 Read Tools
+# 【重新用 Read Tools 查真实状态】
 # ↓
-# 检查真实后台状态
-# ↓
-# verified_resolved / verification_failed
+# 真的修好了吗？
 
 
-# Read Tools
+# support_action_verification.py
+# 【执行修复后，重新读取真实后台状态，确认修复结果】
+#
+#
+# Execution
 # ↓
-# 发现问题
-
-# Write Action
+# Receipt
+# 【修复请求已经提交，但还不能算成功】
 # ↓
-# 修改问题
-
-# Read Tools
+#
+# Verification Function
+#
+# ├── Order
+# │   → verify_order_recovery()
+# │
+# ├── Shipment
+# │   → verify_shipment_recovery()
+# │
+# └── Inventory / Failed Task
+#     → verify_background_action()
+#
 # ↓
-# 确认问题真的被修复
+#
+# execute_read_tool_batch()
+# 【重新调用 Read Tools 查询最新后台状态】
+# ↓
+#
+# 新的 Evidence
+# ↓
+#
+# 和 Action Plan 保存的目标状态 / Snapshot 比较
+# ↓
+#
+# 一项一项检查
+# ↓
+#
+# all_verification_checks_passed()
+# 【所有检查都通过才算真正修复成功】
+# ↓
+#
+# ├── 全部通过
+# │      ↓
+# │   status = verified_resolved
+# │   【确认问题已经修好】
+# │
+# ├── 明确发现修复失败
+# │      ↓
+# │   status = verification_failed
+# │
+# └── 后台还没处理完
+#        ↓
+#     status = pending
+#     【等一下，再重新查询】
+# ↓
+#
+# save_action_verification()
+# 【保存这次 Verification 的结果和 Evidence】

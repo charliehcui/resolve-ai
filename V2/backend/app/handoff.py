@@ -216,21 +216,52 @@ def update_support_ids(conversation_id: str, user: UserContext, text: str) -> Su
     return get_support_handoff(conversation_id, user)
 
 
+# handoff.py
+# 【负责 Customer Agent → Support Agent 的正式交接】
+#
+#
 # Customer Agent 判断：
-# 这个问题需要真实订单 / 库存 / 店铺数据
+# 【这个问题需要真实后台数据，应该交给 Support Agent】
 # ↓
+#
 # create_support_handoff()
+# 【真正创建交接】
 # ↓
-# 从用户问题里找 shop_id / order_id / sku
+#
+# extract_support_ids()
+# 【从用户问题里找 shop_id / order_id / sku】
 # ↓
-# 记录用户已经试过什么
+#
+# find_attempted_steps()
+# 【整理用户之前已经尝试过什么】
 # ↓
-# 记录还缺什么信息
+#
+# find_missing_support_ids()
+# 【判断 Support Agent 还缺哪些必要 ID】
 # ↓
-# 创建 Handoff
+#
+# 创建：
+#
+# SupportHandoffRecord
+# 【Data Model：正式交接记录】
+#
+# 里面主要有：
+# customer_problem
+# attempted_steps
+# known_shop_id
+# known_order_id
+# known_sku
+# missing_fields
 # ↓
-# 创建 Support Case
+#
+# 同时创建 Support Case
+# 【这次 Support 调查的总档案】
 # ↓
-# 把 conversation 的 active_role 改成 SUPPORT
+#
+# conversation.active_role = "SUPPORT"
+# 【之后这段 Conversation 由 Support Agent 接手】
 # ↓
-# 下一条消息开始交给 Support Agent
+#
+# 返回 Handoff + case_id
+
+

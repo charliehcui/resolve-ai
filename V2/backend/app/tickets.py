@@ -433,3 +433,74 @@ def list_engineer_tickets(user: UserContext) -> list[dict[str, object]]:
             FROM support.tickets t JOIN support.ticket_read_grants g ON g.ticket_id = t.ticket_id
             WHERE g.user_id = %s ORDER BY t.created_at DESC""", (user.user_id,)).fetchall()
     return rows_as_dicts(rows)
+
+
+
+#当自动 Support 流程解决不了问题时，把现有调查结果整理成 Engineer Ticket，让工程师接手
+
+# Support Agent
+# ↓
+# 自动调查失败 / Evidence 不足 / 用户要求人工
+# ↓
+# Ticket
+# ↓
+# Engineer 接手
+
+
+
+
+# tickets.py
+# 【负责创建、查看、重新检查 Engineer Ticket】
+#
+#
+# Support Case
+# ↓
+# pending_human / failed action / user_requested
+# ↓
+# 
+# create_ticket()   只有在 Case 还没解决、Action 失败，或者用户明确要求人工时才允许创建
+# 【创建 Engineer Ticket】
+# ↓
+#
+# load_ticket_source()
+# 【把当前调查相关的数据全部拿出来】
+#
+# Conversation
+# + Handoff
+# + Case
+# + Evidence
+# + Action Plans
+# + Action Steps
+#
+# ↓
+#
+# 判断是不是已经有未关闭 Ticket
+#
+# ├── Yes
+# │   → 直接返回原来的 Ticket
+# │   【避免重复创建】
+# │
+# └── No
+#     ↓
+#
+# 整理 Ticket 内容：
+#
+# customer_problem
+# business_target
+# confirmed_facts
+# possible_causes
+# unknowns
+# failed_evidence
+# attempted_actions
+# last_successful_step
+# next_steps
+# ↓
+#
+# 找有没有可以分配的 Engineer
+# ↓
+#
+# 保存 Ticket
+# ↓
+#
+# show_ticket()
+# 【返回完整 Ticket】

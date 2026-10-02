@@ -31,28 +31,67 @@ def show_case(case_id: str, user: UserContext) -> dict[str, object]:
     return result
 
 
-
-
+# support_cases.py
+# 【管理整个 Support Case 的状态，并可以把 Case + Evidence 一起读取出来】
+#
+#
 # Conversation
 # ↓
-# 用户提出问题
-# ↓
-# Customer Agent 判断需要 Support
-# ↓
 # Handoff
-# “问题是什么、已知 ID 是什么”
+# 【Customer Agent 把问题和已知信息交给 Support Agent】
 # ↓
+# Support Case
+# 【正式的一次调查记录】
+# ↓
+#
+# get_case_id()
+# 【根据 conversation_id 找到这次调查对应的 case_id】
+# ↓
+#
+# case_id
+# 【把后面的 Evidence / Action / Verification 全部串起来】
+#
+#
+# 调查过程中：
+#
 # Case
-# “正式开始一次调查”
 # ↓
 # Evidence 1
 # Evidence 2
 # Evidence 3
-# “每次查到了什么”
+# ...
+#
+#
+# 调查得到结果以后：
+#
+# update_case()
+# 【更新整个 Case 的最终状态】
 # ↓
-# Case 最终更新
+#
+# 保存：
 # status
 # outcome
 # tool_call_count
 # total_latency_ms
+#
+#
+# 如果以后想查看整次调查：
+#
+# show_case()
+# 【读取 Case 基本信息】
+# ↓
+# load_evidence(case_id)
+# 【把这个 Case 的全部 Evidence 也读出来】
+# ↓
+# 完整 Support Case
 
+
+
+# Handoff
+# 【问题背景】
+# ↓
+# Case
+# 【整次调查的主档案】
+# ↓
+# Evidence
+# 【一次次查询得到的证据】

@@ -149,3 +149,30 @@ def ticket_export(ticket_id: str, user: AuthDependency) -> str:
 @app.get("/api/v1/engineer/tickets")
 def engineer_tickets(user: AuthDependency) -> list[dict[str, object]]:
     return list_engineer_tickets(user)
+
+
+#api.py 是整个后端的 HTTP 入口。前端或其他客户端通过 URL 调用这里，然后这里再去调用我们前面学过的 Python 业务函数
+
+# Frontend / Client
+# ↓
+# HTTP Request
+# ↓
+# FastAPI Route
+# ↓
+# AuthDependency
+# 【验证 Bearer Token】
+# ↓
+# Pydantic Request Model
+# 【检查 Body 数据】
+# ↓
+# 调用项目里的 Python Function
+# ↓
+# Customer / Support / Action / Ticket / Database
+# ↓
+# 返回 dict
+# ↓
+# FastAPI 自动转成 JSON
+# ↓
+# Frontend
+
+

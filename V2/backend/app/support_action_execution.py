@@ -451,73 +451,85 @@ def execute_shipment_recovery(user: UserContext, action_id: str) -> dict[str, ob
     return wait_for_shipment_verification(user, action_id)
 
 
-
-#真正修改模拟后台的核心其实就这两个 HTTP POST   submit_order_repair()      submit_shipment_repair()
-
-
-
-
-# Approved Action
+# 严格按照“重新读取 → 对比 Snapshot → 防重复 → Write API → Receipt → Verification”走
+# support_action_execution.py
+# 【负责真正执行已经批准的 Action Plan】
+#
+#
+# Approved Action Plan
 # ↓
-# 确认 Admin
+#
+# 找到对应的 Execution Function
+#
+# ├── retry_order_sync
+# │   → execute_order_recovery()
+# │
+# ├── resend_shipment
+# │   → execute_shipment_recovery()
+# │
+# └── refresh_inventory / retry_failed_task
+#     → execute_background_action()
+#
 # ↓
-# 确认没有执行过
+#
+# 再次检查用户有没有执行权限
 # ↓
+#
+# 检查 Action 当前状态
+#
+# 已经结束？
+# → 直接返回结果
+#
+# 已经提交，正在等 Verification？
+# → 直接进入 Verification
+#
+# ↓
+#
 # 重新查询最新后台状态
+# 【执行之前最后查一次真实数据】
 # ↓
-# 和 Action Plan Snapshot 比较
+#
+# 和 Action Plan 里的 Snapshot / Version 比较
 # ↓
-# 状态改变？
-# ├─ YES → Block
-# └─ NO
-#     ↓
-# 确认 Approval
+#
+# ├── 数据已经变化
+# │   ↓
+# │   mark_action_blocked()  如果发现当前后台状态已经和 Action Plan 不一样，就停止这个 Action。
+# │   【停止执行，避免拿旧数据去修改现在的新状态】
+# │
+# └── 数据没有变化
+#        ↓
+#
+#     acquire_action_execution()  幂等性
+#     【防止同一个 Action 同时执行两次】
+#        ↓
+#
+#     真正调用 Write API
+#        ↓
+#
+#     后台返回 Receipt
+#     【后台告诉我们：修复请求已经收到】
+#        ↓
+#
+#     保存 Receipt 为 Evidence
+#        ↓
+#
+#     status = awaiting_verification
+#        ↓
+#
+#     进入 Verification
+#     【重新查询后台，确认实际上有没有修好】
+
+
+# Approved Action Plan
 # ↓
-# 防止重复 Execution
+# 1. 重新查最新后台
 # ↓
-# POST Repair API
+# 2. 和 Snapshot 比较
 # ↓
-# 后台返回 Receipt
+# 3. 防止重复执行
 # ↓
-# 保存 Receipt Evidence
+# 4. 调 Write API 真正修改
 # ↓
-# awaiting_verification
-# ↓
-# Verification
-
-
-
-# Agent 不能直接修改后台
-
-# Agent 推荐 Action
-
-# ↓
-# 确定性代码确认安全
-
-# ↓
-# 人工 Approval
-
-# ↓
-# Execution 再检查一次数据没有变化
-
-# ↓
-# 真正调用 Write API
-
-# ↓
-# 不能相信“请求发送成功”
-
-# ↓
-# 重新读取后台 Verification
-
-
-
-# Read Tool
-# = 去真实系统查
-
-# Execution
-# = 去真实系统改
-
-# 两者都不是 Agent 本身。
-
-# Agent 决定“应该查什么 / 以后应该建议做什么”，
-# 后端负责安全地完成这些操作。
+# 5. 保存 Receipt，然后进入 Verification
+# Receipt 只代表后台收到修复请求，不代表已经修成功

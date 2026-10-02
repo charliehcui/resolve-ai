@@ -112,3 +112,88 @@ def get_action_details(user: UserContext, action_id: str) -> dict[str, object]:
 
     return action_details
 
+#给 Action Plan / Approval / Execution / Verification 提供统一的“保存、读取、整理”功能
+
+
+# support_action_store.py
+# 【负责 Action 相关数据的保存、读取和整理】
+#
+#
+# Action Plan / Approval / Execution / Verification
+# ↓
+# 都会调用这里的函数
+#
+#
+# ├── save_action_step()
+# │   【记录 Action 执行过程中发生过什么】
+# │
+# │   例如：
+# │   action_plan → passed
+# │   human_approval → approved
+# │   execute → submitted
+# │   verification → verified_resolved
+# │
+# │
+# ├── save_read_tool_evidence()
+# │   【把一次 ReadToolResult 保存成正式 Evidence】
+# │      ↓
+# │   save_evidence()
+# │      ↓
+# │   EvidenceRecord
+# │      ↓
+# │   返回 evidence_id
+# │
+# │
+# ├── index_evidence_by_tool()
+# │   【把 Evidence 按 Tool Name 整理，方便直接查】
+# │
+# │   原来：
+# │   [Evidence1, Evidence2, Evidence3]
+# │
+# │   变成：
+# │   {
+# │      "GetOrder": Evidence1,
+# │      "GetShopSyncStatus": Evidence2
+# │   }
+# │
+# │
+# ├── get_evidence_ids()
+# │   【从一批 Evidence 中拿出所有 evidence_id】
+# │
+# ├── get_total_evidence_latency_ms()
+# │   【计算这一批查询总共用了多少时间】
+# │
+# ├── fields_match()
+# │   【比较两份数据指定字段是不是一样】
+# │
+# │   例如：
+# │   Snapshot Version = 5
+# │   Current Version = 5
+# │   → True
+# │
+# │
+# ├── get_action_plan()
+# │   【读取一个 Action Plan，并检查当前用户有没有权限访问】
+# │
+# └── get_action_details()
+#     【把这个 Action 的完整情况一次性整理出来】
+
+
+# 普通用户 / staff
+# → 只能访问属于自己 Conversation 的 Action
+
+# admin
+# → 可以访问同一个 Company 里的 Action
+
+# engineer
+# → 不能使用 Merchant Action
+
+# support_action_store.py
+# ↓
+# 1. 保存 Action 每一步发生了什么
+# ↓
+# 2. 保存 / 整理 Evidence
+# ↓
+# 3. 比较 Snapshot 和当前数据
+# ↓
+# 4. 读取 Action Plan 和完整 Action 状态

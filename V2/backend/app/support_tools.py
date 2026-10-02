@@ -575,67 +575,68 @@ def create_engineer_ticket(user: UserContext, conversation_id: str, trigger: str
 
 
 
+# support_tools.py
+# 【负责真正执行 Support Agent 的 Read Tool 查询】
+#
 # LLM
 # ↓
-# 提出 Tool Call
+# Tool Call
+# 【Agent 申请：我要调用哪个工具 + 参数是什么】
 # ↓
+#
+# execute_read_tool_batch()   调用后面的validate_read_tool_call()和execute_read_tool()，并把结果保存成 Evidence
+# 【这一批 Tool Call 的总执行入口】  总入口 + 检查 + 并行 + 收集结果
+# ↓
+#
 # validate_read_tool_call()
-# 检查查询是否合法
+# 【先检查 Tool 名字和 shop_id / order_id / sku 是否合法】
 # ↓
-# execute_read_tool_batch()
-# 真正执行
-# ↓
-# Platform / Merchant / Warehouse
-# ↓
-# ReadToolResult     一次查询的临时结果   Support Tool 整理成 ReadToolResult
-# ↓
-# save_evidence()
-# ↓
-# EvidenceRecord    给这个查询结果加上身份证，并正式保存
-# ↓
-# 返回 Support Workflow
-# ↓
-# LLM 再决定下一步
-
-
-
-# Agent 决定查什么
-#         ↓
-#      Tool Call
-#         ↓
-# 检查是否允许查询
-#         ↓
-# 真实/模拟后台系统
-#         ↓
-#    原始 HTTP Response
-#         ↓
-#    ReadToolResult
-# 统一整理这次查询结果
-#         ↓
-#    save_evidence()
-# 正式登记并保存
-#         ↓
-#    EvidenceRecord
-# 有 Evidence ID 的持久记录
-#         ↓
-# Support Workflow
-#         ↓
-# 下一轮 Agent 看到全部 Evidence
-#         ↓
-# 决定下一步
-
-
-# validate_read_tool_call()
-# ↓
-# 先检查：这个查询允不允许执行
-
-# execute_read_tool()   把 LLM 选择的 Tool 名字，转换成真正的 Python 函数调用
-# ↓
-# 再决定：具体该调用哪个查询函数
-
-# call_read_service()  真正发送请求去后台系统查数据
-# ↓
-# 最后真的去后台系统拿数据
+#
+# ├── 不合法
+# │      ↓
+# │   生成失败的 ReadToolResult
+# │   【不会真的调用后台】
+# │
+# └── 合法
+#        ↓
+#     execute_read_tool()
+#     【根据 Tool 名字找到真正对应的 Python 查询函数】
+#        ↓
+#     例如：
+#     GetOrder → get_order()
+#     GetStockStatus → get_stock_status()
+#        ↓
+#     如果一次有多个 Tool Call
+#     → 可以并行执行
+#        ↓
+#     call_read_service()
+#     【真正发送 HTTP 请求到 Platform / Merchant / Warehouse】
+#        ↓
+#     ReadToolResult
+#     【Data Model：一次 Tool 查询的临时结果】
+#        ↓
+#     save_evidence()
+#     【把临时查询结果正式登记和保存】
+#        ↓
+#     EvidenceRecord
+#     【Data Model：有 Evidence ID 的正式调查证据】
+#        ↓
+#     返回这一批 Evidence
 
 #为什么需要， 如果没有execute_read_tool， 他就会直接让llm生成工具名称和参数直接执行，这样就没有办法在中间检查工具名称和参数是否合法
 #因此我需要一个中间层，execute_read_tool，来把llm生成的工具名称和参数转换成真正的Python函数调用，这样我就可以在中间检查工具名称和参数是否合法
+
+
+# execute_read_tool_batch()
+#         ↓
+# 检查这一批工具
+#         ↓
+# 开多个 Thread
+#         ↓
+# 每个 Thread 调用 execute_read_tool()
+#         ↓
+# 根据名字找到真正函数
+#         ↓
+# get_order() / get_stock_status() / ...
+#         ↓
+# HTTP 请求
