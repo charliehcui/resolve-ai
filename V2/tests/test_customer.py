@@ -16,7 +16,7 @@ class FakeStructuredModel:
 
 def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
     model = FakeStructuredModel()
-    monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
     query_decision, _ = decide_customer_query_next_step("单子不进来", [])
     assert query_decision.rewrite_used is True
     assert model.calls == 1
@@ -24,7 +24,7 @@ def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
 
 def test_legacy_question_without_version_is_clarified(monkeypatch) -> None:
     model = FakeStructuredModel()
-    monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
     query_decision, _ = decide_customer_query_next_step("旧版里的同步入口在哪里？", [])
     assert query_decision.decision == "clarify"
     assert "版本号" in query_decision.customer_message
@@ -33,7 +33,7 @@ def test_legacy_question_without_version_is_clarified(monkeypatch) -> None:
 def test_handoff_message_claims_only_the_real_role_transfer(monkeypatch) -> None:
     model = FakeStructuredModel()
     model.invoke = lambda messages: {"parsed": CustomerQueryDecision(decision="handoff", customer_message="Forwarded."), "raw": object()}
-    monkeypatch.setattr("backend.app.customer_agent.create_groq_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
     query_decision, _ = decide_customer_query_next_step("订单 O-1001 当前在哪里？", [])
     assert query_decision.decision == "handoff"
     assert "已转交 Support Agent" in query_decision.customer_message

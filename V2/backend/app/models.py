@@ -1,24 +1,8 @@
 from typing import Literal
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
-from backend.app.config import get_settings
-
-ProviderName = Literal["groq", "google"]
-
-TaskName = Literal[
-    "customer_answer",
-    "simple_intent",
-    "query_rewrite",
-    "simple_structured",
-    "support_investigation",
-    "complex_tool_calling",
-    "parallel_tool_calling",
-    "evidence_conflict",
-    "complex_action_plan",
-]
+from backend.app.llm import create_model  # noqa: F401 - shared model factory import surface
 
 
 class UserContext(BaseModel):  # 当前是谁在使用系统，以及属于哪家公司
@@ -96,34 +80,3 @@ class DoctorShopStatusRequest(BaseModel):  # 请求读取测试店铺的状态�
 
 class DoctorPlatformStatusRequest(BaseModel):  # 请求读取测试平台的状态，不修改数据
     platform_id: str = Field(description="The test platform ID")
-
-
-def provider_for_task(task: TaskName) -> ProviderName:  # 根据任务类型决定使用 Groq 还是 Google
-    if task in {"customer_answer", "simple_intent", "query_rewrite", "simple_structured"}:
-        return "groq"
-
-    return "google"
-
-
-def create_groq_model(temperature: float = 0) -> ChatGroq:  # 创建一个可以调用 Groq 模型的对象
-    settings = get_settings()
-
-    return ChatGroq(
-        model=settings.groq_model,
-        api_key=settings.groq_api_key,
-        temperature=temperature,
-        timeout=30,
-        max_retries=2,
-    )
-
-
-def create_google_model(temperature: float = 0, model_name: str | None = None, max_retries: int = 2) -> ChatGoogleGenerativeAI:  # 创建一个可以调用 Google 模型的对象
-    settings = get_settings()
-
-    return ChatGoogleGenerativeAI(
-        model=model_name or settings.google_model,
-        google_api_key=settings.google_api_key,
-        temperature=temperature,
-        timeout=30,
-        max_retries=max_retries,
-    )

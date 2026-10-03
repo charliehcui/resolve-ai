@@ -5,7 +5,7 @@ from langsmith import traceable
 
 from backend.app.citations import validate_claims
 from backend.app.config import PROJECT_ROOT
-from backend.app.models import AnswerClaim, Citation, CustomerAnswer, CustomerGeneratedClaims, CustomerQueryDecision, RetrievedChunk, UserContext, create_groq_model
+from backend.app.models import AnswerClaim, Citation, CustomerAnswer, CustomerGeneratedClaims, CustomerQueryDecision, RetrievedChunk, UserContext, create_model
 
 PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "customer.md"
 
@@ -111,11 +111,11 @@ def decide_customer_query_next_step(question: str, history: list[dict[str, objec
         HumanMessage(content=f"最近会话：\n{recent_history}\n\n当前问题：{question}"),
     ]
 
-    model = create_groq_model()
+    model = create_model()
     structured_model = model.with_structured_output(CustomerQueryDecision, include_raw=True)  # 用于 debug，会返回 raw、parsed 和 parsing_error
     result = structured_model.invoke(messages)
 
-    if result.get("parsed") is None:  # parsed 是 Groq 解析出来的结构化结果，如果没有，说明 Groq 没有按要求输出
+    if result.get("parsed") is None:  # parsed 是 OpenRouter 解析出来的结构化结果，如果没有，说明 OpenRouter 没有按要求输出
         raise RuntimeError("Query planner did not return structured output")
 
     query_decision = result["parsed"]
@@ -192,14 +192,14 @@ def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], 
         HumanMessage(content=f"最近会话：\n{recent_history}\n\n可见产品资料：\n{context}\n\n当前问题：{question}"),
     ]
 
-    model = create_groq_model(temperature=0)
+    model = create_model(temperature=0)
     structured_model = model.with_structured_output(CustomerGeneratedClaims, include_raw=True)
     result = structured_model.invoke(messages)
 
     parsed = result.get("parsed")
 
     if parsed is None:
-        raise RuntimeError("Groq did not return the required structured answer")
+        raise RuntimeError("OpenRouter did not return the required structured answer")
 
     supported, removed, check_usage = validate_claims(parsed.claims, chunks, user, version)
 

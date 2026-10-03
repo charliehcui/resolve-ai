@@ -24,7 +24,7 @@ class SupportHandoffRecord(BaseModel):  # Customer Agent 正式交给 Support Ag
 def extract_support_ids(text: str) -> tuple[str | None, str | None, str | None]:   #从用户文字里直接找 shop_id、order_id 和 sku
     shop_match = re.search(r"\bshop-[A-Za-z0-9-]+\b", text, re.IGNORECASE)
     order_match = re.search(r"\b(?:O|ORDER)-[A-Za-z0-9-]+\b", text, re.IGNORECASE)
-    sku_match = re.search(r"\bSKU-[A-Za-z0-9-]+\b", text, re.IGNORECASE)
+    sku_match = re.search(r"(?<![A-Za-z0-9-])SKU-[A-Za-z0-9-]+\b", text, re.IGNORECASE)
 
     shop_id = shop_match.group(0) if shop_match is not None else None
     order_id = order_match.group(0) if order_match is not None else None
@@ -35,7 +35,7 @@ def extract_support_ids(text: str) -> tuple[str | None, str | None, str | None]:
 
 def find_missing_support_ids(shop_id: str | None, order_id: str | None, sku: str | None, text: str) -> list[str]: #判断 Support Agent 现在还缺什么重要编号
     text_lower = text.lower()
-    is_stock_question = "库存" in text or "stock" in text_lower or "inventory" in text_lower or "sku" in text_lower
+    is_stock_question = "库存" in text or "stock" in text_lower or "inventory" in text_lower or ("sku" in text_lower and order_id is None)
     is_connection_question = any(word in text_lower for word in ("授权", "连接", "限流", "故障", "authorization", "reauthorization", "outage", "rate limit", "connection"))
 
     missing_fields: list[str] = []
@@ -263,5 +263,4 @@ def update_support_ids(conversation_id: str, user: UserContext, text: str) -> Su
 # ↓
 #
 # 返回 Handoff + case_id
-
 

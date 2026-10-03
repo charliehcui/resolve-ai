@@ -30,12 +30,14 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://resolveai:resolveai-test@127.0.0.1:5432/resolveai
-      GROQ_API_KEY: test-only
-      GROQ_MODEL: groq-test-only
-      GOOGLE_API_KEY: test-only
-      GOOGLE_MODEL: google-primary-test-only
-      GOOGLE_FALLBACK_MODEL: google-fallback-test-only
-      GOOGLE_EMBEDDING_MODEL: embedding-test-only
+      OPENROUTER_API_KEY: test-only
+      OPENROUTER_MODEL: test-model
+      OPENROUTER_PROVIDER: test-provider
+      OPENROUTER_RETRY_PROVIDER: test-retry-provider
+      OPENROUTER_FALLBACK_MODEL: test-fallback-model
+      OPENROUTER_FALLBACK_PROVIDER: test-fallback-provider
+      EMBEDDING_API_KEY: test-only
+      EMBEDDING_MODEL: embedding-test-only
       EMBEDDING_DIMENSION: "1024"
       RERANK_MODEL: rerank-test-only
       RETRIEVAL_MODE: vector_only

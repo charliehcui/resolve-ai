@@ -2,7 +2,7 @@
 
 ResolveAI V2 是一个用于演示 AI Application Engineering 的电商商家管理软件支持系统。Phase 10 / Task 15 已完成本地交付链路：Engineer Ticket 可以重新检查订单、发货和库存事实，并且只在确定性 Verification 通过后关闭。信息不足或业务目标仍未满足时，Ticket 保持打开。
 
-Phase 9 的 Dataset、Eval Runner 和 Dry Run 保留。176 次对照、Holdout 30×3、批量真实模型调用和远端 LangSmith 验收当前不执行，也不阻塞本地交付。
+Evaluation 只有 Quick Evaluation 和 Final Benchmark 两种模式，入口和历史结果见 `evals/README.md` 与 `evals/BENCHMARK_HISTORY.md`。
 
 Support 的当前流程为诊断（Diagnosis）→ 动作计划（Action Plan）→ 审批（Approval）→ 执行（Execution）→ 验证（Verification）。诊断（Diagnosis）的最后一次模型响应同时给出结论和候选动作（Candidate Action），后续安全检查与写入全部由确定性代码（Deterministic Code）控制。订单、发货、库存刷新和已有任务重试支持用户确认后执行；授权过期要求用户重新授权，限流或外部故障等待恢复，缺失可信映射转人工。复现命令、文件职责和验证说明见 [Agent 与模拟器演示](docs/agent-simulator.md)。
 
@@ -11,13 +11,13 @@ Support 的当前流程为诊断（Diagnosis）→ 动作计划（Action Plan）
 ```text
 终端问题
   → 本地 token 身份映射
-  → Groq 查询规划 / 最多一次 Query Rewrite / Clarification 或 Handoff Intent
+  → OpenRouter 查询规划 / 最多一次 Query Rewrite / Clarification 或 Handoff Intent
   → 公司、产品、版本、有效期过滤
-  → Google 1024 维 Vector Search
+  → OpenRouter 1024 维 Vector Search
   → 可选中文 BM25 + RRF + Qwen3 Reranking
-  → Groq 生成可核查 Claims
+  → OpenRouter 生成可核查 Claims
   → 普通代码校验引用存在性、公司范围、版本与有效期
-  → Groq 检查 Claim Support；删除无依据结论
+  → OpenRouter 检查 Claim Support；删除无依据结论
   → 保存消息、检索记录、模型用量和 trace ID
   → 终端显示回答与来源
 ```
@@ -70,7 +70,7 @@ Customer Agent 不读取后台业务状态。Handoff 后同一 Conversation 的 
 - Python 3.11+
 - Docker Desktop
 - 从 `.env.example` 创建且被 Git 忽略的 `V2/.env`
-- 仅在主动运行模型问答时需要可用的 Groq / Google 配置
+- 仅在主动运行模型问答时需要可用的 OpenRouter / OpenRouter 配置
 
 模型名称和 Key 只从 `.env` 读取。`LANGSMITH_TRACING` 默认必须保持 `false`；只有以后明确批准远端追踪时才开启。不要把 `.env`、`.local/test_tokens.json`、`.local/service_tokens.json` 或任何 Secret 提交到 Git。
 
@@ -79,9 +79,9 @@ Customer Agent 不读取后台业务状态。Handoff 后同一 Conversation 的 
 | 变量 | 用途 | 本地固定测试 |
 | --- | --- | --- |
 | `POSTGRES_*` / `DATABASE_URL` | PostgreSQL 与 pgvector | 必需 |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Customer 问答、查询规划与引用检查 | 使用安全占位值，不调用 |
-| `GOOGLE_API_KEY` / `GOOGLE_MODEL` | Support 复杂调查 | 使用安全占位值，不调用 |
-| `GOOGLE_EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | Customer 文档向量；维度固定 1024 | 使用安全占位值，不导入文档 |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Customer 问答、查询规划与引用检查 | 使用安全占位值，不调用 |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Support 复杂调查 | 使用安全占位值，不调用 |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | Customer 文档向量；维度固定 1024 | 使用安全占位值，不导入文档 |
 | `RERANK_MODEL` / `RETRIEVAL_MODE` | 本地重排与检索模式 | 按 `.env.example` |
 | `LANGSMITH_TRACING` | 远端 Trace 上传 | 必须为 `false` |
 | `SUPPORT_MAX_*` | Support 工具、时间和错误预算 | 可选，使用代码默认值 |
@@ -99,7 +99,7 @@ docker compose ps
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
 ```
 
-Compose 的一次性 `init` 服务会从空数据库执行全部 migration，再运行 `simulator.lab.bootstrap`。它在被忽略的 `.local/test_tokens.json` 和 `.local/service_tokens.json` 生成本机 token。业务服务和 API 只读挂载这些 token；API 镜像不包含 `simulator/lab/`、`evals/` 或 Holdout 内容。
+Compose 的一次性 `init` 服务会从空数据库执行全部 migration，再运行 `simulator.lab.bootstrap`。它在被忽略的 `.local/test_tokens.json` 和 `.local/service_tokens.json` 生成本机 token。业务服务和 API 只读挂载这些 token；API 镜像不包含 `simulator/lab/` 或 `evals/`。
 
 若只在宿主机运行 CLI，也可以单独启动数据库后执行：
 
@@ -270,32 +270,30 @@ npm run dev
 
 页面使用 merchant token 展示会话、当前 Agent、Citation、Evidence、Action Plan、Approval、Verification 和 Ticket；Engineer token 只能加载显式分配给该工程师的 Ticket，并可运行确定性复查。关闭后的 Ticket 仍会显示在会话和工程师队列中。没有 customer selector，也不能手工切换 Agent。
 
-最小 Playwright E2E 使用直接人工请求，不调用 Groq 或 Google：浏览器创建商家会话和 Ticket，授权 Engineer 读取并复查；由于没有业务标识符，结果必须为 `NEEDS_INFO` 且保持打开。
+最小 Playwright E2E 使用直接人工请求，不调用 OpenRouter 或 OpenRouter：浏览器创建商家会话和 Ticket，授权 Engineer 读取并复查；由于没有业务标识符，结果必须为 `NEEDS_INFO` 且保持打开。
 
-## Evaluation 基础保留
+## Evaluation
 
 ```powershell
-.\.venv\Scripts\python -m backend.app.cli eval validate
-.\.venv\Scripts\python -m backend.app.cli eval plan
-.\.venv\Scripts\python -m backend.app.cli eval run --suite evals/dev.jsonl --mode dry-run --repeat 1
-.\.venv\Scripts\python -m backend.app.cli eval estimate
+.\.venv\Scripts\python -m evals.run --validate
+.\.venv\Scripts\python -m evals.run --category workflow
+# Only run this when a Final Benchmark has been explicitly requested:
+.\.venv\Scripts\python -m evals.run --mode final --changes "Describe the measured change"
 ```
 
-开发集有 50 个案例；三类对照固定为 176 次，冻结 Holdout 为 30×3=90 次。Dry Run 只验证 Runner wiring，并明确输出 `not_scored`，不调用模型、不冒充质量结果。`--mode full` 在获得预算确认前会被普通代码拒绝。估算和门禁见 `docs/phase-9-budget-report.md`。
-
-当前决定是不运行付费 Benchmark、176 次对照、Holdout 30×3 或延期的批量外部验收。保留命令只用于检查 Dataset、计划和确定性 Dry Run；不要尝试绕过 `--mode full` 门禁。
+Quick Evaluation 默认只选指定类别的 4–5 个现有 Cases，不运行其他模块。Final Benchmark 显式选择后才运行当前完整 44 Cases / 64 Runs。两种模式遇到 Error / Timeout 都立即停止；Quick 复用专用评估数据库和文档，Final 使用新的隔离环境。完整说明见 `evals/README.md`，历史数据及可信度见 `evals/BENCHMARK_HISTORY.md`。报告只有最新结果与重要历史记录，失败案例保留原始证据，凭证和累计费用账本保存在被忽略的 `.local/eval/`。
 
 ## 测试
 
-测试使用真实 PostgreSQL + pgvector；普通 unit、contract、graph 和 regression tests 使用确定性 mock/stub，并强制关闭 LangSmith tracing，不消耗 Groq/Google 调用：
+测试使用真实 PostgreSQL + pgvector；普通 unit、contract、graph 和 regression tests 使用确定性 mock/stub，并强制关闭 LangSmith tracing，不消耗外部模型调用：
 
 ```powershell
 .\.venv\Scripts\python -m pytest
 ```
 
-`tests/conftest.py` 会在导入应用模块前覆盖所有模型配置为测试占位值，其中 Google primary 与 fallback 分别固定为 `google-primary-test-only` 和 `google-fallback-test-only`。这样可以确定性验证临时 503 后的 fallback 路径，同时避免读取 `.env` 中的真实模型凭据或产生外部调用；CI 使用相同的独立占位名称。
+`tests/conftest.py` 会在导入应用模块前覆盖 OpenRouter 与 Embedding 配置为测试占位值；CI 同样使用占位值。`tests/test_llm_fallback.py` 使用合成客户端验证最多一次回退、错误分类与连续解析失败；这些测试不计入真实模型评估。
 
-Phase 10 最终验证结果见 `docs/phase-10-report.md`。完整回归、Ruff、React production build 和本地 Playwright E2E 都显式关闭 LangSmith，并使用模型占位 Key；不会调用 Groq 或 Google。
+Phase 10 历史验证结果见 `docs/phase-10-report.md`。普通回归测试显式关闭 LangSmith，并使用模型占位 Key。Evaluation Phase 1.5 的真实模型验证与基线报告单独保留。
 
 ## 当前限制
 
@@ -315,3 +313,6 @@ Phase 10 最终验证结果见 `docs/phase-10-report.md`。完整回归、Ruff�
 - Docker 本地服务可以独立启动；模型地域和账户额度只影响以后单独授权的真实模型验收。
 
 架构边界、三条演示路径和最终交付检查分别见 `docs/architecture.md`、`docs/demo.md` 与 `docs/phase-10-report.md`。
+
+
+Evaluation Phase 1.5: all chat/structured/tool/judge calls use OpenRouter. Google SDK remains ONLY for unchanged embeddings, configured with EMBEDDING_API_KEY/EMBEDDING_MODEL. See evals/README.md and evals/BENCHMARK_HISTORY.md for persistent budget and benchmark limitations.

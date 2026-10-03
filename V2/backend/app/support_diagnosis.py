@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 from backend.app.config import PROJECT_ROOT
 from backend.app.customer_agent import get_token_usage
 from backend.app.handoff import SupportHandoffRecord
-from backend.app.models import create_google_model
-from backend.app.support_evidence import EvidenceRecord
+from backend.app.llm import StructuredOutputError, parse_structured_output
+from backend.app.models import create_model
+from backend.app.support_evidence import EvidenceRecord, is_read_validation_error
 from backend.app.support_tools import READ_TOOL_SCHEMAS
 
 MAX_TOOL_CALLS = int(os.getenv("SUPPORT_MAX_TOOL_CALLS", "6"))
@@ -77,9 +78,11 @@ def get_support_prompt_path():
     return PROJECT_ROOT / "backend" / "prompts" / "support.md"
 
 
-def call_support_model(messages: list[BaseMessage]) -> BaseMessage:
-    model = create_google_model(max_retries=2)
-    model_with_tools = model.bind_tools(READ_TOOL_SCHEMAS)
+def call_support_model(messages: list[BaseMessage], terminal_only: bool = False, tools: list[type[BaseModel]] | None = None) -> BaseMessage:
+    model = create_model(max_retries=0)
+    if terminal_only:
+        return model.invoke(messages, response_format={"type": "json_object"})
+    model_with_tools = model.bind_tools(READ_TOOL_SCHEMAS if tools is None else tools)
     return model_with_tools.invoke(messages)
 
 
@@ -88,9 +91,24 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
     prompt = get_support_prompt_path().read_text(encoding="utf-8")
 
     evidence_items: list[dict[str, object]] = []
+    valid_evidence_ids: set[str] = set()
+    validation_errors: list[str] = []
 
     for record in evidence:
-        evidence_items.append(record.model_dump())
+        item = record.model_dump()
+        if is_read_validation_error(record):
+            item["evidence_kind"] = "argument_validation_error"
+            validation_errors.append(f"工具参数校验失败，后台业务状态未查询：{record.response.get('error_code')} [{record.evidence_id}]")
+        else:
+            item["evidence_kind"] = "backend_response" if record.status in {"success", "empty", "not_found"} else "backend_read_error"
+            valid_evidence_ids.add(record.evidence_id)
+        evidence_items.append(item)
+
+    identifiers = {"shop_id": handoff.known_shop_id, "order_id": handoff.known_order_id, "sku": handoff.known_sku}
+    available_tools = []
+    for schema in READ_TOOL_SCHEMAS:
+        if all(identifiers.get(field) for field in schema.model_fields):
+            available_tools.append(schema)
 
     handoff_text = json.dumps(handoff.model_dump(), ensure_ascii=False)
     evidence_text = json.dumps(evidence_items, ensure_ascii=False, default=str)
@@ -136,7 +154,7 @@ Terminal data schemas:
         HumanMessage(content=message),
     ]
 
-    response = call_support_model(messages)
+    response = call_support_model(messages, terminal_only=remaining_calls == 0 or not available_tools, tools=available_tools)
     usage = get_token_usage(response)
     response_tool_calls = getattr(response, "tool_calls", [])
 
@@ -152,11 +170,20 @@ Terminal data schemas:
 
         return SupportNextStep(next_step="use_tool", tool_calls=tool_calls), usage
 
-    if isinstance(response.content, str) is False:
-        raise RuntimeError("Support Agent did not return valid terminal JSON")
+    next_step = parse_structured_output(response.content, SupportNextStep)
+    payload_name = {"finish": "investigation_complete", "request_information": "missing_information", "human_support": "human_support"}.get(next_step.next_step)
+    if payload_name and getattr(next_step, payload_name) is None:
+        raise StructuredOutputError("Missing terminal JSON payload: " + payload_name)
 
-    terminal_data = json.loads(response.content)
-    next_step = SupportNextStep.model_validate(terminal_data)
+    if next_step.investigation_complete is not None:
+        decision = next_step.investigation_complete
+        decision.confirmed_facts = filter_supported_claims(decision.confirmed_facts, valid_evidence_ids)
+        decision.possible_causes = filter_supported_claims(decision.possible_causes, valid_evidence_ids)
+        decision.unknowns.extend(validation_errors)
+    if next_step.human_support is not None:
+        decision = next_step.human_support
+        decision.known_facts = filter_supported_claims(decision.known_facts, valid_evidence_ids)
+        decision.unknowns.extend(validation_errors)
 
     return next_step, usage
 
@@ -234,7 +261,8 @@ def build_investigation_answer(decision: InvestigationComplete, evidence: list[E
     valid_evidence_ids: set[str] = set()
 
     for record in evidence:
-        valid_evidence_ids.add(record.evidence_id)
+        if not is_read_validation_error(record):
+            valid_evidence_ids.add(record.evidence_id)
 
     confirmed_claims = filter_supported_claims(decision.confirmed_facts, valid_evidence_ids)
     possible_causes = filter_supported_claims(decision.possible_causes, valid_evidence_ids)

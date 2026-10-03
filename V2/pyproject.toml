@@ -13,8 +13,7 @@ dependencies = [
     "httpx>=0.28,<1.0",
     "jieba>=0.42,<1.0",
     "langchain>=1.0,<2.0",
-    "langchain-google-genai>=3.0,<5.0",
-    "langchain-groq>=1.0,<2.0",
+    "langchain-openai>=1.6.7,<2.0",
     "langgraph>=1.0,<2.0",
     "langgraph-checkpoint-postgres>=3.0,<4.0",
     "langsmith>=0.4,<1.0",
@@ -47,4 +46,4 @@ line-length = 200
 target-version = "py311"
 
 [tool.setuptools.packages.find]
-include = ["backend*", "simulator*"]
+include = ["backend*", "simulator*", "evals*"]

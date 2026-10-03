@@ -3,8 +3,7 @@ from langsmith import traceable
 
 from backend.app.config import PROJECT_ROOT
 from backend.app.database import get_connection
-from backend.app.models import AnswerClaim, ClaimValidationOutput, RetrievedChunk, UserContext, create_groq_model
-
+from backend.app.models import AnswerClaim, ClaimValidationOutput, RetrievedChunk, UserContext, create_model
 
 PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "citation_check.md"
 
@@ -93,7 +92,7 @@ def semantic_claim_checks(claims: list[AnswerClaim], chunks: list[RetrievedChunk
 
     evidence = "\n\n".join(evidence_parts)
 
-    model = create_groq_model()
+    model = create_model()
 
     structured_model = model.with_structured_output(
         ClaimValidationOutput,

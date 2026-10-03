@@ -31,6 +31,10 @@ class EvidenceRecord(BaseModel):
     source_version: int | None = None
 
 
+def is_read_validation_error(record: EvidenceRecord) -> bool:
+    return record.source_service == "support" and record.status == "error"
+
+
 def to_optional_string(value: object) -> str | None:
     if value is None:
         return None

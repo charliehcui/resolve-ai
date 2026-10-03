@@ -12,7 +12,6 @@ from langsmith import traceable
 from backend.app.config import PROJECT_ROOT, get_settings
 from backend.app.database import get_connection
 
-
 PRODUCT_DOCUMENTS_DIR = PROJECT_ROOT / "docs" / "product"
 
 
@@ -38,10 +37,10 @@ def normalize_embedding_vector(values: list[float]) -> list[float]:
 @traceable(name="google_embedding", run_type="embedding")
 def generate_text_embeddings(texts: list[str], task_type: str) -> list[list[float]]:
     settings = get_settings()
-    client = genai.Client(api_key=settings.google_api_key)
+    client = genai.Client(api_key=settings.embedding_api_key)
 
     result = client.models.embed_content(
-        model=settings.google_embedding_model,
+        model=settings.embedding_model,
         contents=texts,
         config=types.EmbedContentConfig(
             task_type=task_type,

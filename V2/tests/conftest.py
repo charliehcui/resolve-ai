@@ -1,24 +1,34 @@
 import os
 import secrets
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import psycopg
 import pytest
 
 os.environ["LANGSMITH_TRACING"] = "false"
-os.environ["GROQ_API_KEY"] = "test-only"
-os.environ["GROQ_MODEL"] = "groq-test-only"
-os.environ["GOOGLE_API_KEY"] = "test-only"
-os.environ["GOOGLE_MODEL"] = "google-primary-test-only"
-os.environ["GOOGLE_FALLBACK_MODEL"] = "google-fallback-test-only"
-os.environ["GOOGLE_EMBEDDING_MODEL"] = "embedding-test-only"
+os.environ["OPENROUTER_API_KEY"] = "test-only"
+os.environ["OPENROUTER_MODEL"] = "test-model"
+os.environ["OPENROUTER_PROVIDER"] = "test-provider"
+os.environ["OPENROUTER_RETRY_PROVIDER"] = "test-retry-provider"
+os.environ["OPENROUTER_FALLBACK_MODEL"] = "test-fallback-model"
+os.environ["OPENROUTER_FALLBACK_PROVIDER"] = "test-fallback-provider"
+os.environ["EMBEDDING_API_KEY"] = "embedding-test-only"
+os.environ["EMBEDDING_MODEL"] = "embedding-test-only"
 os.environ["EMBEDDING_DIMENSION"] = "1024"
 os.environ["RERANK_MODEL"] = "rerank-test-only"
 os.environ["RETRIEVAL_MODE"] = "vector_only"
 
 from backend.app.auth import hash_token
-from backend.app.config import get_settings, psycopg_url
+from backend.app.config import PROJECT_ROOT, get_settings, psycopg_url
 from backend.app.database import get_connection, initialize_database
+
+
+def pytest_configure(config) -> None:
+    if os.name == "nt" and config.option.basetemp is None:
+        directory = PROJECT_ROOT / ".local" / "pytest"
+        directory.mkdir(parents=True, exist_ok=True)
+        config.option.basetemp = str(directory / uuid4().hex)
 
 
 def replace_database_name(database_url: str, database_name: str) -> str:

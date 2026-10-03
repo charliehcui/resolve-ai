@@ -75,6 +75,35 @@ def count_evidence_errors(records: list[EvidenceRecord]) -> int:
 
     return error_count
 
+
+def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: SupportHandoffRecord) -> bool:
+    if not handoff.known_order_id or handoff.known_sku:
+        return False
+
+    latest: dict[str, EvidenceRecord] = {}
+    for record in records:
+        if record.source_service == "support" or record.request.get("shop_id") != handoff.known_shop_id:
+            continue
+        if record.tool_name == "GetShopConnectionStatus" or (record.tool_name in {"GetOrder", "GetOrderProcessRecords"} and record.request.get("order_id") == handoff.known_order_id):
+            latest[record.tool_name] = record
+
+    order = latest.get("GetOrder")
+    processing = latest.get("GetOrderProcessRecords")
+    if order is None or processing is None or order.status != "success" or processing.status != "success":
+        return False
+
+    facts = processing.response
+    if facts.get("error_code") == "SKU_MAPPING_MISSING" and facts.get("task_status") == "blocked" and "merchant_sku" in facts and facts["merchant_sku"] is None:
+        return True
+
+    connection = latest.get("GetShopConnectionStatus")
+    if connection is None or connection.status != "success" or facts.get("task_status") != "failed":
+        return False
+    channel_errors = {"unavailable": "CHANNEL_UNAVAILABLE", "rate_limited": "CHANNEL_RATE_LIMITED"}
+    expected_error = channel_errors.get(connection.response.get("connection_status"))
+    return expected_error is not None and facts.get("error_code") == expected_error
+
+
 #在真正让agent判断之前，先用普通代码检查“现在还能不能继续调查
 def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflowState:
     handoff = SupportHandoffRecord.model_validate(state["handoff"])
@@ -94,7 +123,8 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
     tool_budget_reached = len(evidence) >= MAX_TOOL_CALLS
     time_budget_reached = elapsed_ms >= MAX_INVESTIGATION_MS
 
-    if tool_budget_reached or time_budget_reached:
+    terminal_only = tool_budget_reached or time_budget_reached or has_confirmed_business_blocker(evidence, handoff)
+    if terminal_only and not evidence:
         human_support = HumanSupportRequired(reason="调查已达到本次预算上限，当前证据已保留。")
         support_next_step = SupportNextStep(next_step="human_support", human_support=human_support)
 
@@ -120,7 +150,8 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             "tool_calls": [],
         }
 
-    remaining_tool_calls = MAX_TOOL_CALLS - len(evidence)
+    # 预算耗尽或业务阻碍已确认后，只允许一次终止诊断，不再扩展读取。
+    remaining_tool_calls = 0 if terminal_only else MAX_TOOL_CALLS - len(evidence)
     support_next_step, usage = decide_support_next_step(state["question"], handoff, evidence, remaining_tool_calls)
     total_usage = sum_token_usage(state.get("usage", {}), usage)
 
@@ -169,6 +200,12 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             new_calls.append(tool_call)
 
         if len(new_calls) == 0:
+            if evidence:
+                # 模型只重复已有读取时，只允许一次无读取工具的终止判断。
+                support_next_step, usage = decide_support_next_step(state["question"], handoff, evidence, 0)
+                total_usage = sum_token_usage(total_usage, usage)
+                if support_next_step.next_step != "use_tool":
+                    return {"support_next_step": support_next_step.model_dump(), "tool_calls": [], "usage": total_usage}
             human_support = HumanSupportRequired(reason="没有新的安全查询可以执行。")
             support_next_step = SupportNextStep(next_step="human_support", human_support=human_support)
 

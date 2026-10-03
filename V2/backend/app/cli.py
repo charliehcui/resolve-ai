@@ -8,11 +8,11 @@ from langsmith import traceable
 
 from backend.app import support_action_plans
 from backend.app.auth import authenticate
-from backend.app.config import get_settings
+from backend.app.config import PROJECT_ROOT, get_settings
 from backend.app.conversations import process_conversation_message
 from backend.app.customer_document_ingestion import generate_text_embeddings, import_product_documents
 from backend.app.database import database_is_ready, initialize_database
-from backend.app.models import DoctorPlatformStatusRequest, DoctorShopStatusRequest, DoctorStatusResult, create_google_model, create_groq_model
+from backend.app.models import DoctorPlatformStatusRequest, DoctorShopStatusRequest, DoctorStatusResult, create_model
 from backend.app.report import export_ticket_html
 from backend.app.support_action_approvals import decide_action_plan, execute_action_plan, get_action_details
 from backend.app.support_action_registry import ACTION_ALIASES, ACTION_REGISTRY, action_policy
@@ -21,78 +21,26 @@ from backend.app.tickets import create_ticket, list_engineer_tickets, recheck_ti
 from backend.app.trace import current_trace_id, wait_for_langsmith_run
 
 
-def eval_files() -> tuple[object, dict[str, object], dict[str, object]]:
-    from evals.run import load_cases, load_json
-
-    root = get_settings_project_root()
-    return load_cases(root / "evals" / "dev.jsonl"), load_json(root / "evals" / "experiments.json"), load_json(root / "evals" / "price_config.json")
-
-
-def get_settings_project_root():
-    from backend.app.config import PROJECT_ROOT
-
-    return PROJECT_ROOT
-
-
-def eval_validate_command() -> None:
-    from evals.run import validate_dev_dataset, verify_holdout_integrity
-
-    cases, config, _ = eval_files()
-    print(json.dumps({"dev": validate_dev_dataset(cases, config), "holdout_integrity": verify_holdout_integrity(), "holdout_content_loaded": False}, ensure_ascii=False, indent=2))
-
-
-def eval_run_command(mode: str) -> None:
-    from evals.run import dry_run
-
-    if mode != "dry-run":
-        raise PermissionError("Full benchmark execution is locked until the user explicitly approves the reported budget")
-    cases, config, _ = eval_files()
-    result = dry_run(config, cases)
-    output_path = get_settings_project_root() / ".local" / "eval" / "dry-run.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"output": str(output_path), **result}, ensure_ascii=False, indent=2))
-
-
-def eval_plan_command() -> None:
-    from evals.run import build_comparison_runs
-
-    cases, config, _ = eval_files()
-    runs = build_comparison_runs(cases, config)
-    counts = {name: sum(item["experiment"] == name for item in runs) for name in ("retrieval", "investigation", "roles")}
-    print(json.dumps({"run_count": len(runs), "experiment_counts": counts, "holdout_runs": config["holdout"]["runs"], "external_acceptance_runs": config["external_acceptance"]["runs"], "executed": False}, ensure_ascii=False, indent=2))
-
-
-def eval_estimate_command() -> None:
-    from evals.run import estimate_benchmark
-
-    cases, config, prices = eval_files()
-    print(json.dumps(estimate_benchmark(cases, config, prices), ensure_ascii=False, indent=2))
-
-
 @traceable(name="phase_1_doctor", run_type="chain")
 def run_doctor_checks() -> dict[str, object]:
     settings = get_settings()
     if not database_is_ready():
         raise RuntimeError("PostgreSQL is not ready")
     vector = generate_text_embeddings(["ResolveAI Phase 1 doctor"], "RETRIEVAL_QUERY")[0]
-    groq_result = create_groq_model().with_structured_output(DoctorStatusResult).invoke("Return status ok.")
-    google_model = create_google_model()
-    google_result = google_model.with_structured_output(DoctorStatusResult).invoke("Return status ok.")
-    tool_result = google_model.bind_tools([DoctorShopStatusRequest, DoctorPlatformStatusRequest], tool_choice="any").invoke("In one response, call DoctorShopStatusRequest with shop_id shop-a and DoctorPlatformStatusRequest with platform_id platform-a. Both are independent read-only checks; call both.")
-    if groq_result.status != "ok" or google_result.status != "ok":
+    model = create_model()
+    structured_result = model.with_structured_output(DoctorStatusResult).invoke("Return status ok.")
+    tool_result = model.bind_tools([DoctorShopStatusRequest, DoctorPlatformStatusRequest]).invoke("In one response, call DoctorShopStatusRequest with shop_id shop-a and DoctorPlatformStatusRequest with platform_id platform-a. Both are independent read-only checks; call both.")
+    if structured_result.status != "ok":
         raise RuntimeError("Structured output capability check failed")
     tool_names = {call["name"] for call in tool_result.tool_calls}
     if tool_names != {"DoctorShopStatusRequest", "DoctorPlatformStatusRequest"}:
-        raise RuntimeError("Google parallel tool calling capability check failed")
+        raise RuntimeError("OpenRouter parallel tool calling capability check failed")
     return {
         "database": "ok",
         "embedding_dimension": len(vector),
-        "groq_structured_output": "ok",
-        "google_structured_output": "ok",
-        "google_tool_calling": "ok",
-        "google_parallel_tool_calling": "ok",
-        "google_parallel_tool_call_count": len(tool_result.tool_calls),
+        "openrouter_structured_output": "ok",
+        "openrouter_tool_calling": "ok",
+        "openrouter_parallel_tool_call_count": len(tool_result.tool_calls),
         "langsmith_tracing": settings.langsmith_tracing,
         "trace_id": current_trace_id(),
     }
@@ -161,7 +109,7 @@ def ticket_recheck_command(token: str, ticket_id: str) -> None:
 
 
 def ticket_export_command(token: str, ticket_id: str, output: str | None) -> None:
-    output_path = Path(output) if output else get_settings_project_root() / "reports" / f"ticket-{ticket_id}.html"
+    output_path = Path(output) if output else PROJECT_ROOT / "reports" / f"ticket-{ticket_id}.html"
     result = export_ticket_html(authenticate(token), ticket_id, output_path.resolve())
     print(json.dumps({"ticket_id": ticket_id, "output": str(result)}, ensure_ascii=False, indent=2))
 
@@ -222,15 +170,6 @@ def build_parser() -> argparse.ArgumentParser:
     ticket_export.add_argument("ticket_id")
     ticket_export.add_argument("--output")
     ticket_export.add_argument("--token", default=os.getenv("RESOLVEAI_TOKEN"))
-    evaluation = commands.add_parser("eval")
-    evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
-    evaluation_commands.add_parser("validate")
-    evaluation_run = evaluation_commands.add_parser("run")
-    evaluation_run.add_argument("--suite", default="evals/dev.jsonl")
-    evaluation_run.add_argument("--mode", choices=["dry-run", "full"], default="dry-run")
-    evaluation_run.add_argument("--repeat", type=int, default=1)
-    evaluation_commands.add_parser("plan")
-    evaluation_commands.add_parser("estimate")
     return parser
 
 
@@ -269,16 +208,6 @@ def main() -> None:
             ticket_recheck_command(args.token or "", args.ticket_id)
         elif args.command == "ticket" and args.ticket_command == "export":
             ticket_export_command(args.token or "", args.ticket_id, args.output)
-        elif args.command == "eval" and args.eval_command == "validate":
-            eval_validate_command()
-        elif args.command == "eval" and args.eval_command == "run":
-            if args.suite != "evals/dev.jsonl" or args.repeat != 1:
-                raise ValueError("This pre-approval Dry Run is fixed to evals/dev.jsonl with repeat 1")
-            eval_run_command(args.mode)
-        elif args.command == "eval" and args.eval_command == "plan":
-            eval_plan_command()
-        elif args.command == "eval" and args.eval_command == "estimate":
-            eval_estimate_command()
     except Exception as error:
         print(f"Error: {error}", file=sys.stderr)
         raise SystemExit(1) from error

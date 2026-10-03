@@ -5,7 +5,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 #把 .env 里的配置读进来，让项目其他文件统一使用
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -27,12 +26,14 @@ def psycopg_url(database_url: str) -> str:
 @dataclass(frozen=True)   #这个对象创建之后，里面的数据就不能再改了
 class Settings:  #把项目所有配置统一装进一个对象
     database_url: str = field(repr=False)
-    groq_api_key: str = field(repr=False)
-    groq_model: str
-    google_api_key: str = field(repr=False)
-    google_model: str
-    google_fallback_model: str
-    google_embedding_model: str
+    openrouter_api_key: str = field(repr=False)
+    openrouter_model: str
+    openrouter_provider: str
+    openrouter_retry_provider: str
+    openrouter_fallback_model: str
+    openrouter_fallback_provider: str
+    embedding_api_key: str = field(repr=False)
+    embedding_model: str
     embedding_dimension: int
     rerank_model: str
     retrieval_mode: str
@@ -54,12 +55,14 @@ def get_settings() -> Settings:
         raise RuntimeError("RETRIEVAL_MODE must be vector_only, hybrid, or hybrid_rerank")
     return Settings(
         database_url=require_env("DATABASE_URL"),
-        groq_api_key=require_env("GROQ_API_KEY"),
-        groq_model=require_env("GROQ_MODEL"),
-        google_api_key=require_env("GOOGLE_API_KEY"),
-        google_model=require_env("GOOGLE_MODEL"),
-        google_fallback_model=require_env("GOOGLE_FALLBACK_MODEL"),
-        google_embedding_model=require_env("GOOGLE_EMBEDDING_MODEL"),
+        openrouter_api_key=require_env("OPENROUTER_API_KEY"),
+        openrouter_model=require_env("OPENROUTER_MODEL"),
+        openrouter_provider=require_env("OPENROUTER_PROVIDER"),
+        openrouter_retry_provider=os.getenv("OPENROUTER_RETRY_PROVIDER", "").strip(),
+        openrouter_fallback_model=os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip(),
+        openrouter_fallback_provider=os.getenv("OPENROUTER_FALLBACK_PROVIDER", "").strip(),
+        embedding_api_key=require_env("EMBEDDING_API_KEY"),
+        embedding_model=require_env("EMBEDDING_MODEL"),
         embedding_dimension=dimension,
         rerank_model=require_env("RERANK_MODEL"),
         retrieval_mode=retrieval_mode,

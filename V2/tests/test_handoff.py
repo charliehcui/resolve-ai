@@ -164,11 +164,11 @@ def test_support_agent_binds_only_registered_query_tools(monkeypatch: pytest.Mon
         def invoke(self, messages):
             return FakeResponse()
 
-    def fake_google_model(*, max_retries: int):
-        assert max_retries == 2
+    def fake_model(*, max_retries: int):
+        assert max_retries == 0
         return FakeBoundModel()
 
-    monkeypatch.setattr("backend.app.support_diagnosis.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_diagnosis.create_model", fake_model)
     handoff = SupportHandoffRecord(
         handoff_id="handoff-1",
         conversation_id="conversation-1",
@@ -217,10 +217,10 @@ def test_support_agent_parses_finish_data_without_control_tool(monkeypatch: pyte
         def invoke(self, messages):
             return FakeResponse()
 
-    def fake_google_model(*, max_retries: int):
+    def fake_model(*, max_retries: int):
         return FakeBoundModel()
 
-    monkeypatch.setattr("backend.app.support_diagnosis.create_google_model", fake_google_model)
+    monkeypatch.setattr("backend.app.support_diagnosis.create_model", fake_model)
     handoff = SupportHandoffRecord(
         handoff_id="handoff-1",
         conversation_id="conversation-1",

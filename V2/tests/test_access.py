@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from backend.app.auth import authenticate, authorize_conversation
 from backend.app.config import Settings, require_env
 from backend.app.database import create_conversation, load_messages, save_message
-from backend.app.models import provider_for_task
 from simulator.services.common import OrderEvent
 from simulator.services.merchant import app as merchant_app
 from simulator.services.merchant import store_order_event
@@ -66,13 +65,6 @@ def test_order_event_ingest_requires_service_credential(seeded_database: dict[st
     assert response.status_code == 401
 
 
-def test_model_routing_is_deterministic() -> None:
-    assert provider_for_task("customer_answer") == "groq"
-    assert provider_for_task("query_rewrite") == "groq"
-    assert provider_for_task("support_investigation") == "google"
-    assert provider_for_task("parallel_tool_calling") == "google"
-
-
 def test_missing_required_environment_variable_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PHASE_1_REQUIRED_VALUE", raising=False)
     with pytest.raises(RuntimeError, match="Missing required environment variable: PHASE_1_REQUIRED_VALUE"):
@@ -82,12 +74,14 @@ def test_missing_required_environment_variable_is_rejected(monkeypatch: pytest.M
 def test_settings_repr_hides_secrets() -> None:
     settings = Settings(
         database_url="postgresql://user:database-secret@localhost/example",
-        groq_api_key="groq-secret-value",
-        groq_model="groq-model",
-        google_api_key="google-secret-value",
-        google_model="google-model",
-        google_fallback_model="google-fallback-model",
-        google_embedding_model="embedding-model",
+        openrouter_api_key="chat-secret-value",
+        openrouter_model="chat-model",
+        openrouter_provider="provider",
+        openrouter_retry_provider="",
+        openrouter_fallback_model="",
+        openrouter_fallback_provider="",
+        embedding_api_key="embedding-secret-value",
+        embedding_model="embedding-model",
         embedding_dimension=1024,
         rerank_model="rerank-model",
         retrieval_mode="hybrid_rerank",
@@ -96,5 +90,5 @@ def test_settings_repr_hides_secrets() -> None:
     )
     settings_text = repr(settings)
     assert "database-secret" not in settings_text
-    assert "groq-secret-value" not in settings_text
-    assert "google-secret-value" not in settings_text
+    assert "chat-secret-value" not in settings_text
+    assert "embedding-secret-value" not in settings_text
