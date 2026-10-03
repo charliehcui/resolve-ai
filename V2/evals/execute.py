@@ -16,7 +16,7 @@ from backend.app.api import app
 from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
-from evals.judge import JudgeError, empty_answer_scores, judge_rag
+from evals.judge import JudgeError, empty_answer_scores, judge_rag, judge_workflow
 from evals.metrics import applicable_metrics, claim_scores, retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check, workflow_result_check
 from evals.observe import Observer
 from evals.runtime import configure_tokens
@@ -198,6 +198,36 @@ def score_agent(case: dict, output: dict) -> None:
         diagnosis = status in case["expected"]["statuses"] and action_check["passed"] and claim_check["passed"] is not False and result_check["passed"] and any(pattern.casefold() in text for pattern in case["expected"]["diagnosis_any"])
         output["metrics"]["diagnosis_accuracy"] = float(diagnosis)
         output["diagnosis_scoring"] = {"method": "human_authored_status_action_and_critical_claim_rules_v2", "actual_status": status, "actual_action": action, "action_check": action_check, "limitation": "Concept and targeted claim rules are smoke checks; nuanced diagnosis needs independent human adjudication."}
+        if case.get("workflow_ground_truth") and output.get("initial"):
+            output["metrics"].pop("diagnosis_accuracy", None)
+            judged = judge_workflow(case, output)
+            output["independent_judge"] = judged
+            judgment = judged["judgment"]
+            # The semantic contract replaces keyword/cause heuristics, not the frozen answers.
+            output["failure_reasons"] = [reason for reason in output["failure_reasons"] if not reason.startswith(("Unsupported specific cause:", "Unsupported business promise:"))]
+            output["business_claim_check"] = {"checked": True, "passed": not judgment["unsupported_claims"], "violations": [{"rule": "semantic_unsupported_claim", "text": claim} for claim in judgment["unsupported_claims"]]}
+            output["metrics"]["diagnosis_accuracy"] = float(judgment["diagnosis_correct"] and all(item["passed"] for item in judgment["fact_checks"]))
+            output["metrics"]["handoff_accuracy"] *= float(judgment["handoff_valid"])
+            names = {tool.get("name") for tool in observations.get("selected_tools", [])}
+            routes = case["workflow_ground_truth"]["required_tool_routes"]
+            route_complete = any(set(route).issubset(names) for route in routes)
+            if not route_complete:
+                output["metrics"]["diagnosis_accuracy"] = 0.0
+                output["failure_reasons"].append("Missing Tool: required backend facts were not established; customer statements are not verified evidence")
+                if turn.get("ticket_id"):
+                    output["metrics"]["handoff_accuracy"] = 0.0
+                judged.setdefault("deterministic_overrides", {})["required_route_incomplete"] = True
+            if judgment["unnecessary_tool_calls"]:
+                output["metrics"]["tool_selection_accuracy"] = 0.0
+                output["failure_reasons"].append("Unnecessary Tool: " + str(judgment["unnecessary_tool_calls"]))
+            if status not in case["expected"]["statuses"]:
+                output["failure_reasons"].append("Unexpected workflow outcome: " + str(status))
+            if not action_check["passed"] or not judgment["action_valid"]:
+                output["failure_reasons"].append("Invalid Action: actual action or prerequisites do not satisfy the contract")
+            output["failure_reasons"].extend("Unsupported Claim: " + claim for claim in judgment["unsupported_claims"])
+            output["failure_reasons"].extend("Incomplete Action: " + action for action in judgment["incomplete_actions"])
+            output["failure_reasons"].extend("Missing fact: " + item["reason"] for item in judgment["fact_checks"] if not item["passed"])
+            output["diagnosis_scoring"].update(method=judged["method"], fact_checks=judgment["fact_checks"], action_check={"passed": action_check["passed"] and judgment["action_valid"], "deterministic": action_check})
         if output["after_business"]["counts"] != output["before_business"]["counts"] or output["after_business"]["business_rows"] != output["before_business"]["business_rows"]:
             output["failure_reasons"].append("Read-only investigation produced an unexpected business effect")
 
@@ -284,7 +314,7 @@ def evaluate(case: dict, variant: str, directory: Path, output_path: Path) -> di
         if isinstance(error, JudgeError):
             output["independent_judge"] = error.audit
             output["scoring_status"] = "judge_error"
-            output["metrics"].update(error.audit["deterministic_metrics"])
+            output["metrics"].update(error.audit.get("deterministic_metrics", {}))
         output["error_type"] = type(error).__name__
         timeout_error = error.__cause__ if isinstance(error, JudgeError) else error
         output["status"] = "timeout" if isinstance(timeout_error, (TimeoutError, httpx.TimeoutException, APITimeoutError)) else "error"

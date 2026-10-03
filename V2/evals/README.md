@@ -4,6 +4,24 @@ Only two evaluation modes, one entry point. `smoke.jsonl` has 83 human-authored 
 
 For Workflow data checks only, use `python -m evals.dataset --validate` (frozen hash/schema/splits) or `python -m evals.dataset --check-fixtures` (isolated local simulator, no Agent/LLM). The semantic `workflow_ground_truth` is authoritative; legacy keyword metrics do not implement the whole frozen contract.
 
+## Authorized Workflow evaluation
+
+Workflow uses the existing entry point and frozen splits, without running RAG, Safety, Reliability, Final Benchmark or LangSmith:
+
+```powershell
+$env:EVAL_MAX_REQUEST_BYTES = '49152'
+.\.venv\Scripts\python -m evals.run --category workflow --workflow-stage baseline
+.\.venv\Scripts\python -m evals.run --category workflow --cases flow-shipment flow-auth flow-stock
+.\.venv\Scripts\python -m evals.run --category workflow --workflow-stage optimized
+.\.venv\Scripts\python -m evals.run --category workflow --workflow-stage holdout
+```
+
+Baseline and optimized select all 40 Development/Regression cases. Holdout selects the 10 new cases once, requires a completed optimized report, and has a persistent start marker to prevent replay. Stage reports cannot be overwritten. Explicit Workflow case lists run at most 11 cases and preserve errors while continuing the selected checks; small default Quick runs still stop on the first error. Every execution stays in the denominator.
+
+Semantic scoring checks every required fact and all final claims against independent simulator readback, legal action prerequisites, persisted plans/tickets and user restrictions. Tool routes and scoped arguments are deterministic; argument correctness is independent from tool selection. Optional unnecessary calls are assessed separately from system plan/verifier reads. One retry after an unavailable read is allowed by the frozen contract. Judge errors remain unknown. Application and judge share the configured routing policy; actual DeepSeek/GLM usage and costs are recorded rather than described as single-model results.
+
+Only important milestones belong in `BENCHMARK_HISTORY.md`. Meaningful measured changes append simple Problem / Change / Before / After / Why entries to `OPTIMIZATION_HISTORY.md`. Long-term Workflow reports use `reports/workflow/baseline`, `optimized`, and `holdout`; targeted debugging overwrites `reports/latest`. Retain original outputs when correcting a scoring error; never present that correction as an Agent gain.
+
 ## Quick Evaluation
 
 From the project root:

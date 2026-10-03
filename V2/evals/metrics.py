@@ -1,4 +1,5 @@
 """Explicit denominators, missing evidence and wall-clock statistics."""
+import json
 import re
 from collections import Counter
 
@@ -33,21 +34,83 @@ def tool_scores(selected: list[dict], expected: dict, identifiers: dict) -> dict
     names = {tool.get("name") for tool in selected}
     acceptable = set(expected["acceptable_tools"])
     required_groups = expected.get("required_any", [])
-    selection = names.issubset(acceptable) and all(names & set(group) for group in required_groups)
+    routes = expected.get("required_routes")
+    route_complete = any(set(route).issubset(names) for route in routes) if routes is not None else all(names & set(group) for group in required_groups)
+    selection = names.issubset(acceptable) and route_complete
     if not acceptable:
         return {"tool_selection_accuracy": float(not selected), "tool_argument_accuracy": float(not selected)}
     arguments_correct = bool(selected)
     for tool in selected:
         rules = expected.get("arguments", {}).get(tool.get("name"))
+        if rules is None:
+            from backend.app.support_tools import READ_TOOL_SCHEMAS
+
+            schema = next((schema for schema in READ_TOOL_SCHEMAS if schema.__name__ == tool.get("name")), None)
+            if schema is not None:
+                rules = {field: "$" + field for field in schema.model_fields}
         args = tool.get("args")
         if rules is None or not isinstance(args, dict) or set(args) != set(rules):
             arguments_correct = False
             continue
         for name, value in rules.items():
-            wanted = identifiers[value[1:]] if isinstance(value, str) and value.startswith("$") else value
+            wanted = identifiers.get(value[1:]) if isinstance(value, str) and value.startswith("$") else value
             if args.get(name) != wanted:
                 arguments_correct = False
-    return {"tool_selection_accuracy": float(selection), "tool_argument_accuracy": float(arguments_correct and selection)}
+    return {"tool_selection_accuracy": float(selection), "tool_argument_accuracy": float(arguments_correct)}
+
+
+def workflow_failure_categories(result: dict) -> list[str]:
+    categories = set()
+    kind = execution_failure_kind(result)
+    if kind:
+        return ["Provider Error" if kind == "provider_error" else "Evaluation Error"]
+    case = result.get("case", {})
+    expected = case.get("expected_tools", {})
+    selected = result.get("observations", {}).get("selected_tools", [])
+    names = {item.get("name") for item in selected}
+    if names - set(expected.get("acceptable_tools", [])):
+        categories.update(("Wrong Tool", "Unnecessary Tool"))
+    routes = case.get("workflow_ground_truth", {}).get("required_tool_routes")
+    if routes and not any(set(route).issubset(names) for route in routes):
+        categories.update(("Missing Tool", "Premature Stop"))
+    successful_reads = {(record.get("tool_name"), json.dumps(record.get("request"), sort_keys=True)) for record in (result.get("snapshot", {}).get("case") or {}).get("evidence", []) if record.get("status") in {"success", "empty", "not_found"}}
+    seen = set()
+    for item in selected:
+        key = (item.get("name"), json.dumps(item.get("args"), sort_keys=True))
+        if key in seen and key in successful_reads:
+            categories.add("Repeated Tool")
+        seen.add(key)
+    metrics = result.get("metrics", {})
+    for name, category in (("tool_argument_accuracy", "Wrong Argument"), ("diagnosis_accuracy", "Wrong Diagnosis"), ("handoff_accuracy", "Wrong Handoff")):
+        if metrics.get(name) == 0 and (name != "tool_argument_accuracy" or selected):
+            categories.add(category)
+    for reason in result.get("failure_reasons", []):
+        for category in ("Unnecessary Tool", "Invalid Action", "Unsupported Claim", "Incomplete Action"):
+            if reason.startswith(category + ":"):
+                categories.add(category)
+        if "no persisted" in reason or "no matching" in reason:
+            categories.add("Incomplete Action")
+        if "unexpected business effect" in reason:
+            categories.add("Invalid Action")
+    return sorted(categories)
+
+
+def allowed_workflow_read_retries(output: dict) -> set[int]:
+    """The frozen contract permits one scoped retry following an unavailable read."""
+    records = (output.get("snapshot", {}).get("case") or {}).get("evidence", [])
+    indexed = {}
+    for record in records:
+        if record.get("source_service") != "support":
+            key = (record.get("tool_name"), json.dumps(record.get("request"), sort_keys=True))
+            indexed.setdefault(key, record.get("status"))
+    counts = Counter()
+    permitted = set()
+    for index, tool in enumerate(output.get("observations", {}).get("selected_tools", [])):
+        key = (tool.get("name"), json.dumps(tool.get("args"), sort_keys=True))
+        counts[key] += 1
+        if counts[key] == 2 and indexed.get(key) in {"unavailable", "error"}:
+            permitted.add(index)
+    return permitted
 
 
 def workflow_action_check(case: dict, output: dict) -> dict:

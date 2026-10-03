@@ -19,7 +19,9 @@ from backend.app.support_diagnosis import (
     MAX_TOOL_CALLS,
     MAX_TOOL_ERRORS,
     CandidateAction,
+    ClaimWithEvidence,
     HumanSupportRequired,
+    InvestigationComplete,
     MissingInformationRequest,
     SupportAgentResult,
     SupportNextStep,
@@ -109,10 +111,23 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
     if primary_complete and has_shipment_evidence_conflict(scoped):
         return True
     indexed = {record.tool_name: record for record in scoped}
+    order = indexed.get("GetOrder")
+    if primary_complete and order is not None and (order.status == "not_found" or order.status == "success" and order.response.get("payment_status") in {"unpaid", "cancelled"}):
+        return True
+    task = indexed.get("GetWorkerTask")
+    if primary_complete and action_request(handoff.customer_problem, "recovery") is False and task is not None and task.status == "success" and task.response.get("error_code") == "WORKER_INTERRUPTED" and task.response.get("retryable") is True:
+        return True
     warehouse, platform, processing = [indexed.get(name) for name in ("GetWarehouseShipment", "GetPlatformShipment", "GetShipmentProcessRecords")]
-    if primary_complete and all(record is not None and record.status == "success" for record in (warehouse, platform, processing)):
-        if warehouse.response.get("shipment_count") == 1 and platform.response.get("status") == "shipped" and all(warehouse.response.get(field) and warehouse.response[field] == platform.response.get(field) for field in ("shipment_id", "tracking_number", "carrier")):
-            return True
+    if primary_complete and warehouse is not None and processing is not None and platform is not None and warehouse.status == "success" and processing.status == "success" and platform.status == "not_found" and warehouse.response.get("warehouse_order_status") == "shipped" and warehouse.response.get("shipment_count") == 1:
+        same_shipment = all(warehouse.response.get(field) and warehouse.response[field] == processing.response.get(field) for field in ("shipment_id", "carrier", "tracking_number")) and warehouse.response.get("shipment_version") == processing.response.get("version")
+        sync, connection = indexed.get("GetShopSyncStatus"), indexed.get("GetShopConnectionStatus")
+        if same_shipment and sync is not None and sync.status == "success":
+            if sync.response.get("shipment_sync_enabled") is False:
+                return True
+            if connection is not None and connection.status == "success" and connection.response.get("connection_status") == "authorized" and sync.response.get("shipment_sync_enabled") is True and processing.response.get("task_status") == "failed" and processing.response.get("error_code") == "TRANSIENT_PROCESSING_ERROR":
+                return True
+    if primary_complete and all(record is not None and record.status == "success" for record in (warehouse, platform, processing)) and warehouse.response.get("shipment_count") == 1 and platform.response.get("status") == "shipped" and all(warehouse.response.get(field) and warehouse.response[field] == platform.response.get(field) for field in ("shipment_id", "tracking_number", "carrier")):
+        return True
     stock = indexed.get("GetStockStatus")
     if primary_complete and stock is not None and stock.status in {"success", "empty"}:
         if stock.response.get("assessment") in {"consistent", "waiting", "insufficient_information"}:
@@ -140,10 +155,9 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
 
     facts = processing.response
     other_investigation = any(word in handoff.customer_problem.casefold() for word in ("发货", "出库", "库存", "授权", "连接", "限流", "shipment", "shipping", "delivery", "stock", "inventory", "authorization", "connection", "outage", "rate limit"))
-    if not other_investigation and facts.get("task_status") == "completed" and facts.get("merchant_order_count") == 1 and facts.get("merchant_order_id") and facts.get("merchant_sku") and order.response.get("payment_status") == "paid":
-        # 完整匹配或明确字段冲突都已足以结束导入调查；冲突交人工，不扩展到发货。
-        if facts.get("event_id") and order.response.get("event_id") and facts.get("platform_sku") and order.response.get("sku") and all(order.response.get(field) is not None and facts.get(field) is not None for field in ("quantity", "amount_minor")):
-            return True
+    # 完整匹配或明确字段冲突都已足以结束导入调查；冲突交人工，不扩展到发货。
+    if (not other_investigation or primary_complete) and facts.get("task_status") == "completed" and facts.get("merchant_order_count") == 1 and facts.get("merchant_order_id") and facts.get("merchant_sku") and order.response.get("payment_status") == "paid" and facts.get("event_id") and order.response.get("event_id") and facts.get("platform_sku") and order.response.get("sku") and all(order.response.get(field) is not None and facts.get(field) is not None for field in ("quantity", "amount_minor")):
+        return True
     if facts.get("error_code") == "SKU_MAPPING_MISSING" and facts.get("task_status") == "blocked" and "merchant_sku" in facts and facts["merchant_sku"] is None:
         return True
 
@@ -153,9 +167,8 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
     if connection.response.get("connection_status") == "auth_expired" and facts.get("task_status") == "blocked" and facts.get("error_code") == "CHANNEL_AUTH_EXPIRED":
         return True
     sync = latest.get("GetShopSyncStatus")
-    if facts.get("task_status") == "blocked" and facts.get("error_code") in {"CHANNEL_AUTH_EXPIRED", "ORDER_SYNC_DISABLED"} and facts.get("merchant_order_count") == 0 and facts.get("merchant_order_id") is None and order.response.get("payment_status") == "paid":
-        if connection.response.get("connection_status") == "authorized" and sync is not None and sync.status == "success" and sync.response.get("sync_enabled") is True:
-            return True
+    if facts.get("task_status") == "blocked" and facts.get("error_code") in {"CHANNEL_AUTH_EXPIRED", "ORDER_SYNC_DISABLED"} and facts.get("merchant_order_count") == 0 and facts.get("merchant_order_id") is None and order.response.get("payment_status") == "paid" and connection.response.get("connection_status") == "authorized" and sync is not None and sync.status == "success" and sync.response.get("sync_enabled") is True:
+        return True
     if facts.get("error_code") in {"WORKER_INTERRUPTED", "TRANSIENT_PROCESSING_ERROR"}:
         if any(word in handoff.customer_problem.casefold() for word in ("发货", "出库", "shipment", "shipping", "delivery")):
             return False
@@ -192,6 +205,20 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             "support_next_step": support_next_step.model_dump(),
             "tool_calls": [],
         }
+
+    primary = primary_read_tools(handoff, state["question"])
+    scoped = {record.tool_name: record for record in evidence if record.source_service != "support" and record.request.get("shop_id") == handoff.known_shop_id and record.request.get("order_id") == handoff.known_order_id}
+    source, processing = scoped.get("GetOrder"), scoped.get("GetOrderProcessRecords")
+    if primary == {"GetOrder", "GetOrderProcessRecords"} and source is not None and processing is not None:
+        if source.status == "not_found":
+            missing = MissingInformationRequest(missing_fields=["order_id"], customer_message=f"在店铺 {handoff.known_shop_id} 下未查到订单 {handoff.known_order_id} 的平台来源。请核对订单编号，并确认它属于这个店铺。未查到来源不能说明发生了同步故障。")
+            return {"support_next_step": SupportNextStep(next_step="request_information", missing_information=missing).model_dump(), "tool_calls": []}
+        payment = source.response.get("payment_status")
+        if source.status == "success" and payment in {"unpaid", "cancelled"} and processing.status == "success" and processing.response.get("merchant_order_count") == 0 and processing.response.get("error_code") == "ORDER_NOT_PAID":
+            label = "未付款" if payment == "unpaid" else "已取消"
+            facts = [ClaimWithEvidence(text=f"平台订单的当前付款状态为 {payment}（{label}）。", evidence_ids=[source.evidence_id]), ClaimWithEvidence(text="商家处理记录显示 ORDER_NOT_PAID，未生成商家订单。", evidence_ids=[processing.evidence_id])]
+            decision = InvestigationComplete(summary=f"订单{label}，不符合导入条件，未创建恢复方案。状态改变后需要重新核对，不会自动补回该订单。", confirmed_facts=facts, outcome="diagnosed")
+            return {"support_next_step": SupportNextStep(next_step="finish", investigation_complete=decision).model_dump(), "tool_calls": []}
 
     elapsed_ms = int((time.perf_counter() - state["started_at"]) * 1000)
     tool_budget_reached = len(evidence) >= MAX_TOOL_CALLS

@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
 from evals.metrics import execution_failure_kind
 
 
@@ -27,6 +28,8 @@ def compact_result(result: dict) -> dict:
         row["actual_result_summary"].pop("answer_preview")
         row["actual_result_summary"]["answer"] = response.get("answer")
         row["task_result_check"] = result.get("task_result_check")
+        row["failure_categories"] = result.get("failure_categories", [])
+        row["semantic_checks"] = result.get("independent_judge", {}).get("judgment")
     row["execution_failure_kind"] = execution_failure_kind(result)
     return row
 
@@ -77,3 +80,15 @@ def history_entry(manifest: dict, summary: dict, report_path: str, changes: str,
         metrics = values["metrics"]
         lines.append(f"| {mode} | {values['total_runs']} | {metrics['recall_at_5']['value']} | {metrics['mrr']['value']} | {metrics['answer_accuracy_after']['value']} |")
     return "\n".join(lines) + "\n\n"
+
+
+def workflow_history_entry(summary: dict, title: str, stage: str) -> str:
+    manifest = summary["manifest"]
+    cost = summary.get("cost", {}).get("run", {})
+    performance = summary["performance"]
+    lines = ["## " + title, "", f"- Run: `{manifest['run_id']}`; cases: {summary['passed']}/{manifest['selected_cases']}; failed: {summary['failed']}; Error: {summary['error']}; Timeout: {summary['timeout']}.", f"- Report: [reports/workflow/{stage}/summary.md](../reports/workflow/{stage}/summary.md)", "", "| Metric | Value |", "|---|---:|"]
+    for name in ("task_success_rate", "diagnosis_accuracy", "tool_selection_accuracy", "tool_argument_accuracy", "handoff_accuracy"):
+        value = summary["metrics"][name]["value"]
+        lines.append(f"| {name} | {value:.2%} |" if value is not None else f"| {name} | unknown |")
+    lines += ["", f"- Unsupported Claim / Incomplete Action: {summary['workflow_checks']['unsupported_claims']} / {summary['workflow_checks']['incomplete_actions']}; missing semantic evidence: {summary['workflow_checks']['missing_semantic_evidence_runs']}.", "- Failure categories (cases may have several): " + json.dumps(summary["workflow_checks"]["failure_categories"]), f"- Application latency P50 / P95: {performance['p50_latency_ms']} / {performance['p95_latency_ms']} ms.", f"- Tokens (application + Judge, known usage): {cost.get('total_tokens')}; application mean: {performance['total_tokens']['mean']}; missing application usage: {performance['total_tokens']['missing_runs']} runs.", f"- Cost (application + Judge): ${cost.get('actual_usd')}; accounted including unknown reserves: ${cost.get('accounted_usd')}; unknown reserve: ${cost.get('unknown_reserve_usd')}; fallback calls: {cost.get('fallback_count')}.", ""]
+    return "\n".join(lines) + "\n"

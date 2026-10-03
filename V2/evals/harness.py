@@ -21,7 +21,7 @@ from psycopg import sql
 
 from backend.app.config import PROJECT_ROOT, get_settings, psycopg_url
 from evals.dataset import load_cases
-from evals.metrics import applicable_metrics, summarize
+from evals.metrics import applicable_metrics, summarize, workflow_failure_categories
 from evals.scenarios import SCENARIO_NAMES
 
 CATEGORIES = ("rag", "workflow", "safety", "reliability")
@@ -234,6 +234,8 @@ def execute_case(case: dict, variant: str, repeat: int, number: int, directory: 
 
 def summary_with_comparisons(results: list[dict]) -> dict:
     summary = summarize(results)
+    workflow = [result for result in results if result["category"] == "workflow"]
+    summary["workflow_checks"] = {"failure_categories": dict(Counter(category for result in workflow for category in result.get("failure_categories", []))), "unsupported_claims": sum(len((result.get("business_claim_check") or {}).get("violations", [])) for result in workflow), "incomplete_actions": sum(sum(reason.startswith("Incomplete Action:") for reason in result.get("failure_reasons", [])) + len((result.get("task_result_check") or {}).get("violations", [])) for result in workflow), "semantic_scored_runs": sum(result.get("independent_judge", {}).get("status") == "scored" for result in workflow), "missing_semantic_evidence_runs": sum(result.get("independent_judge", {}).get("status") != "scored" for result in workflow)}
     summary["by_category"] = {name: summarize([result for result in results if result["category"] == name]) for name in CATEGORIES}
     summary["retrieval_comparison"] = {mode: summarize([result for result in results if result["category"] == "rag" and result["variant"] == mode]) for mode in MODES}
     summary["rerank_fallback_runs"] = [{"case_id": result["case_id"], "repeat": result["repeat"], "error": run["rerank_error"]} for result in results for run in result.get("retrieval_runs", []) if run.get("rerank_error")]
@@ -256,6 +258,8 @@ def summary_with_comparisons(results: list[dict]) -> dict:
 
 
 def render_summary(summary: dict, manifest: dict) -> str:
+    if manifest.get("workflow_stage") or manifest.get("validation", {}).get("categories") == {"workflow": manifest.get("selected_cases")}:
+        return render_workflow_summary(summary, manifest)
     lines = ["# ResolveAI " + ("Final Benchmark" if manifest.get("mode") == "final" else "Quick Evaluation"), "", f"Run: {manifest['run_id']}", f"Dataset cases: {manifest['selected_cases']}; planned runs: {manifest['planned_runs']}", f"Passed {summary['passed']} / Failed {summary['failed']} / Error {summary['error']} / Timeout {summary['timeout']}", "", "All failures remain in eligible denominators. Missing adverse-rate or claim evidence produces null, never an automatic pass.", "", "| Metric | Value | Numerator | Denominator | Missing evidence runs |", "|---|---:|---:|---:|---:|"]
     lines.insert(6, f"Baseline eligible: {summary.get('baseline_eligible')}; not executed: {summary.get('not_executed_runs', 0)}. Partial runs are not complete-dataset baseline scores.")
     cases = summary["case_success"]
@@ -275,7 +279,27 @@ def render_summary(summary: dict, manifest: dict) -> str:
     return "\n".join(lines)
 
 
-def select_cases(cases: list, mode: str, category: str | None, case_ids: list[str] | None, variants: list[str] | None) -> tuple[list, list[str]]:
+def render_workflow_summary(summary: dict, manifest: dict) -> str:
+    lines = ["# Workflow " + (manifest.get("workflow_stage") or "Quick Evaluation"), "", "Run: " + manifest["run_id"], f"Cases: {summary['passed']}/{manifest['selected_cases']}; Error {summary['error']}; Timeout {summary['timeout']}; unexecuted {summary['not_executed_runs']}", "", "| Metric | Value |", "|---|---:|"]
+    for name in ("task_success_rate", "diagnosis_accuracy", "tool_selection_accuracy", "tool_argument_accuracy", "handoff_accuracy"):
+        lines.append(f"| {name} | {summary['metrics'][name]['value']} |")
+    lines += ["", "Checks: " + json.dumps(summary["workflow_checks"], ensure_ascii=False), "", "Performance: " + json.dumps(summary["performance"], ensure_ascii=False), "", "Cost (application + semantic judge): " + json.dumps(summary.get("cost", {}).get("run", {})), "", "Same-family semantic judge plus independent simulator readback; no keyword-only success claims.", "", "Failed / Error cases:"]
+    for failure in summary["failures"]:
+        lines.append(f"- {failure['case_id']}: {failure['status']}: {'; '.join(failure['reasons'])}")
+    return "\n".join(lines) + "\n"
+
+
+def select_cases(cases: list, mode: str, category: str | None, case_ids: list[str] | None, variants: list[str] | None, workflow_stage: str | None = None) -> tuple[list, list[str]]:
+    if workflow_stage:
+        if mode != "quick" or category != "workflow" or case_ids or variants:
+            raise ValueError("Workflow stages require quick mode, Workflow only, and the complete frozen split")
+        if workflow_stage not in {"baseline", "optimized", "holdout"}:
+            raise ValueError("Unknown Workflow stage")
+        splits = {"holdout"} if workflow_stage == "holdout" else {"development", "regression"}
+        selected = [case for case in cases if case.category == "workflow" and case.expected.get("split") in splits]
+        if len(selected) != (10 if workflow_stage == "holdout" else 40):
+            raise ValueError("Workflow stage requires the frozen 40/10 split")
+        return selected, ["hybrid_rerank"]
     if mode not in {"quick", "final"}:
         raise ValueError("Evaluation mode must be quick or final")
     if mode == "final":
@@ -293,30 +317,45 @@ def select_cases(cases: list, mode: str, category: str | None, case_ids: list[st
     by_id = {case.case_id: case for case in cases if case.category == category}
     if set(wanted) - set(by_id):
         raise ValueError("Unknown cases or cases outside the selected category")
+    if category == "workflow" and any(by_id[case_id].expected.get("split") == "holdout" for case_id in wanted):
+        raise ValueError("Frozen Holdout can only run once using --workflow-stage holdout")
     selected_modes = variants or ["hybrid_rerank"]
     if len(selected_modes) != 1:
         raise ValueError("Quick Evaluation uses one retrieval mode; compare modes in separate targeted checks")
     return [by_id[case_id] for case_id in wanted], selected_modes
 
 
-def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "") -> dict:
+def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "", workflow_stage: str | None = None) -> dict:
     cases = load_cases(suite)
     validation = validate_smoke(cases)
     if not validation["valid"]:
         raise ValueError(json.dumps(validation, ensure_ascii=False))
-    selected, variants = select_cases(cases, mode, category, case_ids, variants)
+    selected, variants = select_cases(cases, mode, category, case_ids, variants, workflow_stage)
     if timeout <= 0 or not variants or not set(variants).issubset(MODES):
         raise ValueError("Invalid timeout or retrieval variants")
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     directory = PROJECT_ROOT / ".local" / "eval" / "runs" / run_id
     directory.mkdir(parents=True)
     (directory / "private").mkdir()
-    destination = (output or PROJECT_ROOT / "reports" / "latest").resolve()
+    destination = (output or PROJECT_ROOT / "reports" / "workflow" / workflow_stage if workflow_stage else output or PROJECT_ROOT / "reports" / "latest").resolve()
+    if workflow_stage and (destination / "summary.json").exists():
+        raise FileExistsError("Workflow stage results are immutable; this stage has already run")
+    if workflow_stage == "holdout":
+        optimized = PROJECT_ROOT / "reports" / "workflow" / "optimized" / "summary.json"
+        if not optimized.exists() or json.loads(optimized.read_text(encoding="utf-8")).get("not_executed_runs"):
+            raise ValueError("Finish the complete optimized Development run before Holdout")
+        marker = PROJECT_ROOT / ".local" / "eval" / "workflow-holdout-started.json"
+        with marker.open("x", encoding="utf-8") as handle:
+            json.dump({"run_id": run_id, "dataset_sha256": hashlib.sha256(suite.read_bytes()).hexdigest()}, handle)
     runs = [(case.model_dump(), variant, 1) for case in selected for variant in (variants if case.category == "rag" else ["current"])]
     model_names = {"application": os.getenv("OPENROUTER_MODEL"), "judge": os.getenv("OPENROUTER_MODEL"), "provider": os.getenv("OPENROUTER_PROVIDER"), "retry_provider": os.getenv("OPENROUTER_RETRY_PROVIDER"), "fallback_model": os.getenv("OPENROUTER_FALLBACK_MODEL"), "fallback_provider": os.getenv("OPENROUTER_FALLBACK_PROVIDER"), "embedding": os.getenv("EMBEDDING_MODEL"), "reranker": os.getenv("RERANK_MODEL")}
     manifest = {"run_id": run_id, "mode": mode, "started_at_utc": datetime.now(UTC).isoformat(), "suite": suite.name, "dataset_sha256": hashlib.sha256(suite.read_bytes()).hexdigest(), "dataset_cases": len(cases), "selected_cases": len(selected), "planned_runs": len(runs), "validation": validation, "retrieval_modes": variants, "case_timeout_seconds": timeout, "mock_used": False, "models": model_names, "code_hashes": code_hashes(), "source_hashes": {path.relative_to(PROJECT_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted((PROJECT_ROOT / "docs" / "product").glob("*.md"))}, "scope": "Real API ingress, simulator HTTP, PostgreSQL and worker; application logic unchanged.", "latency_scope": "Application wall clock; setup and Judge excluded. Parallel phase intervals use their union.", "judge_limitation": "Same-family automated Judge; original-document evidence; human review pending.", "judge_configuration": {"reasoning_effort": "none", "evidence_format": "original source paragraph references"}, "changes": changes, "stop_on_error": True}
     git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
     manifest["git_head"] = git.stdout.strip() if git.returncode == 0 else None
+    continue_workflow = bool(workflow_stage) or category == "workflow" and bool(case_ids)
+    manifest.update(workflow_stage=workflow_stage, stop_on_error=not continue_workflow, workflow_scoring="frozen_workflow_semantic_contract_v1")
+    if category == "workflow":
+        manifest.update(scope="Real API ingress, simulator HTTP, PostgreSQL and worker; Agent and scoring code frozen during each run.", judge_limitation="Same-family semantic Judge plus independent backend readback; automated judgments remain fallible.", judge_configuration={"primary_reasoning_effort": "none", "mandatory_fallback_reasoning_effort": "low", "evidence_format": "frozen semantic contract, actual tools, persisted actions/tickets and backend facts"})
     from evals.artifacts import history_entry, index_report, save_results
     from evals.budget import preflight, refresh_prices
 
@@ -326,7 +365,7 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
     processes = []
     original_database = os.environ.get("DATABASE_URL")
     setup_error = None
-    deadline = time.monotonic() + 25 * 60 if mode == "quick" else None
+    deadline = time.monotonic() + 25 * 60 if mode == "quick" and not workflow_stage else None
     try:
         try:
             pricing = refresh_prices()
@@ -350,18 +389,20 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
                 case_timeout = min(timeout, max(0.1, deadline - time.monotonic())) if deadline is not None else timeout
                 result = execute_case(case, variant, iteration, number, directory, case_timeout)
             results.append(result)
+            if case["category"] == "workflow":
+                result["failure_categories"] = workflow_failure_categories(result)
             write_json(directory / "evaluation_results.json", index_report(manifest, results))
             category_finished = number == len(runs) or runs[number][0]["category"] != case["category"]
-            if category_finished or result["status"] in {"error", "timeout"}:
+            if workflow_stage or category_finished or result["status"] in {"error", "timeout"}:
                 print(json.dumps({"event": "error" if result["status"] in {"error", "timeout"} else "category_finished", "run": number, "of": len(runs), "category": case["category"], "case_id": case["case_id"], "status": result["status"]}, ensure_ascii=False), flush=True)
-            if result["status"] in {"error", "timeout"}:
+            if result["status"] in {"error", "timeout"} and (not continue_workflow or setup_error):
                 manifest["stopped_after_error"] = {"case_id": case["case_id"], "variant": variant, "status": result["status"]}
                 break
         manifest["finished_at_utc"] = datetime.now(UTC).isoformat()
         manifest["code_unchanged_during_run"] = manifest["code_hashes"] == code_hashes()
         summary = summary_with_comparisons(results)
         manifest["mock_used"] = bool(summary["mock_runs"])
-        manifest["baseline_eligible"] = mode == "final" and len(results) == len(runs) and not manifest.get("stopped_after_error") and manifest["code_unchanged_during_run"] and not summary["mock_runs"]
+        manifest["baseline_eligible"] = (mode == "final" or bool(workflow_stage)) and len(results) == len(runs) and not manifest.get("stopped_after_error") and manifest["code_unchanged_during_run"] and not summary["mock_runs"]
         summary.update(planned_runs=len(runs), not_executed_runs=len(runs) - len(results), baseline_eligible=manifest["baseline_eligible"], not_executed_cases=[{"case_id": case["case_id"], "variant": variant, "repeat": iteration} for case, variant, iteration in runs[len(results):]], models=model_names, manifest=manifest)
         # Only replace our own generated report, never an arbitrary output directory.
         if (destination / "evaluation_results.json").exists():
@@ -420,6 +461,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--changes", default="", help="Final only: describe this benchmark's changes in BENCHMARK_HISTORY.md")
     parser.add_argument("--validate", action="store_true", help="Validate dataset paths and labels without execution or external calls")
+    parser.add_argument("--workflow-stage", choices=["baseline", "optimized", "holdout"], help="Frozen Workflow split only; Holdout runs once after optimized Development")
     args = parser.parse_args()
     if args.validate:
         validation = validate_smoke(load_cases(args.suite))
@@ -428,10 +470,10 @@ def main() -> None:
             raise SystemExit(1)
         return
     try:
-        select_cases(load_cases(args.suite), args.mode, args.category, args.cases, args.retrieval_modes)
+        select_cases(load_cases(args.suite), args.mode, args.category, args.cases, args.retrieval_modes, args.workflow_stage)
     except ValueError as error:
         parser.error(str(error))
-    report = run_evaluation(args.suite, args.mode, args.category, args.cases, args.retrieval_modes, args.timeout, changes=args.changes)
+    report = run_evaluation(args.suite, args.mode, args.category, args.cases, args.retrieval_modes, args.timeout, changes=args.changes, workflow_stage=args.workflow_stage)
     if report["summary"]["failed"] or report["summary"]["error"] or report["summary"]["timeout"]:
         raise SystemExit(1)
 

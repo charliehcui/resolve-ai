@@ -120,6 +120,17 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
             available_tools.append(schema)
 
     primary_tools = primary_read_tools(handoff, question)
+    domain_tools = set(primary_tools) | {"GetShopConnectionStatus", "GetShopSyncStatus"}
+    shipment_tools = {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"}
+    if primary_tools & shipment_tools:
+        domain_tools.add("GetOrder")
+    if primary_tools & {"GetOrder", "GetOrderProcessRecords", "GetWorkerTask"}:
+        domain_tools.update({"GetOrder", "GetOrderProcessRecords", "GetWorkerTask"})
+    from backend.app.user_intent import action_request
+
+    if action_request(question, "recovery") is False:
+        domain_tools -= {"GetShopConnectionStatus", "GetShopSyncStatus"} - primary_tools
+    available_tools = [schema for schema in available_tools if schema.__name__ in domain_tools]
     attempted = {record.tool_name for record in evidence if record.source_service != "support" and record.request.get("shop_id") == handoff.known_shop_id and ("order_id" not in record.request or record.request["order_id"] == handoff.known_order_id) and ("sku" not in record.request or record.request["sku"] == handoff.known_sku)}
     primary_missing = primary_tools - attempted
     prioritized = [schema for schema in available_tools if schema.__name__ in primary_missing]
@@ -214,6 +225,11 @@ def primary_read_tools(handoff: SupportHandoffRecord, question: str) -> set[str]
         tools = {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"}
     else:
         tools = {"GetOrder", "GetOrderProcessRecords"} if handoff.known_order_id else set()
+    if handoff.known_order_id and handoff.known_sku and re.search(r"订单|\border\b", question, flags=re.IGNORECASE):
+        tools.update({"GetOrder", "GetOrderProcessRecords"})
+    task_pattern = r"worker|订单任务|\border task\b" if tools & {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"} else r"worker|订单任务|任务|\btask\b"
+    if handoff.known_order_id and re.search(task_pattern, question, flags=re.IGNORECASE):
+        tools.add("GetWorkerTask")
     if re.search(r"连接|授权|connection|authorization", question, flags=re.IGNORECASE):
         tools.add("GetShopConnectionStatus")
     if re.search(r"同步开关|同步配置|当前同步|当前设置|当前查询|sync settings?", question, flags=re.IGNORECASE):
@@ -372,6 +388,14 @@ def build_investigation_answer(decision: InvestigationComplete, evidence: list[E
             decision.unknowns.append("具体原因目前无法确认")
     decision.summary = ground_cause_text(decision.summary, evidence)
     decision.unknowns = normalize_unknown_causes(decision.unknowns)
+    for record in evidence:
+        if record.tool_name == "GetStockStatus" and record.status == "success" and not is_read_validation_error(record) and record.response.get("assessment") == "difference" and record.response.get("reason") == "VERSION_NOT_PUBLISHED":
+            diagnosis = "后端库存诊断为 VERSION_NOT_PUBLISHED：平台记录的来源版本与仓库当前版本不同。"
+            confirmed_claims.append(ClaimWithEvidence(text=diagnosis, evidence_ids=[record.evidence_id]))
+            if decision.summary == "具体原因目前无法确认":
+                decision.summary = diagnosis
+            decision.unknowns = ["版本未发布的更深层原因尚未确认。" if text == "具体原因目前无法确认" else text for text in decision.unknowns]
+            break
     if decision.recommended_action is not None:
         decision.recommended_action.reason = ground_cause_text(decision.recommended_action.reason, evidence)
 

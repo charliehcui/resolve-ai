@@ -65,3 +65,9 @@ def test_paused_conversation_does_not_investigate_or_create_ticket(monkeypatch):
     user = UserContext(user_id="u", company_id="a", role="staff", name="test")
     result = process_conversation_message(user, "暂时不用处理", "c")
     assert result["status"] == "diagnosed" and not result.get("ticket_id")
+@pytest.mark.parametrize("status,payment,wrong_scope,expected", [("not_found", None, False, True), ("success", "cancelled", False, True), ("success", "unpaid", False, True), ("not_found", None, True, False), ("success", "paid", False, False)])
+def test_source_lookup_or_ineligibility_ends_order_reads_without_losing_scope(status, payment, wrong_scope, expected):
+    handoff = SupportHandoffRecord(handoff_id="h", conversation_id="c", company_id="a", customer_problem="Investigate order", known_shop_id="shop-a", known_order_id="O-1")
+    request = {"shop_id": "shop-b" if wrong_scope else "shop-a", "order_id": "O-1"}
+    records = [EvidenceRecord(evidence_id="source", sequence=1, batch_id="b", parallel=False, tool_name="GetOrder", request=request, response={"payment_status": payment}, source_service="platform", status=status, latency_ms=1), EvidenceRecord(evidence_id="process", sequence=2, batch_id="b", parallel=False, tool_name="GetOrderProcessRecords", request=request, response={}, source_service="merchant", status="empty", latency_ms=1)]
+    assert has_confirmed_business_blocker(records, handoff) is expected

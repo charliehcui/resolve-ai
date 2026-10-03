@@ -3,10 +3,12 @@ from copy import deepcopy
 
 import pytest
 
+from backend.app.config import PROJECT_ROOT
 from evals.artifacts import compact_result
-from evals.dataset import smoke_cases
+from evals.dataset import load_cases, smoke_cases
 from evals.execute import score_agent
-from evals.metrics import tool_scores, workflow_action_check, workflow_business_claim_check
+from evals.harness import select_cases
+from evals.metrics import allowed_workflow_read_retries, tool_scores, workflow_action_check, workflow_business_claim_check
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -16,6 +18,66 @@ def isolated_test_database():
 
 def case_by_id(case_id):
     return next(case for case in smoke_cases() if case["case_id"] == case_id)
+
+
+def test_workflow_stages_enforce_frozen_split_and_block_quick_holdout():
+    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    development, _ = select_cases(cases, "quick", "workflow", None, None, "baseline")
+    holdout, _ = select_cases(cases, "quick", "workflow", None, None, "holdout")
+    assert len(development) == 40 and len(holdout) == 10
+    assert not {case.case_id for case in development} & {case.case_id for case in holdout}
+    with pytest.raises(ValueError, match="Holdout"):
+        select_cases(cases, "quick", "workflow", [holdout[0].case_id], None)
+
+
+def test_required_routes_are_alternatives_and_argument_score_is_independent():
+    expected = {"acceptable_tools": ["A", "B"], "required_routes": [["A"], ["B"]], "arguments": {"A": {"shop_id": "$shop_id"}, "B": {"shop_id": "$shop_id"}}}
+    assert tool_scores([{"name": "B", "args": {"shop_id": "shop-a"}}], expected, {"shop_id": "shop-a"}) == {"tool_selection_accuracy": 1.0, "tool_argument_accuracy": 1.0}
+    expected["required_routes"] = [["A", "B"]]
+    assert tool_scores([{"name": "B", "args": {"shop_id": "shop-a"}}], expected, {"shop_id": "shop-a"}) == {"tool_selection_accuracy": 0.0, "tool_argument_accuracy": 1.0}
+
+
+def test_only_one_retry_after_backend_read_error_is_exempt():
+    call = {"name": "GetOrder", "args": {"shop_id": "shop-a", "order_id": "O-1"}}
+    record = {"tool_name": call["name"], "request": call["args"], "status": "unavailable", "source_service": "platform"}
+    output = {"snapshot": {"case": {"evidence": [record]}}, "observations": {"selected_tools": [call, call, call]}}
+    assert allowed_workflow_read_retries(output) == {1}
+    record["status"] = "success"
+    assert allowed_workflow_read_retries(output) == set()
+
+
+def test_wrong_domain_tool_can_still_have_correct_scoped_arguments():
+    case = case_by_id("flow-shipment")
+    identifiers = {"shop_id": "shop-a", "order_id": "O-1"}
+    result = tool_scores([{"name": "GetWorkerTask", "args": identifiers}], case["expected_tools"], identifiers)
+    assert result == {"tool_selection_accuracy": 0.0, "tool_argument_accuracy": 1.0}
+
+
+def test_semantic_missing_fact_fails_even_when_keywords_and_status_match(monkeypatch):
+    monkeypatch.setattr("evals.execute.score_observed_tools_and_retrieval", lambda *args: None)
+    judgment = {"diagnosis_correct": True, "fact_checks": [{"fact_index": 0, "passed": False, "reason": "Required current-state fact omitted"}], "action_valid": True, "handoff_valid": True, "unnecessary_tool_calls": [], "unsupported_claims": [], "incomplete_actions": []}
+    monkeypatch.setattr("evals.execute.judge_workflow", lambda *args: {"method": "synthetic_semantic_test", "judgment": judgment})
+    business = {"counts": {}, "business_rows": {}}
+    output = {"initial": {"shop_id": "shop-a"}, "turn": {"status": "retry_later", "answer": "渠道不可用，503。"}, "observations": {}, "metrics": {}, "failure_reasons": [], "before_business": business, "after_business": deepcopy(business)}
+    score_agent(case_by_id("flow-outage"), output)
+    assert output["metrics"]["diagnosis_accuracy"] == 0
+    assert "Missing fact: Required current-state fact omitted" in output["failure_reasons"]
+
+
+@pytest.mark.parametrize("case_id,complete", [("flow-human", False), ("flow-holdout34-platform-without-dispatch", False), ("flow-holdout34-platform-without-dispatch", True)])
+def test_ticket_customer_description_does_not_replace_required_backend_reads(monkeypatch, case_id, complete):
+    case = case_by_id(case_id)
+    monkeypatch.setattr("evals.execute.score_observed_tools_and_retrieval", lambda *args: None)
+    monkeypatch.setattr("evals.execute.workflow_result_check", lambda *args: {"passed": True, "violations": []})
+    judgment = {"diagnosis_correct": True, "fact_checks": [{"fact_index": 0, "passed": True}], "action_valid": True, "handoff_valid": True, "unnecessary_tool_calls": [], "unsupported_claims": [], "incomplete_actions": []}
+    monkeypatch.setattr("evals.execute.judge_workflow", lambda *args: {"method": "synthetic_semantic_test", "judgment": judgment})
+    selected = [{"name": name} for name in case["workflow_ground_truth"]["required_tool_routes"][0]] if complete else []
+    business = {"counts": {}, "business_rows": {}}
+    output = {"initial": {"shop_id": "shop-a"}, "turn": {"status": "pending_human", "answer": "Sent to engineer queue.", "ticket_id": "ticket-a"}, "observations": {"selected_tools": selected}, "metrics": {}, "failure_reasons": [], "before_business": business, "after_business": deepcopy(business)}
+    score_agent(case, output)
+    expected = float(complete or case_id == "flow-human")
+    assert output["metrics"]["diagnosis_accuracy"] == expected
+    assert output["metrics"]["handoff_accuracy"] == expected
 
 
 def order_observation(action):

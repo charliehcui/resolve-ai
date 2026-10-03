@@ -131,6 +131,17 @@ def test_citing_error_status_is_not_proof_of_a_possible_cause():
     assert status == "diagnosed"
 
 
+@pytest.mark.parametrize("status", ["success", "error"])
+def test_stock_diagnosis_keeps_backend_code_without_inventing_root_cause(status):
+    from backend.app.support_diagnosis import ClaimWithEvidence, build_investigation_answer
+
+    record = EvidenceRecord(evidence_id="stock", sequence=1, batch_id="b", parallel=False, tool_name="GetStockStatus", request={}, response={"assessment": "difference", "reason": "VERSION_NOT_PUBLISHED"}, source_service="merchant", status=status, latency_ms=1)
+    decision = InvestigationComplete(summary="具体原因目前无法确认", confirmed_facts=[ClaimWithEvidence(text="平台版本与仓库版本不同", evidence_ids=["stock"])], unknowns=["可能由网络故障引起"])
+    answer, _ = build_investigation_answer(decision, [record])
+    assert ("VERSION_NOT_PUBLISHED" in answer) is (status == "success")
+    assert "网络故障" not in answer
+
+
 def test_terminal_model_call_has_json_output_and_no_read_tools(monkeypatch):
     from langchain_core.messages import AIMessage
 
@@ -326,7 +337,7 @@ def test_confirmed_blocker_stops_reads_only_with_matching_backend_facts(monkeypa
     elif condition == "updated_processing":
         records.append(records[1].model_copy(update={"evidence_id": "new-processing", "sequence": 4, "response": {"error_code": None, "task_status": "done", "merchant_sku": "SKU-1"}}))
     handoff = SupportHandoffRecord(handoff_id="h", conversation_id="c", company_id="a", customer_problem="Order investigation", known_shop_id="shop-a", known_order_id="O-1", known_sku="SKU-1" if condition == "stock_request" else None)
-    expected = condition in {"mapping", "outage"}
+    expected = condition in {"mapping", "outage", "missing_order"}
     assert has_confirmed_business_blocker(records, handoff) is expected
     calls = []
 
@@ -336,8 +347,12 @@ def test_confirmed_blocker_stops_reads_only_with_matching_backend_facts(monkeypa
 
     monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", decide)
     state = {"question": "Investigate", "handoff": handoff.model_dump(), "evidence": [record.model_dump() for record in records], "started_at": time.perf_counter(), "usage": {}}
-    decide_support_next_step_node(state)
-    assert calls == [0 if expected else 6 - len(records)]
+    result = decide_support_next_step_node(state)
+    if condition == "missing_order":
+        assert calls == []
+        assert result["support_next_step"]["next_step"] == "request_information"
+    else:
+        assert calls == [0 if expected else 6 - len(records)]
 
 
 @pytest.mark.parametrize("error_code", ["WORKER_INTERRUPTED", "TRANSIENT_PROCESSING_ERROR"])
@@ -375,7 +390,7 @@ def test_confirmed_retryable_order_failure_stops_only_with_complete_matching_fac
         records.append(task.model_copy(update={"evidence_id": "updated", "sequence": 6, "response": dict(task.response, retryable=False)}))
     problem = "Investigate shipment" if condition == "shipment_question" else "Worker interrupted"
     handoff = SupportHandoffRecord(handoff_id="h", conversation_id="c", company_id="a", customer_problem=problem, known_shop_id="shop-a", known_order_id="O-1")
-    expected = condition in {"ready", "failed"} or (condition == "processing" and error_code == "WORKER_INTERRUPTED")
+    expected = condition in {"ready", "failed", "unpaid"} or (condition == "processing" and error_code == "WORKER_INTERRUPTED")
     assert has_confirmed_business_blocker(records, handoff) is expected
     if expected:
         calls = []

@@ -21,6 +21,16 @@ def test_judge_reasoning_control_does_not_change_application_calls(monkeypatch):
     assert parameters[0]["max_tokens"] == parameters[1]["max_tokens"] == 4096
 
 
+def test_configured_backup_uses_supported_low_reasoning_for_judge_and_application(monkeypatch):
+    monkeypatch.delenv("EVAL_RUN_ID", raising=False)
+    parameters = []
+    monkeypatch.setattr("backend.app.llm.ChatOpenAI", lambda **kwargs: parameters.append(kwargs))
+    settings = get_settings()
+    for scope in ("judge", "application"):
+        create_model(scope=scope).client(settings.openrouter_fallback_model, settings.openrouter_fallback_provider)
+    assert all(value["extra_body"]["reasoning"] == {"effort": "low"} for value in parameters)
+
+
 def status_error(status):
     response = httpx.Response(status, request=httpx.Request("POST", "https://example.test/chat"))
     return APIStatusError("Provider endpoint unavailable", response=response, body={})
@@ -60,11 +70,11 @@ def clients(monkeypatch):
     parse_failures.clear()
 
 
-def test_rate_limit_prefers_same_model_other_provider(clients):
+def test_rate_limit_uses_configured_backup_model_once(clients):
     responses, attempts = clients
     responses.extend([status_error(429), AIMessage(content="ok")])
     result = create_model().bind_tools([]).invoke("probe")
-    assert attempts == [("test-model", "test-provider"), ("test-model", "same-model-backup")]
+    assert attempts == [("test-model", "test-provider"), ("synthetic-backup-model", "backup-provider")]
     assert result.response_metadata["fallback"]["fallback_reason"] == "rate_limit"
     assert result.response_metadata["fallback"]["fallback_count"] == 1
 

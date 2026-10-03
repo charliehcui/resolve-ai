@@ -125,7 +125,9 @@ class OpenRouterModel:
     def client(self, model: str, provider: str):
         settings = get_settings()
         extra = {"provider": {"only": [provider], "allow_fallbacks": False, "require_parameters": True}, "usage": {"include": True}}
-        if self.scope == "judge":
+        if model == settings.openrouter_fallback_model:
+            extra["reasoning"] = {"effort": "low"}
+        elif self.scope == "judge":
             extra["reasoning"] = {"effort": "none"}
         options = {}
         if os.getenv("EVAL_RUN_ID"):
@@ -136,14 +138,17 @@ class OpenRouterModel:
             options["http_client"] = httpx.Client(event_hooks=accounting_hooks(self.scope), timeout=60)
         return ChatOpenAI(model=model, api_key=settings.openrouter_api_key, base_url="https://openrouter.ai/api/v1", temperature=self.temperature, timeout=60, max_retries=0, max_tokens=int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")), use_responses_api=False, extra_body=extra, callbacks=self.callbacks, tags=self.tags, **options)
 
-    def recovery_endpoint(self):
+    def recovery_endpoint(self, reason: str | None = None):
         settings = get_settings()
         if os.getenv("EVAL_RUN_ID"):
             from evals.budget import rates
 
             snapshot = rates()
-            endpoint = snapshot.get("retry_endpoint") or snapshot.get("fallback_endpoint")
+            endpoint = snapshot.get("fallback_endpoint") if reason == "rate_limit" else None
+            endpoint = endpoint or snapshot.get("retry_endpoint") or snapshot.get("fallback_endpoint")
             return (endpoint["model"], endpoint["routing_tag"]) if endpoint else None
+        if reason == "rate_limit" and settings.openrouter_fallback_model and settings.openrouter_fallback_provider:
+            return settings.openrouter_fallback_model, settings.openrouter_fallback_provider
         if settings.openrouter_retry_provider:
             return settings.openrouter_model, settings.openrouter_retry_provider
         if settings.openrouter_fallback_model and settings.openrouter_fallback_provider:
@@ -162,7 +167,7 @@ class OpenRouterModel:
                 response = operation(self.client(settings.openrouter_model, settings.openrouter_provider)).invoke(value, config=config, **kwargs)
             except APIStatusError as error:
                 reason = failure_reason(error)
-                if reason is None or self.recovery_endpoint() is None:
+                if reason is None or self.recovery_endpoint(reason) is None:
                     raise
             except (OutputParserException, ValidationError, json.JSONDecodeError):
                 if not schema_key or not repeated_parse_failure(schema_key) or self.recovery_endpoint() is None:
@@ -175,7 +180,7 @@ class OpenRouterModel:
                 else:
                     with parse_lock:
                         parse_failures[schema_key] = 0
-            endpoint = self.recovery_endpoint() if reason else None
+            endpoint = self.recovery_endpoint(reason) if reason else None
             if endpoint:
                 metadata.update({"fallback_count": 1, "fallback_reason": reason, "recovery_model": endpoint[0], "recovery_provider": endpoint[1]})
                 # This attempt is outside the primary exception handler: its failure terminates the call.

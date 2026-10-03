@@ -169,3 +169,54 @@ Result:
 
 Why:
 限定请求范围与核心证据减少了已知场景的误操作和遗漏，但新题显示意图边界、诊断停止条件和事实表述仍未完全推广。
+
+## Optimization 13
+
+Problem:
+发货调查误查订单 Worker，用户只要事实仍查询恢复条件，来源不存在或订单取消后仍扩展调查。
+
+Change:
+按请求范围暴露工具，尊重拒绝恢复的意图，关键业务事实确认后停止读取；简单缺失或不符合条件的结果直接返回结构化内容。
+
+Before:
+40 例 Baseline 中这 4 例均因无关工具失败。
+
+After:
+相关验证中这 4 例全部通过；最新 8 例为 7/8，剩余 1 例是库存诊断表述，没有 Error / Timeout。
+
+Why:
+减少无关调查和终止输出错误，依据业务事实完成请求，不依赖 Case ID。
+
+## Optimization 14
+
+Problem:
+主模型限流后旧备用端点仍失败；新备用模型的必需推理配置不兼容，默认推理也造成超时。
+
+Change:
+限流时使用已配置的可用备用模型，使用它支持的较低推理强度；每次调用仍最多一次恢复。
+
+Before:
+Baseline 10/40 为 Provider Error；第一组相关验证有 2 个 Error 和 1 个 Timeout。
+
+After:
+最新相关 8 例 Error / Timeout 均为 0，5 次备用调用完成；尚需完整 Development 确认。
+
+Why:
+避免在已知不可用端点重复请求，兼容真实供应商要求，保留错误和实际费用。
+
+## Optimization 15
+
+Problem:
+无依据原因过滤也删除了后端已确认的库存版本诊断，导致事实和方案正确但 Diagnosis 失败。
+
+Change:
+保留成功库存读取返回的 VERSION_NOT_PUBLISHED 诊断代码，继续把更深层原因标为未知。
+
+Before:
+最新相关验证中 flow-stock 的 Diagnosis 失败，其余四项通过。
+
+After:
+该例加 4 个相关回归为 5/5，五项指标均为 100%，Error / Timeout 均为 0。
+
+Why:
+区分真实业务诊断与没有证据的根因，不修改 Ground Truth。
