@@ -32,8 +32,16 @@ def serve_proxy(port: int, upstream: str) -> None:
                 return
             with lock:
                 mode = state["mode"] if self.path == state["path"] else None
-                if mode:
+                if mode and mode != "read_unavailable":
                     state["mode"] = None
+            if mode == "read_unavailable":
+                payload = b'{"detail":"Evaluation injected read service unavailable"}'
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if mode != "drop_before_accept":
                 headers = {name: value for name, value in self.headers.items() if name.lower() not in {"host", "content-length", "connection"}}
                 try:

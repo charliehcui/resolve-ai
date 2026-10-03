@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Literal, TypedDict
 
@@ -17,16 +18,20 @@ from backend.app.support_diagnosis import (
     MAX_INVESTIGATION_MS,
     MAX_TOOL_CALLS,
     MAX_TOOL_ERRORS,
+    CandidateAction,
     HumanSupportRequired,
     MissingInformationRequest,
     SupportAgentResult,
     SupportNextStep,
     build_support_answer,
     decide_support_next_step,
+    has_shipment_evidence_conflict,
+    primary_read_tools,
 )
 from backend.app.support_evidence import EvidenceRecord, load_evidence
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, create_engineer_ticket, execute_read_tool_batch
 from backend.app.trace import current_trace_id
+from backend.app.user_intent import action_request
 
 
 class SupportWorkflowState(TypedDict, total=False):
@@ -76,7 +81,48 @@ def count_evidence_errors(records: list[EvidenceRecord]) -> int:
     return error_count
 
 
+def missing_order_recovery_candidate(records: list[EvidenceRecord], handoff: SupportHandoffRecord) -> CandidateAction | None:
+    if not handoff.known_order_id or handoff.known_sku or action_request(handoff.customer_problem, "recovery") is False or any(word in handoff.customer_problem.casefold() for word in ("发货", "出库", "库存", "只读", "仅调查", "shipment", "shipping", "inventory", "diagnose only")):
+        return None
+    indexed = {}
+    for record in records:
+        if record.source_service == "support" or record.request.get("shop_id") != handoff.known_shop_id:
+            continue
+        if record.tool_name in {"GetOrder", "GetOrderProcessRecords"} and record.request.get("order_id") == handoff.known_order_id or record.tool_name in {"GetShopSyncStatus", "GetShopConnectionStatus"}:
+            indexed[record.tool_name] = record
+    if not {"GetOrder", "GetOrderProcessRecords", "GetShopSyncStatus", "GetShopConnectionStatus"}.issubset(indexed):
+        return None
+    source, processing, sync, connection = [indexed[name] for name in ("GetOrder", "GetOrderProcessRecords", "GetShopSyncStatus", "GetShopConnectionStatus")]
+    if source.status != "success" or source.response.get("payment_status") != "paid" or any(source.response.get(field) is None for field in ("event_id", "sku", "quantity", "amount_minor")):
+        return None
+    if processing.status != "empty" or processing.response.get("empty") is not True or any(processing.response.get(field) is not None for field in ("receipt", "task", "merchant_order")):
+        return None
+    if sync.status != "success" or sync.response.get("sync_enabled") is not True or connection.status != "success" or connection.response.get("connection_status") != "authorized":
+        return None
+    return CandidateAction(action_type="retry_order_sync", reason="平台已付款订单存在，管理软件接收记录缺失，当前连接与同步已确认；生成待确认恢复方案，实际资格由计划层重新校验。", evidence_ids=[record.evidence_id for record in indexed.values()])
+
+
 def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: SupportHandoffRecord) -> bool:
+    scoped = [record for record in records if record.source_service != "support" and record.request.get("shop_id") == handoff.known_shop_id and ("order_id" not in record.request or record.request["order_id"] == handoff.known_order_id) and ("sku" not in record.request or record.request["sku"] == handoff.known_sku)]
+    queried = {record.tool_name for record in scoped}
+    primary_complete = primary_read_tools(handoff, handoff.customer_problem).issubset(queried)
+    if primary_complete and has_shipment_evidence_conflict(scoped):
+        return True
+    indexed = {record.tool_name: record for record in scoped}
+    warehouse, platform, processing = [indexed.get(name) for name in ("GetWarehouseShipment", "GetPlatformShipment", "GetShipmentProcessRecords")]
+    if primary_complete and all(record is not None and record.status == "success" for record in (warehouse, platform, processing)):
+        if warehouse.response.get("shipment_count") == 1 and platform.response.get("status") == "shipped" and all(warehouse.response.get(field) and warehouse.response[field] == platform.response.get(field) for field in ("shipment_id", "tracking_number", "carrier")):
+            return True
+    stock = indexed.get("GetStockStatus")
+    if primary_complete and stock is not None and stock.status in {"success", "empty"}:
+        if stock.response.get("assessment") in {"consistent", "waiting", "insufficient_information"}:
+            return True
+        source = stock.response.get("warehouse") or {}
+        target = stock.response.get("platform") or {}
+        if stock.response.get("assessment") == "difference" and isinstance(source.get("version"), int) and isinstance(target.get("source_version"), int) and target["source_version"] > source["version"]:
+            return True
+    if missing_order_recovery_candidate(records, handoff) is not None:
+        return True
     if not handoff.known_order_id or handoff.known_sku:
         return False
 
@@ -84,7 +130,7 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
     for record in records:
         if record.source_service == "support" or record.request.get("shop_id") != handoff.known_shop_id:
             continue
-        if record.tool_name == "GetShopConnectionStatus" or (record.tool_name in {"GetOrder", "GetOrderProcessRecords"} and record.request.get("order_id") == handoff.known_order_id):
+        if record.tool_name in {"GetShopConnectionStatus", "GetShopSyncStatus"} or (record.tool_name in {"GetOrder", "GetOrderProcessRecords", "GetWorkerTask"} and record.request.get("order_id") == handoff.known_order_id):
             latest[record.tool_name] = record
 
     order = latest.get("GetOrder")
@@ -93,11 +139,39 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
         return False
 
     facts = processing.response
+    other_investigation = any(word in handoff.customer_problem.casefold() for word in ("发货", "出库", "库存", "授权", "连接", "限流", "shipment", "shipping", "delivery", "stock", "inventory", "authorization", "connection", "outage", "rate limit"))
+    if not other_investigation and facts.get("task_status") == "completed" and facts.get("merchant_order_count") == 1 and facts.get("merchant_order_id") and facts.get("merchant_sku") and order.response.get("payment_status") == "paid":
+        # 完整匹配或明确字段冲突都已足以结束导入调查；冲突交人工，不扩展到发货。
+        if facts.get("event_id") and order.response.get("event_id") and facts.get("platform_sku") and order.response.get("sku") and all(order.response.get(field) is not None and facts.get(field) is not None for field in ("quantity", "amount_minor")):
+            return True
     if facts.get("error_code") == "SKU_MAPPING_MISSING" and facts.get("task_status") == "blocked" and "merchant_sku" in facts and facts["merchant_sku"] is None:
         return True
 
     connection = latest.get("GetShopConnectionStatus")
-    if connection is None or connection.status != "success" or facts.get("task_status") != "failed":
+    if connection is None or connection.status != "success":
+        return False
+    if connection.response.get("connection_status") == "auth_expired" and facts.get("task_status") == "blocked" and facts.get("error_code") == "CHANNEL_AUTH_EXPIRED":
+        return True
+    sync = latest.get("GetShopSyncStatus")
+    if facts.get("task_status") == "blocked" and facts.get("error_code") in {"CHANNEL_AUTH_EXPIRED", "ORDER_SYNC_DISABLED"} and facts.get("merchant_order_count") == 0 and facts.get("merchant_order_id") is None and order.response.get("payment_status") == "paid":
+        if connection.response.get("connection_status") == "authorized" and sync is not None and sync.status == "success" and sync.response.get("sync_enabled") is True:
+            return True
+    if facts.get("error_code") in {"WORKER_INTERRUPTED", "TRANSIENT_PROCESSING_ERROR"}:
+        if any(word in handoff.customer_problem.casefold() for word in ("发货", "出库", "shipment", "shipping", "delivery")):
+            return False
+        task = latest.get("GetWorkerTask")
+        sync = latest.get("GetShopSyncStatus")
+        if task is None or sync is None or task.status != "success" or sync.status != "success":
+            return False
+        task_facts = task.response
+        if connection.response.get("connection_status") != "authorized" or sync.response.get("sync_enabled") is not True or order.response.get("payment_status") != "paid":
+            return False
+        if not facts.get("task_id") or not facts.get("event_id") or facts["event_id"] != order.response.get("event_id"):
+            return False
+        if facts["error_code"] == "TRANSIENT_PROCESSING_ERROR" and facts.get("task_status") != "failed":
+            return False
+        return facts.get("task_status") in {"processing", "failed"} and facts.get("merchant_order_count") == 0 and facts.get("merchant_order_id") is None and task_facts.get("task_id") == facts["task_id"] and task_facts.get("event_id") == facts["event_id"] and task_facts.get("status") == facts["task_status"] and task_facts.get("error_code") == facts["error_code"] and task_facts.get("retryable") is True
+    if facts.get("task_status") != "failed":
         return False
     channel_errors = {"unavailable": "CHANNEL_UNAVAILABLE", "rate_limited": "CHANNEL_RATE_LIMITED"}
     expected_error = channel_errors.get(connection.response.get("connection_status"))
@@ -198,6 +272,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
                 continue
 
             new_calls.append(tool_call)
+            previous_calls.add(tool_key)
 
         if len(new_calls) == 0:
             if evidence:
@@ -293,8 +368,20 @@ def build_missing_information_answer_node(state: SupportWorkflowState) -> Suppor
 def build_investigation_answer_node(state: SupportWorkflowState) -> SupportWorkflowState:
     support_next_step = SupportNextStep.model_validate(state["support_next_step"])
     evidence = load_evidence_records(state.get("evidence", []))
-    answer, status = build_support_answer(support_next_step, evidence)
     diagnosis = support_next_step.investigation_complete
+    question = state.get("question", state["handoff"]["customer_problem"])
+    recovery_declined = action_request(question, "recovery") is False
+    if diagnosis is not None and recovery_declined and diagnosis.recommended_action is not None:
+        diagnosis.recommended_action = None
+        diagnosis.summary = "本次只提供已确认的调查事实，未创建恢复方案。"
+    if diagnosis is not None and diagnosis.recommended_action is None:
+        candidate = None if recovery_declined else missing_order_recovery_candidate(evidence, SupportHandoffRecord.model_validate(state["handoff"]))
+        if candidate is not None:
+            diagnosis.recommended_action = candidate
+            diagnosis.summary = "平台已付款订单存在，管理软件接收记录缺失，当前连接正常且同步已开启。将创建待确认的单笔恢复方案。"
+        elif any(re.search(r"(?:需要|建议|请求|交给|转交|转至|转).{0,8}(?:人工|工程师)|\b(?:requires? human|needs? human|escalate to human)\b", clause, flags=re.IGNORECASE) and not re.search(r"无需|不需要|不要|不必|\b(?:not|no need|do not)\b", clause, flags=re.IGNORECASE) for clause in re.split(r"[。；;.!?\n]", diagnosis.summary)):
+            support_next_step = SupportNextStep(next_step="human_support", human_support=HumanSupportRequired(reason=diagnosis.summary, known_facts=diagnosis.confirmed_facts, unknowns=diagnosis.unknowns))
+    answer, status = build_support_answer(support_next_step, evidence)
     if status == "pending_human" or diagnosis is None or diagnosis.recommended_action is None:
         return {"answer": answer, "status": status, "action_plan": None}
     user = UserContext.model_validate(state["user"])
@@ -403,6 +490,13 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
 
     status = result.get("status", "pending_human")
     answer = result.get("answer", "调查未形成可核验结果，等待人工继续处理。")
+
+    if status == "pending_human" and action_request(question, "human") is False:
+        facts = answer.split("已确认事实：", 1)
+        answer = "现有证据尚不足以完成自动调查。已按您的要求停止处理，未创建人工工单。"
+        if len(facts) == 2:
+            answer += "\n已确认事实：" + facts[1]
+        status = "user_action_required"
 
     update_case(case_id, status, answer, len(final_evidence), total_latency_ms)
 

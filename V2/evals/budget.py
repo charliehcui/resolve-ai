@@ -51,8 +51,8 @@ def refresh_prices() -> dict:
         response.raise_for_status()
         return response.json()["data"]["endpoints"]
 
-    def select(model, tag, available):
-        endpoint = next((item for item in available if item["tag"] == tag and item.get("status") == 0), None)
+    def select(model, tag, available, allow_unavailable=False):
+        endpoint = next((item for item in available if item["tag"] == tag and (item.get("status") == 0 or allow_unavailable)), None)
         if endpoint is None or not {"tools", "response_format", "structured_outputs"}.issubset(endpoint["supported_parameters"]):
             return None
         price = {"model": model, "provider": endpoint["provider_name"], "routing_tag": endpoint["tag"], "prompt": float(endpoint["pricing"]["prompt"]), "completion": float(endpoint["pricing"]["completion"]), "checked_at_utc": datetime.now(UTC).isoformat(), "endpoint": endpoint}
@@ -61,11 +61,13 @@ def refresh_prices() -> dict:
         return price
 
     primary_endpoints = endpoints(settings.openrouter_model)
-    result = select(settings.openrouter_model, settings.openrouter_provider, primary_endpoints)
+    result = select(settings.openrouter_model, settings.openrouter_provider, primary_endpoints, allow_unavailable=True)
     if result is None:
         raise RuntimeError("Primary endpoint is unavailable or lacks required capabilities")
     result["retry_endpoint"] = select(settings.openrouter_model, settings.openrouter_retry_provider, primary_endpoints) if settings.openrouter_retry_provider else None
     result["fallback_endpoint"] = select(settings.openrouter_fallback_model, settings.openrouter_fallback_provider, endpoints(settings.openrouter_fallback_model)) if settings.openrouter_fallback_model and settings.openrouter_fallback_provider else None
+    if result["endpoint"].get("status") != 0 and not (result["retry_endpoint"] or result["fallback_endpoint"]):
+        raise RuntimeError("Primary endpoint is unavailable and no verified recovery endpoint exists")
     # A run owns its immutable snapshot; a parallel capability probe cannot overwrite it.
     path = PROJECT_ROOT / ".local" / "eval" / ("pricing-" + os.environ.get("EVAL_RUN_ID", uuid4().hex) + ".json")
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -104,6 +104,7 @@ def decide_customer_query_next_step(question: str, history: list[dict[str, objec
 - 只有版本会改变操作且用户未提供版本时才选择 clarify，不要对一般问题过度追问。
 - 查询某个真实订单、店铺、平台、仓库、日志或库存状态时选择 handoff，并生成说明需要 Support 调查的 customer_message。
 - product 只在用户明确产品范围时填写；version 只填写明确出现的版本。
+- 输出字段名必须是 decision，取值 search、clarify 或 handoff；不要使用 action 代替 decision。
 - 不输出隐藏推理。"""
 
     messages = [

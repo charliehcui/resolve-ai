@@ -6,7 +6,7 @@ import pytest
 from evals.artifacts import compact_result
 from evals.dataset import smoke_cases
 from evals.execute import score_agent
-from evals.metrics import workflow_action_check, workflow_business_claim_check
+from evals.metrics import tool_scores, workflow_action_check, workflow_business_claim_check
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -87,7 +87,7 @@ def test_outage_allows_denials_and_unknowns(answer):
 
 
 def test_claim_rule_is_explicitly_scoped_and_unknown_rules_raise():
-    assert workflow_business_claim_check(case_by_id("flow-order"), "系统会自动重试。")["passed"] is None
+    assert workflow_business_claim_check(case_by_id("flow-order"), "系统会自动重试。")["passed"] is True
     case = case_by_id("flow-outage")
     case["claim_ground_truth"]["forbidden_promises"] = ["unknown_rule"]
     with pytest.raises(ValueError):
@@ -111,3 +111,32 @@ def test_workflow_result_keeps_full_answer_and_scoring_evidence():
     assert "answer_preview" not in row["actual_result_summary"]
     assert row["business_claim_check"]["passed"]
     assert row["action_check"]["passed"]
+
+
+@pytest.mark.parametrize("answer", ["尚未确认：可能由网络故障、平台维护引起。", "具体原因目前无法确认（商品未创建、配置未完成等）。", "任务因系统故障或资源问题中断。", "原因可能是缓存过期。", "It could be a network failure."])
+def test_unconfirmed_causes_are_rejected_for_every_workflow_case(answer):
+    for case in smoke_cases():
+        if case["category"] == "workflow":
+            result = workflow_business_claim_check(case, answer)
+            assert result["passed"] is False
+            assert any(item["rule"] == "unsupported_specific_cause" for item in result["violations"])
+
+
+def test_cause_requires_backend_cause_field_not_an_error_code_or_agent_assertion():
+    record = {"evidence_id": "read-1", "source_service": "merchant", "status": "success", "response": {"error_code": "WORKER_INTERRUPTED"}}
+    output = {"snapshot": {"case": {"evidence": [record]}}, "observations": {"diagnoses": [{"summary": "网络故障"}]}}
+    assert not workflow_business_claim_check(case_by_id("flow-worker"), "根因是网络故障。", output)["passed"]
+    record["response"]["root_cause"] = "网络故障"
+    result = workflow_business_claim_check(case_by_id("flow-worker"), "根因是网络故障。", output)
+    assert result["passed"]
+    assert result["specific_cause_checks"][0]["sources"][0]["evidence_id"] == "read-1"
+    record["status"] = "error"
+    assert not workflow_business_claim_check(case_by_id("flow-worker"), "根因是网络故障。", output)["passed"]
+
+
+def test_worker_can_select_task_without_repeating_plan_processing_check():
+    case = case_by_id("flow-worker")
+    identifiers = {"shop_id": "shop-worker", "order_id": "ORDER-1"}
+    scores = tool_scores([{"name": "GetWorkerTask", "args": identifiers}], case["expected_tools"], identifiers)
+    assert scores == {"tool_selection_accuracy": 1.0, "tool_argument_accuracy": 1.0}
+    assert tool_scores([], case["expected_tools"], identifiers)["tool_selection_accuracy"] == 0

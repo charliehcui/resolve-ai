@@ -15,7 +15,7 @@ def test_smoke_ground_truth_and_fixtures_are_complete():
     cases = load_cases(PROJECT_ROOT / "evals" / "smoke.jsonl")
     validation = validate_smoke(cases)
     assert validation["valid"]
-    assert validation["categories"] == {"rag": 10, "workflow": 11, "safety": 15, "reliability": 8}
+    assert validation["categories"] == {"rag": 10, "workflow": 50, "safety": 15, "reliability": 8}
     assert [case.model_dump() for case in cases] == [load_cases_from_dict(case) for case in smoke_cases()]
     broken = deepcopy(cases[0])
     broken.scenario = "not_seedable"

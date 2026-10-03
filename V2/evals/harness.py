@@ -28,7 +28,7 @@ CATEGORIES = ("rag", "workflow", "safety", "reliability")
 MODES = ("vector_only", "hybrid", "hybrid_rerank")
 QUICK_CASES = {
     "rag": ("rag-sync", "rag-mapping", "rag-shipment", "rag-auth", "rag-stock"),
-    "workflow": ("flow-order", "flow-auth", "flow-outage", "flow-limit"),
+    "workflow": ("flow-dev30-missing-order", "flow-dev30-restored-auth", "flow-dev30-shipment-receipt", "flow-dev30-stock-rule", "flow-dev30-source-conflict"),
     "safety": ("safe-order", "safe-user", "safe-approval", "safe-expired"),
     "reliability": ("recover-submit", "recover-confirm", "recover-lost", "recover-worker"),
 }
@@ -258,6 +258,11 @@ def summary_with_comparisons(results: list[dict]) -> dict:
 def render_summary(summary: dict, manifest: dict) -> str:
     lines = ["# ResolveAI " + ("Final Benchmark" if manifest.get("mode") == "final" else "Quick Evaluation"), "", f"Run: {manifest['run_id']}", f"Dataset cases: {manifest['selected_cases']}; planned runs: {manifest['planned_runs']}", f"Passed {summary['passed']} / Failed {summary['failed']} / Error {summary['error']} / Timeout {summary['timeout']}", "", "All failures remain in eligible denominators. Missing adverse-rate or claim evidence produces null, never an automatic pass.", "", "| Metric | Value | Numerator | Denominator | Missing evidence runs |", "|---|---:|---:|---:|---:|"]
     lines.insert(6, f"Baseline eligible: {summary.get('baseline_eligible')}; not executed: {summary.get('not_executed_runs', 0)}. Partial runs are not complete-dataset baseline scores.")
+    cases = summary["case_success"]
+    reliability = summary["execution_reliability"]
+    if cases["total_cases"]:
+        lines.insert(7, f"Case Success (Workflow): {cases['successful_cases']}/{cases['total_cases']} Cases successful; business failed={cases['business_failed_cases']}; execution-only unknown={cases['execution_only_cases']}. Latest completed business result per Case, not best-of-retries.")
+    lines.insert(8, f"Execution Reliability: {reliability['completed_executions']}/{reliability['total_executions']} executions completed; Error={reliability['error_executions']}; Timeout={reliability['timeout_executions']}; failures={reliability['by_failure_kind']}; provider call errors including recovered calls={reliability['provider_call_errors']}.")
     for name, value in summary["metrics"].items():
         lines.append(f"| {name} | {value['value']} | {value['numerator']} | {value['denominator']} | {value['missing_evidence_runs']} |")
     lines += ["", "Performance uses application wall time; setup and evaluation judge are excluded. Phase intervals use their wall-clock union, not a sum of parallel durations.", "", "```json", json.dumps(summary["performance"], indent=2), "```", "", "## Retrieval comparison", ""]
@@ -282,8 +287,9 @@ def select_cases(cases: list, mode: str, category: str | None, case_ids: list[st
     if category not in CATEGORIES:
         raise ValueError("Quick Evaluation requires one explicit --category")
     wanted = case_ids or list(QUICK_CASES[category])
-    if not 1 <= len(wanted) <= 5 or len(set(wanted)) != len(wanted):
-        raise ValueError("Quick Evaluation accepts 1-5 distinct cases")
+    limit = 11 if category == "workflow" else 5
+    if not 1 <= len(wanted) <= limit or len(set(wanted)) != len(wanted):
+        raise ValueError(f"Quick Evaluation accepts 1-{limit} distinct {category} cases")
     by_id = {case.case_id: case for case in cases if case.category == category}
     if set(wanted) - set(by_id):
         raise ValueError("Unknown cases or cases outside the selected category")
@@ -409,7 +415,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=["quick", "final"], default="quick")
     parser.add_argument("--suite", type=Path, default=PROJECT_ROOT / "evals" / "smoke.jsonl")
     parser.add_argument("--category", choices=CATEGORIES)
-    parser.add_argument("--cases", nargs="+", help="Quick only: 1-5 case IDs from the selected category")
+    parser.add_argument("--cases", nargs="+", help="Quick only: explicit case IDs from one category; up to 11 Workflow cases, otherwise 5")
     parser.add_argument("--retrieval-modes", nargs="+", choices=MODES)
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--changes", default="", help="Final only: describe this benchmark's changes in BENCHMARK_HISTORY.md")

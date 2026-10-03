@@ -11,6 +11,7 @@ from backend.app.support_tools import create_engineer_ticket
 from backend.app.support_workflow import run_support_workflow
 from backend.app.tickets import is_human_request
 from backend.app.trace import current_trace_id
+from backend.app.user_intent import is_paused
 
 
 def process_conversation_message(user: UserContext, question: str, conversation_id: str | None = None, retrieval_mode: str | None = None) -> dict[str, object]:
@@ -26,6 +27,12 @@ def process_conversation_message(user: UserContext, question: str, conversation_
     history = load_messages(conversation_id)
     save_message(conversation_id, "user", question)
     started = time.perf_counter()
+
+    if is_paused(question):
+        answer = "已按您的要求暂停处理，未创建人工工单或恢复方案。"
+        save_message(conversation_id, "assistant", answer, {"agent_role": conversation["active_role"], "status": "diagnosed"})
+        run_id = save_agent_run(conversation_id, "code", "none", "user_paused", "succeeded", int((time.perf_counter() - started) * 1000), {}, current_trace_id())
+        return {"conversation_id": conversation_id, "run_id": run_id, "active_role": conversation["active_role"], "answer": answer, "status": "diagnosed", "evidence_ids": [], "usage": {}}
 
     if is_human_request(question):
         ticket = create_engineer_ticket(user, conversation_id, "user_requested", question)

@@ -39,6 +39,19 @@ def test_only_quick_and_final_selection():
             select_cases(cases, mode, category, ids, modes)
 
 
+def test_explicit_full_workflow_selection_preserves_small_defaults():
+    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    ids = [case.case_id for case in cases if case.category == "workflow"]
+    selected, _ = select_cases(cases, "quick", "workflow", ids, None)
+    assert len(selected) == 11
+    assert [case.case_id for case in selected] == ids
+    assert {case.category for case in selected} == {"workflow"}
+    defaults, _ = select_cases(cases, "quick", "workflow", None, None)
+    assert len(defaults) == 4
+    with pytest.raises(ValueError):
+        select_cases(cases, "quick", "rag", [case.case_id for case in cases if case.category == "rag"][:6], None)
+
+
 def test_quick_runs_only_selected_cases_and_keeps_failure_evidence(tmp_path, monkeypatch, local_harness):
     attempts = []
 

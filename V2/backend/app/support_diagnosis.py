@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -108,7 +109,22 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
     available_tools = []
     for schema in READ_TOOL_SCHEMAS:
         if all(identifiers.get(field) for field in schema.model_fields):
+            arguments = {field: identifiers[field] for field in schema.model_fields}
+            already_queried = False
+            for record in evidence:
+                if record.tool_name == schema.__name__ and record.request == arguments and not is_read_validation_error(record):
+                    already_queried = True
+                    break
+            if already_queried:
+                continue
             available_tools.append(schema)
+
+    primary_tools = primary_read_tools(handoff, question)
+    attempted = {record.tool_name for record in evidence if record.source_service != "support" and record.request.get("shop_id") == handoff.known_shop_id and ("order_id" not in record.request or record.request["order_id"] == handoff.known_order_id) and ("sku" not in record.request or record.request["sku"] == handoff.known_sku)}
+    primary_missing = primary_tools - attempted
+    prioritized = [schema for schema in available_tools if schema.__name__ in primary_missing]
+    if prioritized:
+        available_tools = prioritized
 
     handoff_text = json.dumps(handoff.model_dump(), ensure_ascii=False)
     evidence_text = json.dumps(evidence_items, ensure_ascii=False, default=str)
@@ -132,6 +148,9 @@ Evidence:
 
 Remaining tool budget:
 {remaining_calls}
+
+Primary fact queries for this request: {', '.join(sorted(primary_tools))}.
+Read the unqueried primary facts together when independent before spending budget on auxiliary queries.
 
 Choose exactly one next step.
 The finish response may include recommended_action with action_type, reason and real evidence_ids.
@@ -186,6 +205,20 @@ Terminal data schemas:
         decision.unknowns.extend(validation_errors)
 
     return next_step, usage
+
+
+def primary_read_tools(handoff: SupportHandoffRecord, question: str) -> set[str]:
+    if handoff.known_sku:
+        tools = {"GetStockStatus"}
+    elif re.search(r"发货|出库|运单|物流|shipment|shipping|tracking", question, flags=re.IGNORECASE):
+        tools = {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"}
+    else:
+        tools = {"GetOrder", "GetOrderProcessRecords"} if handoff.known_order_id else set()
+    if re.search(r"连接|授权|connection|authorization", question, flags=re.IGNORECASE):
+        tools.add("GetShopConnectionStatus")
+    if re.search(r"同步开关|同步配置|当前同步|当前设置|当前查询|sync settings?", question, flags=re.IGNORECASE):
+        tools.add("GetShopSyncStatus")
+    return tools
 
 
 def has_shipment_evidence_conflict(evidence: list[EvidenceRecord]) -> bool:
@@ -243,13 +276,69 @@ def add_claims_to_answer(lines: list[str], claims: list[ClaimWithEvidence]) -> N
         lines.append(f"- {claim.text} [{evidence_text}]")
 
 
-def build_human_support_answer(decision: HumanSupportRequired) -> tuple[str, Literal["pending_human"]]:
+def direct_cause_values(value: object) -> list[str]:
+    values = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"cause", "root_cause", "failure_reason", "reason", "error_message"} and isinstance(item, str):
+                values.append(item)
+            elif isinstance(item, (dict, list)):
+                values.extend(direct_cause_values(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(direct_cause_values(item))
+    return values
+
+
+def ground_cause_text(text: str, evidence: list[EvidenceRecord]) -> str:
+    # 只拦截常见的具体根因和猜测表述，不从错误码推导根因。
+    pattern = r"网络(?:连接)?(?:故障|异常|问题)|(?:平台|系统)(?:正在)?(?:维护|内部故障|故障)|(?:商品|产品)(?:尚)?未创建|(?:映射)?配置(?:尚)?未完成|资源(?:问题|不足|耗尽)|network (?:fault|failure|issue|problem)|platform maintenance|system (?:fault|failure)|resource (?:problem|shortage|exhaustion)|(?:product|item) (?:not|never) created|configuration (?:incomplete|not completed)"
+    causes = []
+    for record in evidence:
+        if record.status == "success" and not is_read_validation_error(record):
+            causes.extend(direct_cause_values(record.response))
+    for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+        phrase = match.group().casefold()
+        if not any(phrase in cause.casefold() for cause in causes):
+            return "具体原因目前无法确认"
+    if re.search(r"可能(?:由|是|因为|由于)|疑似|猜测|\b(?:might be|could be|possibly)\b", text, flags=re.IGNORECASE):
+        return "具体原因目前无法确认"
+    causal = re.search(r"(?:原因|根因)(?:是|为)|由于|因为|导致|造成|引起|未发布到|\b(?:because|due to|caused by|reason is)\b", text, flags=re.IGNORECASE)
+    if causal:
+        cause = text[causal.end():].strip(" 。.;；")
+        if text.strip(" 。.;；") not in causes and cause not in causes:
+            return "具体原因目前无法确认"
+    return text
+
+
+def normalize_unknown_causes(unknowns: list[str]) -> list[str]:
+    result = []
+    for text in unknowns:
+        if re.search(r"原因|根因|可能|疑似|猜测|cause|might|could be", text, flags=re.IGNORECASE) or ground_cause_text(text, []) != text:
+            text = "具体原因目前无法确认"
+        if text not in result:
+            result.append(text)
+    return result
+
+
+def build_human_support_answer(decision: HumanSupportRequired, evidence: list[EvidenceRecord] | None = None) -> tuple[str, Literal["pending_human"]]:
+    decision.reason = ground_cause_text(decision.reason, evidence or [])
+    decision.unknowns = normalize_unknown_causes(decision.unknowns)
     unknowns = "；".join(decision.unknowns)
 
     if unknowns == "":
         unknowns = "需要进一步检查"
 
     answer = f"当前自动调查无法继续，需要人工处理：{decision.reason}\n尚未确认：{unknowns}"
+    facts = []
+    for claim in decision.known_facts:
+        cited = [record for record in evidence or [] if record.evidence_id in claim.evidence_ids and not is_read_validation_error(record)]
+        if cited and set(claim.evidence_ids) == {record.evidence_id for record in cited} and ground_cause_text(claim.text, cited) == claim.text:
+            facts.append(claim)
+    if facts:
+        lines = [answer, "已确认事实："]
+        add_claims_to_answer(lines, facts)
+        answer = "\n".join(lines)
 
     return answer, "pending_human"
 
@@ -264,8 +353,27 @@ def build_investigation_answer(decision: InvestigationComplete, evidence: list[E
         if not is_read_validation_error(record):
             valid_evidence_ids.add(record.evidence_id)
 
-    confirmed_claims = filter_supported_claims(decision.confirmed_facts, valid_evidence_ids)
-    possible_causes = filter_supported_claims(decision.possible_causes, valid_evidence_ids)
+    confirmed_claims = []
+    for claim in filter_supported_claims(decision.confirmed_facts, valid_evidence_ids):
+        cited = [record for record in evidence if record.evidence_id in claim.evidence_ids]
+        if ground_cause_text(claim.text, cited) == claim.text:
+            confirmed_claims.append(claim)
+        else:
+            decision.unknowns.append("具体原因目前无法确认")
+    possible_causes = []
+    for claim in filter_supported_claims(decision.possible_causes, valid_evidence_ids):
+        causes = []
+        for record in evidence:
+            if record.evidence_id in claim.evidence_ids and record.status == "success" and not is_read_validation_error(record):
+                causes.extend(direct_cause_values(record.response))
+        if claim.text.strip() in causes:
+            possible_causes.append(claim)
+        else:
+            decision.unknowns.append("具体原因目前无法确认")
+    decision.summary = ground_cause_text(decision.summary, evidence)
+    decision.unknowns = normalize_unknown_causes(decision.unknowns)
+    if decision.recommended_action is not None:
+        decision.recommended_action.reason = ground_cause_text(decision.recommended_action.reason, evidence)
 
     if len(confirmed_claims) == 0:
         return "当前证据不足以形成可靠结论，需要人工进一步处理。", "pending_human"
@@ -278,7 +386,7 @@ def build_investigation_answer(decision: InvestigationComplete, evidence: list[E
     add_claims_to_answer(lines, confirmed_claims)
 
     if len(possible_causes) > 0:
-        lines.append("可能原因：")
+        lines.append("有直接证据的原因：")
         add_claims_to_answer(lines, possible_causes)
 
     if len(decision.unknowns) > 0:
@@ -301,7 +409,7 @@ def build_support_answer(next_step: SupportNextStep, evidence: list[EvidenceReco
         if next_step.human_support is None:
             return "当前自动调查无法继续，需要人工进一步处理。", "pending_human"
 
-        return build_human_support_answer(next_step.human_support)
+        return build_human_support_answer(next_step.human_support, evidence)
 
     if next_step.investigation_complete is None:
         return "当前证据不足以形成可靠结论，需要人工进一步处理。", "pending_human"

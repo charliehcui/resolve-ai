@@ -10,6 +10,7 @@ from backend.app.stock import assess_stock_facts
 from backend.app.support_action_verification import check_order_recovery_facts, check_shipment_recovery_facts
 from backend.app.support_evidence import EvidenceRecord
 from backend.app.support_tools import execute_read_tool_batch
+from backend.app.user_intent import action_request
 
 TicketTrigger = Literal["support_unresolved", "budget_reached", "evidence_insufficient", "unknown_error", "user_requested"]
 TicketRecheckStatus = Literal["RESOLVED", "UNRESOLVED", "NEEDS_INFO"]
@@ -39,7 +40,7 @@ def record_evidence_ids(records: list[EvidenceRecord]) -> list[str]:
 
 
 def is_human_request(text: str) -> bool:
-    return bool(re.search(r"人工|工程师|真人|human support|engineer", text, re.IGNORECASE))
+    return action_request(text, "human") is True
 
 
 def ticket_category(known_order_id: str | None, known_sku: str | None, evidence: list[dict[str, object]]) -> str:

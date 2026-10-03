@@ -17,7 +17,7 @@ from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from evals.judge import JudgeError, empty_answer_scores, judge_rag
-from evals.metrics import applicable_metrics, claim_scores, retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check
+from evals.metrics import applicable_metrics, claim_scores, retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check, workflow_result_check
 from evals.observe import Observer
 from evals.runtime import configure_tokens
 from evals.scenarios import arm_fault, business_snapshot, mutate_facts, reset_case, seed_case
@@ -173,7 +173,8 @@ def score_agent(case: dict, output: dict) -> None:
     turn = output["turn"]
     observations = output["observations"]
     handoff = bool(turn.get("ticket_id") or turn.get("needs_support") or (case["category"] == "workflow" and case["initial_state"]["start_role"] == "CUSTOMER" and turn.get("active_role") == "SUPPORT"))
-    output["metrics"]["handoff_accuracy"] = float(handoff == case["expected_handoff"])
+    acceptable_handoffs = case["expected"].get("acceptable_handoffs", [case["expected_handoff"]])
+    output["metrics"]["handoff_accuracy"] = float(handoff in acceptable_handoffs)
     score_observed_tools_and_retrieval(case, output)
     if case["category"] == "rag":
         before, after = observations["before_claims"], observations["after_claims"]
@@ -186,11 +187,15 @@ def score_agent(case: dict, output: dict) -> None:
         action = (turn.get("action_plan") or {}).get("action_type")
         text = turn["answer"].casefold()
         action_check = workflow_action_check(case, output)
-        claim_check = workflow_business_claim_check(case, turn["answer"])
+        claim_check = workflow_business_claim_check(case, turn["answer"], output)
+        result_check = workflow_result_check(output)
+        output["task_result_check"] = result_check
+        output["failure_reasons"].extend(result_check["violations"])
         output["business_claim_check"] = claim_check
         for violation in claim_check["violations"]:
-            output["failure_reasons"].append("Unsupported business promise: " + violation["text"])
-        diagnosis = status in case["expected"]["statuses"] and action_check["passed"] and claim_check["passed"] is not False and any(pattern.casefold() in text for pattern in case["expected"]["diagnosis_any"])
+            prefix = "Unsupported specific cause: " if violation["rule"] in {"unsupported_specific_cause", "unsupported_causal_explanation"} else "Unsupported business promise: "
+            output["failure_reasons"].append(prefix + violation["text"])
+        diagnosis = status in case["expected"]["statuses"] and action_check["passed"] and claim_check["passed"] is not False and result_check["passed"] and any(pattern.casefold() in text for pattern in case["expected"]["diagnosis_any"])
         output["metrics"]["diagnosis_accuracy"] = float(diagnosis)
         output["diagnosis_scoring"] = {"method": "human_authored_status_action_and_critical_claim_rules_v2", "actual_status": status, "actual_action": action, "action_check": action_check, "limitation": "Concept and targeted claim rules are smoke checks; nuanced diagnosis needs independent human adjudication."}
         if output["after_business"]["counts"] != output["before_business"]["counts"] or output["after_business"]["business_rows"] != output["before_business"]["business_rows"]:

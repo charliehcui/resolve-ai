@@ -109,13 +109,13 @@ def workflow_action_check(case: dict, output: dict) -> dict:
     return {"passed": all(checks.values()), "acceptable_actions": allowed, "checks": checks}
 
 
-def workflow_business_claim_check(case: dict, answer: str) -> dict:
+def workflow_business_claim_check(case: dict, answer: str, output: dict | None = None) -> dict:
     rules = case["claim_ground_truth"].get("forbidden_promises", [])
     if set(rules) - {"automatic_retry_after_recovery"}:
         raise ValueError("Unknown critical business claim rule")
     violations = []
     if "automatic_retry_after_recovery" in rules:
-        pattern = r"自动.{0,12}(?:重试|重新处理|重新同步|再试)|auto(?:matic(?:ally)?)?[-\s]*(?:retry|retries|retried|retrying)|(?:retry|retries|retried|retrying).{0,12}automatically"
+        pattern = r"自动.{0,12}(?:重试|重新处理|重新同步|再试|处理|导入)|auto(?:matic(?:ally)?)?[-\s]*(?:retry|retries|retried|retrying|process|processing|import)|(?:retry|retries|retried|retrying|processed|imported).{0,12}automatically"
         for clause in re.split(r"[。！？；\n.!?;，,]", answer):
             for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
                 before = clause[:match.start()]
@@ -124,7 +124,85 @@ def workflow_business_claim_check(case: dict, answer: str) -> dict:
                 denied_after = re.match(r"[\s\"'”）)]*(?:尚未实现|未实现|没有(?:证据|依据|实现)|没有实现|缺乏依据|没有代码支持)|\s+(?:is |are )?(?:not implemented|not guaranteed|unsupported)", after, flags=re.IGNORECASE)
                 if not negated and not denied_after:
                     violations.append({"rule": "automatic_retry_after_recovery", "text": clause.strip()})
-    return {"checked": bool(rules), "rules": rules, "passed": not violations if rules else None, "violations": violations, "limitation": "Targeted critical-claim rules, not a complete semantic fact judge."}
+    # 独立比较真实后台的原因字段，不以 Agent 的结论或引用存在作为正确答案。
+    direct_causes = []
+    records = ((output or {}).get("snapshot", {}).get("case") or {}).get("evidence", [])
+    for record in records:
+        if record.get("status") != "success" or record.get("source_service") == "support":
+            continue
+        pending = [record.get("response", {})]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key in {"cause", "root_cause", "failure_reason", "reason", "error_message"} and isinstance(item, str):
+                        direct_causes.append({"text": item, "evidence_id": record.get("evidence_id")})
+                    elif isinstance(item, (dict, list)):
+                        pending.append(item)
+            elif isinstance(value, list):
+                pending.extend(value)
+    pattern = r"网络(?:连接)?(?:故障|异常|问题)|(?:平台|系统)(?:正在)?(?:维护|内部故障|故障)|(?:商品|产品)(?:尚)?未创建|(?:映射)?配置(?:尚)?未完成|资源(?:问题|不足|耗尽)|network (?:fault|failure|issue|problem)|platform maintenance|system (?:fault|failure)|resource (?:problem|shortage|exhaustion)|(?:product|item) (?:not|never) created|configuration (?:incomplete|not completed)"
+    cause_checks = []
+    for clause in re.split(r"[。！？；\n.!?;，,]", answer):
+        for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+            if re.search(r"(?:不是|并非|不能认定|没有证据(?:证明|表明))\s*$|\b(?:not|no evidence of)\s*$", clause[:match.start()], flags=re.IGNORECASE):
+                continue
+            sources = [cause for cause in direct_causes if match.group().casefold() in cause["text"].casefold()]
+            cause_checks.append({"text": match.group(), "supported": bool(sources), "sources": sources})
+            if not sources:
+                violations.append({"rule": "unsupported_specific_cause", "text": clause.strip()})
+        if re.search(r"可能(?:由|是|因为|由于)|疑似|猜测|\b(?:might be|could be|possibly)\b", clause, flags=re.IGNORECASE):
+            violation = {"rule": "unsupported_specific_cause", "text": clause.strip()}
+            if violation not in violations:
+                violations.append(violation)
+        causal = re.search(r"(?:原因|根因)(?:是|为)|由于|因为|导致|造成|引起|未发布到|\b(?:because|due to|caused by|reason is)\b", clause, flags=re.IGNORECASE)
+        if causal:
+            cause = clause[causal.end():].strip(" 。.;；")
+            sources = [record for record in direct_causes if record["text"] in {clause.strip(" 。.;；"), cause}]
+            if not sources:
+                violations.append({"rule": "unsupported_causal_explanation", "text": clause.strip()})
+    return {"checked": True, "rules": [*rules, "unsupported_specific_cause", "unsupported_causal_explanation"], "passed": not violations, "violations": violations, "specific_cause_checks": cause_checks, "limitation": "Lightweight explicit-causality checks against independent backend fields; implicit causal or factual claims still require evidence review."}
+
+
+def workflow_result_check(output: dict) -> dict:
+    turn = output["turn"]
+    snapshot = output.get("snapshot", {})
+    ticket = snapshot.get("ticket") or {}
+    plan = turn.get("action_plan") or {}
+    actions = snapshot.get("actions", [])
+    status = turn.get("status")
+    violations = []
+    ticket_exists = bool(turn.get("ticket_id") and ticket.get("ticket_id") == turn["ticket_id"])
+    plan_exists = bool(turn.get("action_plan_id") and plan.get("action_id") == turn["action_plan_id"] and any(action.get("action_id") == turn["action_plan_id"] for action in actions))
+    if status == "pending_human" and not ticket_exists:
+        violations.append("pending_human has no persisted matching ticket")
+    if status == "awaiting_confirmation" and (not plan_exists or plan.get("status") != "proposed"):
+        violations.append("awaiting_confirmation has no persisted proposed action")
+    for clause in re.split(r"[。；;.!?\n]", turn.get("answer", "")):
+        if re.search(r"无需|不需要|不要|不必|\b(?:not|no need|do not)\b", clause, flags=re.IGNORECASE):
+            continue
+        if re.search(r"(?:需要|建议|请求|交给|转交|转至|转).{0,8}(?:人工|工程师)|\b(?:requires? human|needs? human|escalate to human)\b", clause, flags=re.IGNORECASE) and not ticket_exists and not turn.get("needs_support"):
+            violations.append("Answer requests human handling but no matching ticket was created")
+        if re.search(r"(?:建议|推荐)(?:执行|重试|恢复)|\b(?:recommend executing|recommend retrying)\b", clause, flags=re.IGNORECASE) and not plan_exists and status != "user_action_required":
+            violations.append("Answer recommends an action but no matching plan was created")
+    return {"passed": not violations, "ticket_persisted": ticket_exists, "plan_persisted": plan_exists, "violations": violations}
+
+
+def execution_failure_kind(result: dict) -> str | None:
+    if result["status"] not in {"error", "timeout"}:
+        return None
+    text = " ".join(result.get("failure_reasons", [])).casefold()
+    if "primary endpoint" in text or "budgetexceeded" in text:
+        return "preflight_error"
+    if any(value in text for value in ("429", "openai", "provider returned error", "upstream", "rate limit")):
+        return "provider_error"
+    if "structuredoutputerror" in text or "jsondecodeerror" in text:
+        return "model_output_error"
+    if result["status"] == "timeout":
+        return "timeout"
+    if "judge" in text:
+        return "judge_error"
+    return "evaluation_or_application_error"
 
 
 def claim_scores(before: list[dict], after: list[dict], judgment: dict) -> dict:
@@ -181,4 +259,15 @@ def summarize(results: list[dict]) -> dict:
     tokens = [result["performance"]["input_tokens"] + result["performance"]["output_tokens"] for result in results if result["performance"].get("input_tokens") is not None and result["performance"].get("output_tokens") is not None]
     performance["total_tokens"] = {"mean": sum(tokens) / len(tokens) if tokens else None, "measured_runs": len(tokens), "missing_runs": len(results) - len(tokens)}
     counts = Counter(result["status"] for result in results)
-    return {"total_runs": len(results), "unique_cases": len({result["case_id"] for result in results}), "passed": counts["passed"], "failed": counts["failed"], "error": counts["error"], "timeout": counts["timeout"], "not_scored": counts["not_scored"], "metrics": metrics, "performance": performance, "failures": [{"case_id": result["case_id"], "variant": result["variant"], "repeat": result["repeat"], "status": result["status"], "reasons": result["failure_reasons"]} for result in results if result["status"] in {"failed", "error", "timeout"}]}
+    workflow_cases = {}
+    for result in results:
+        if result["category"] != "workflow":
+            continue
+        workflow_cases.setdefault(result["case_id"], None)
+        if result["status"] in {"passed", "failed"}:
+            workflow_cases[result["case_id"]] = result["status"]
+    case_counts = Counter(workflow_cases.values())
+    case_success = {"category": "workflow", "successful_cases": case_counts["passed"], "business_failed_cases": case_counts["failed"], "execution_only_cases": case_counts[None], "total_cases": len(workflow_cases), "value": case_counts["passed"] / len(workflow_cases) if workflow_cases else None, "policy": "Latest completed business result per Case in input order, never best-of-retries. Execution-only cases remain unknown; every execution error stays in execution_reliability and Task Success."}
+    errors = Counter(execution_failure_kind(result) for result in results if result["status"] in {"error", "timeout"})
+    reliability = {"total_executions": len(results), "completed_executions": counts["passed"] + counts["failed"], "business_failed_executions": counts["failed"], "error_executions": counts["error"], "timeout_executions": counts["timeout"], "value": (counts["passed"] + counts["failed"]) / len(results) if results else None, "by_failure_kind": dict(errors), "provider_call_errors": sum(bool(row.get("error_type")) for result in results for row in result.get("llm_accounting", []))}
+    return {"total_runs": len(results), "unique_cases": len({result["case_id"] for result in results}), "passed": counts["passed"], "failed": counts["failed"], "error": counts["error"], "timeout": counts["timeout"], "not_scored": counts["not_scored"], "case_success": case_success, "execution_reliability": reliability, "metrics": metrics, "performance": performance, "failures": [{"case_id": result["case_id"], "variant": result["variant"], "repeat": result["repeat"], "status": result["status"], "failure_kind": execution_failure_kind(result), "reasons": result["failure_reasons"]} for result in results if result["status"] in {"failed", "error", "timeout"}]}

@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from evals.metrics import execution_failure_kind
 
 
 def compact_result(result: dict) -> dict:
@@ -25,6 +26,8 @@ def compact_result(result: dict) -> dict:
         row["business_claim_check"] = result.get("business_claim_check")
         row["actual_result_summary"].pop("answer_preview")
         row["actual_result_summary"]["answer"] = response.get("answer")
+        row["task_result_check"] = result.get("task_result_check")
+    row["execution_failure_kind"] = execution_failure_kind(result)
     return row
 
 

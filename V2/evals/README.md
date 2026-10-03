@@ -1,6 +1,8 @@
 # ResolveAI Evaluation
 
-Only two modes, one entry point. The unchanged `smoke.jsonl` has 44 human-authored cases: RAG 10, Workflow 11, Safety 15, Reliability 8. There is no automatic full evaluation or unit suite execution.
+Only two evaluation modes, one entry point. `smoke.jsonl` has 83 human-authored cases: RAG 10, Workflow 50, Safety 15, Reliability 8. Workflow is frozen at 40 Development/Regression (17/23) and 10 entirely new Holdout cases; all 34 previously exposed cases remain available for optimization. See `WORKFLOW_EVAL_SPEC.md` and `GROUND_TRUTH_REVIEW.md`. Holdout is excluded from optimization; Final includes it and requires separate owner authorization. There is no automatic full evaluation or unit suite execution.
+
+For Workflow data checks only, use `python -m evals.dataset --validate` (frozen hash/schema/splits) or `python -m evals.dataset --check-fixtures` (isolated local simulator, no Agent/LLM). The semantic `workflow_ground_truth` is authoritative; legacy keyword metrics do not implement the whole frozen contract.
 
 ## Quick Evaluation
 
@@ -31,7 +33,7 @@ Run only when the owner explicitly requests it, after optimization and targeted 
 .\.venv\Scripts\python -m evals.run --mode final --changes "Describe this measured change"
 ```
 
-Uses a fresh isolated database. Runs all 44 cases, including the three RAG modes (`vector_only`, `hybrid`, `hybrid_rerank`): 64 executions. No retry of the full benchmark. First Error/Timeout stops execution, and unexecuted cases are listed without invented results. Final archives its report and appends `BENCHMARK_HISTORY.md`, including invalid/incomplete runs explicitly marked ineligible. Application failures remain in denominators; missing Judge evidence remains unknown.
+Uses a fresh isolated database. Runs all 83 cases, including the three RAG modes (`vector_only`, `hybrid`, `hybrid_rerank`): 103 executions. This includes the frozen Holdout and must never be used for optimization. No retry of the full benchmark. First Error/Timeout stops execution, and unexecuted cases are listed without invented results. Final archives its report and appends `BENCHMARK_HISTORY.md`, including invalid/incomplete runs explicitly marked ineligible. Application failures remain in denominators; missing Judge evidence remains unknown.
 
 Model/provider/fallback settings remain in `.env`. The persistent `.local/eval/costs.sqlite3` ledger is never reset by cleanup; primary, Judge and fallback calls share the existing cumulative budget below $1. OpenRouter prices are checked when a real run starts. Unknown accepted calls keep their reserves. External embedding costs remain outside this OpenRouter ledger and must not be advertised as zero.
 
@@ -42,7 +44,7 @@ Model/provider/fallback settings remain in `.env`. The persistent `.local/eval/c
 - Scoring: `judge.py`, `metrics.py`.
 - Recording/budget: `observe.py`, `artifacts.py`, `budget.py`.
 
-Keep these modules flat; no parallel legacy entry points or Phase-specific scripts. The review file inventories existing labels and awaits human review; it does not certify them.
+Keep these modules flat; no parallel legacy evaluation entry points or Phase-specific scripts. Workflow labels are frozen after business-code review and fixture-only validation; suspected Ground Truth errors require human confirmation before any change. Historical RAG label snapshots remain outside this Workflow review.
 
 ```text
 reports/

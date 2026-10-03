@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.app.llm import create_model  # noqa: F401 - shared model factory import surface
 
@@ -51,6 +51,17 @@ class CustomerQueryDecision(BaseModel):  # Customer Agent 正式处理问题以�
     product: str | None = None
     version: str | None = None
     customer_message: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_handoff_field(cls, value: object) -> object:
+        # 只兼容模型已明确给出的 handoff，不补猜测出来的业务判断。
+        if isinstance(value, dict) and value.get("action") == "handoff":
+            if "decision" in value and value["decision"] != "handoff":
+                raise ValueError("Conflicting Customer handoff fields")
+            value = dict(value)
+            value["decision"] = "handoff"
+        return value
 
 
 class ClaimValidationResult(BaseModel):  # 一个 Claim 的检查结果
