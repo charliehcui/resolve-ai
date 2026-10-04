@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,18 +34,357 @@ def load_cases(path: Path) -> list[EvalCase]:
         raise ValueError("Dataset contains duplicate case IDs")
     return cases
 
+# Sources below are relative to docs/product. Each inner group permits equivalent
+# sources; all groups are required. Quotes select relevant topics, not entire XLSX files.
 RAG_CASES = [
-    ("rag-sync", "产品 2.0 怎么开启订单同步？重新开启会自动补回全部历史订单吗？", ["01-order-sync-switch.md"], ["管理员在店铺设置的订单同步菜单开启新订单同步", "重新开启不会自动补回全部历史订单，指定历史订单需要单独检查恢复"]),
-    ("rag-paid", "产品 2.0 接收哪些付款状态的订单？未付款或已取消的订单会生成管理软件订单吗？", ["02-order-eligibility.md"], ["只接收已付款的单订单", "未付款或已取消订单不会生成管理软件订单"]),
-    ("rag-mapping", "产品 2.0 的 SKU_MAPPING_MISSING 是什么意思？应该核对什么？", ["03-sku-mapping.md", "08-error-codes.md"], ["平台商品编号缺少到管理软件商品编号的映射", "核对店铺、平台 SKU 和当前商品映射"]),
-    ("rag-completion", "产品 2.0 怎么确认订单同步真正完成？任务提示成功就够了吗？", ["04-order-status.md"], ["管理软件订单真实存在，商品、数量、金额一致", "页面或任务成功文字不能代替实际结果"]),
-    ("rag-history", "产品 2.0 支持一键导入全部历史订单吗？指定缺失订单应该怎么处理？", ["05-history-recovery.md"], ["不支持一键导入全部历史订单", "符合资格的缺失订单需要后台证据、单笔恢复方案、批准和结果验证"]),
-    ("rag-shipment", "产品 2.0 仓库显示已发货能证明平台已更新吗？结果未知时应该如何恢复？", ["06-shipment-facts.md"], ["仓库出库、管理软件接收、管理软件发送、平台状态是独立事实", "结果未知时先查询平台回执和当前状态，不能再次命令仓库出库"]),
-    ("rag-auth", "产品 2.0 渠道授权过期后，Support 能自动生成新授权吗？其他店铺也会失效吗？", ["07-channel-authorization.md"], ["商家在平台重新授权，支持系统不能自行生成或修改授权", "一个店铺授权失效不能推断其他店铺也失效"]),
-    ("rag-codes", "产品 2.0 ORDER_SYNC_DISABLED 和 ORDER_NOT_PAID 分别表示什么？错误码能证明当前状态吗？", ["08-error-codes.md", "02-order-eligibility.md"], ["ORDER_SYNC_DISABLED 表示同步开关关闭，ORDER_NOT_PAID 表示未满足已付款资格", "错误码是记录的处理结果，不能证明当前状态仍然相同"]),
-    ("rag-stock", "产品 2.0 的上架数量公式是什么？实物 80、占用 10、安全保留 5 应上架多少？", ["10-stock-rule.md", "08-stock-facts.md"], ["上架数为 max(实物减占用减安全保留, 0)", "示例应上架 65"]),
-    ("rag-scope", "产品 2.0 支持自动退款、多仓分配或真实电商平台连接吗？", ["12-unsupported-features.md"], ["本期不支持自动退款、多仓分配或真实电商平台连接"]),
+    {
+        "case_id": "rag-sync", "split": "development", "category": "Rule / Condition", "domain": "Order Sync",
+        "question": "company-a 的 2.0 店铺订单同步关闭了。恢复一笔订单时怎么处理开关、由谁批准？开了会补齐所有历史订单吗？",
+        "expected_sources": [["01-order-sync-switch.md"]], "expected_topic": "同步开关、明确设置选项和管理员批准",
+        "expected_facts": ["方案必须明确包含 enable_order_sync 设置选项，涉及店铺设置变更要管理员批准，普通员工的单笔重试同意不能替代。", "开关开启只是恢复前提，不会自动扫描历史订单，也不会自动把旧 blocked/failed 任务重排。", "当前资料没有可确认的前端开关菜单路线；可以说明经过批准的恢复方案。"],
+        "forbidden_claims": ["在店铺设置→订单同步菜单直接开启。", "开启同步会自动补齐全部历史订单。", "员工同意重试即允许更改同步开关。"], "answerable": True,
+        "evidence": {"01-order-sync-switch.md": ["这样的方案改变店铺范围设置，必须管理员批准。", "开启开关只是恢复前提，不会扫描历史订单，也不会自动将既有 blocked 或 failed 改回 pending。", "当前前端没有可据代码确认的“店铺设置 → 订单同步”菜单"]},
+    },
+    {
+        "case_id": "rag-paid", "split": "development", "category": "Direct Fact", "domain": "Order",
+        "question": "company-a 的 2.0 创建订单时接受 paid、unpaid、cancelled 吗？哪些付款状态符合导入资格？",
+        "expected_sources": [["guides/order-guide.pdf"]], "expected_topic": "创建接口接受值与导入付款资格",
+        "expected_facts": ["创建接口接受 paid、unpaid、cancelled；接受来源订单不等于商家订单已经导入。", "当前导入要求来源 payment_status=paid；unpaid 和 cancelled 不符合导入资格，其他导入前提仍需满足。"],
+        "forbidden_claims": ["平台创建接口只接受 paid。", "未付款或取消订单也符合商家导入资格。", "unpaid 后续一定自动转 paid 并导入。"], "answerable": True,
+        "evidence": {"guides/order-guide.pdf": ["创建接口接受 paid、unpaid、cancelled；后两种不符合当前导入资格。", "来源 payment_status=paid"]},
+    },
+    {
+        "case_id": "rag-mapping", "split": "development", "category": "Direct Fact", "domain": "SKU Mapping",
+        "question": "company-a 的 2.0 报 SKU_MAPPING_MISSING 是缺什么？应由谁补，按哪些标识核对？",
+        "expected_sources": [["03-sku-mapping.md", "reference/error-codes.xlsx"]], "expected_topic": "SKU_MAPPING_MISSING 订单映射",
+        "expected_facts": ["该错误表示订单没有当前启用的平台 SKU 到商家 merchant_sku 映射。", "按公司、店铺和 platform_sku 核对 active 映射，交负责配置维护的人补齐后再判断单笔恢复。", "Support 不自动创建或猜测映射。"],
+        "forbidden_claims": ["这个错误一定指 warehouse_sku 库存规则缺失。", "Support 会按字符串相似度自动创建映射。"], "answerable": True,
+        "evidence": {"03-sku-mapping.md": ["没有启用记录时以 SKU_MAPPING_MISSING 阻断，不会自动创建或猜测映射。", "若缺少映射，需要负责映射维护的人补齐配置"], "reference/error-codes.xlsx": ["代码 / 状态：SKU_MAPPING_MISSING"]},
+    },
+    {
+        "case_id": "rag-completion", "split": "development", "category": "Rule / Condition", "domain": "Order",
+        "question": "company-a 的 2.0 要确认订单处理完成，除了任务 completed 和一个商家订单号，还要核对哪些事实？",
+        "expected_sources": [["guides/order-guide.pdf"]], "expected_topic": "订单完成的完整事实",
+        "expected_facts": ["读取当前平台来源和商家处理记录，核对来源事件、SKU、数量、金额及商家实际内容一致。", "商家订单恰好一份且订单任务 completed 才支持完整订单处理完成结论；任务文字或单个订单号不足。", "订单处理完成不证明仓库出库或平台发货回传完成。"],
+        "forbidden_claims": ["只看到任务 completed 就已完成全部验证。", "商家订单建立表示包裹已经寄出。"], "answerable": True,
+        "evidence": {"guides/order-guide.pdf": ["完成结论应同时核对来源事件、SKU、数量、金额、商家实际数量与金额、商家订单数量为一，以及订单任务 completed。", "不说明仓库已经出库，也不说明平台发货回传完成。"]},
+    },
+    {
+        "case_id": "rag-history", "split": "development", "category": "Rule / Condition", "domain": "Order Sync",
+        "question": "company-a 2.0 有一笔历史 paid 来源订单，但商家没有事件回执、订单任务或订单。没有 task_id 就不能恢复吗？是否能顺便批量补其他历史订单？",
+        "expected_sources": [["05-history-recovery.md"]], "expected_topic": "无既有任务的单笔缺失订单恢复",
+        "expected_facts": ["retry_order_sync 不要求一定已有事件回执或订单任务，可以针对缺失的单笔商家订单。", "仍需当前 paid 来源、启用 SKU 映射、正常授权与开启的同步等完整事实，活动任务应等待，已有内容冲突不能覆盖。", "不支持顺便批量扫描或一键补齐其他历史订单。"],
+        "forbidden_claims": ["没有 task_id 不能提出任何订单恢复。", "对缺失任务执行 retry_failed_task。", "单笔恢复会自动补全其他历史订单。"], "answerable": True,
+        "evidence": {"05-history-recovery.md": ["不要求一定已有事件回执或订单工作任务", "但来源、映射、配置和授权必须完整", "系统不会一键补所有历史订单"]},
+    },
+    {
+        "case_id": "rag-shipment", "split": "development", "category": "Similar / Confusing Knowledge", "domain": "Shipment",
+        "question": "company-a 2.0 订单任务 completed，但仓库 awaiting_shipment，平台没有运单。completed 算已经发货吗？resend_shipment 能让仓库寄出包裹吗？",
+        "expected_sources": [["guides/shipment-guide.pdf"]], "expected_topic": "订单处理、仓库待发货和回传的区别",
+        "expected_facts": ["订单处理 completed 不代表出库；awaiting_shipment 是仓库已收单但还待登记实际发货。", "没有仓库发货事实时应由仓库处理实际发货，不提出 resend_shipment 替代出库。", "resend_shipment 是重发已有发货信息，不能创建包裹或执行出库。"],
+        "forbidden_claims": ["订单 completed 说明平台已发货。", "resend_shipment 会命令仓库出库。"], "answerable": True,
+        "evidence": {"guides/shipment-guide.pdf": ["派单成功仅表示仓库收到订单并处于 awaiting_shipment", "resend_shipment 是重发已有发货信息，不是重新出库。", "仓库没有发货事实时交由仓库处理实际发货"]},
+    },
+    {
+        "case_id": "rag-auth", "split": "development", "category": "Direct Fact", "domain": "Authorization / Connection",
+        "question": "company-a 2.0 店铺当前 auth_expired 时 request_reauthorization 会后台替我完成 OAuth 吗？这能证明其他店铺也失效了吗？",
+        "expected_sources": [["07-authorization-and-connection.md"]], "expected_topic": "重新授权指引与店铺范围",
+        "expected_facts": ["auth_expired 或 forbidden 可生成 request_reauthorization 指引，由店铺授权人处理平台授权后重新查询。", "指引没有后台执行器，不会替用户完成 OAuth 或生成真实令牌。", "当前失败只属于指定店铺，不能推断其他店铺或整个渠道失效。"],
+        "forbidden_claims": ["Support 将自动完成 OAuth 并生成新令牌。", "一家店铺过期说明整个渠道授权失效。"], "answerable": True,
+        "evidence": {"07-authorization-and-connection.md": ["request_reauthorization 只针对这两种当前状态生成授权人到平台重新授权的指引。", "重新授权指引没有后台执行器", "某次失败记录不能代表其他店铺、其他操作或渠道全局故障。"]},
+    },
+    {
+        "case_id": "rag-codes", "split": "development", "category": "Direct Fact", "domain": "Error / Evidence",
+        "question": "company-a 2.0 ORDER_SYNC_DISABLED 和 ORDER_NOT_PAID 各代表什么？在旧记录里看到它们就能认定现在仍然这样吗？",
+        "expected_sources": [["reference/error-codes.xlsx"]], "expected_topic": "ORDER_SYNC_DISABLED / ORDER_NOT_PAID 与历史范围",
+        "expected_facts": ["ORDER_SYNC_DISABLED 是订单同步关闭导致阻断；ORDER_NOT_PAID 是当前来源付款状态不等于 paid、未满足资格。", "旧错误只记录当次尝试，需重新读取指定店铺的开关和当前来源付款状态，不能直接认定现状。"],
+        "forbidden_claims": ["ORDER_NOT_PAID 表示 SKU 映射缺失。", "旧错误足以证明现在仍未付款或仍关闭。", "系统会自动修改来源为 paid。"], "answerable": True,
+        "evidence": {"reference/error-codes.xlsx": ["代码 / 状态：ORDER_SYNC_DISABLED", "代码 / 状态：ORDER_NOT_PAID", "同一错误只说明其发生范围与时间"]},
+    },
+    {
+        "case_id": "rag-stock", "split": "development", "category": "Direct Fact", "domain": "Inventory",
+        "question": "company-a 2.0 库存可售量怎么算？实体 80、预留 10、安全库存 5 应发布多少？算成负数怎么办？",
+        "expected_sources": [["guides/inventory-guide.pdf"]], "expected_topic": "可售量公式和零下限",
+        "expected_facts": ["期望可售量为 max(physical_quantity - reserved_quantity - safety_stock, 0)。", "题设应发布 65；差值负数时取 0，不能发布负库存。", "实体、预留量取自仓库，安全库存取自商家库存规则。"],
+        "forbidden_claims": ["应直接发布实体库存 80。", "应发布 70，不扣安全库存。", "支持发布负库存。"], "answerable": True,
+        "evidence": {"guides/inventory-guide.pdf": ["max(physical_quantity - reserved_quantity - safety_stock, 0)", "实体数量、预留量来自仓库，安全库存来自商家规则。"]},
+    },
+    {
+        "case_id": "rag-scope", "split": "development", "category": "Direct Fact", "domain": "Unsupported Features",
+        "question": "company-a 2.0 当前支持自动退款、跨仓调拨和真实商业平台自动授权集成吗？",
+        "expected_sources": [["12-unsupported-features.md"]], "expected_topic": "明确未支持的功能",
+        "expected_facts": ["当前不支持自动退款和跨仓调拨。", "重新授权只有用户指引，没有真实 OAuth 执行器；当前渠道是模拟业务标识，不能声称已联通真实平台与仓库。"],
+        "forbidden_claims": ["支持自动退款或跨仓调拨。", "已集成真实商业渠道并可自动完成授权。"], "answerable": True,
+        "evidence": {"12-unsupported-features.md": ["不支持全量历史自动导入、按日期批量补单、拆单、多商品明细、自动退款", "不支持跨仓调拨", "重新授权只有用户指引，没有真实 OAuth 执行器。"]},
+    },
+    {
+        "case_id": "rag-dev-worker-retry", "split": "development", "category": "Rule / Condition", "domain": "Worker",
+        "question": "company-a 2.0 GetWorkerTask 的 retryable 怎么判断？processing 恰好 60 秒与超过 60 秒、failed 的限流与暂时处理错误有何不同？为 true 就能直接执行吗？",
+        "expected_sources": [["procedures/order-worker.docx"]], "expected_topic": "订单任务 retryable 的严格边界",
+        "expected_facts": ["processing 必须距 updated_at 严格超过 60 秒才符合该时间条件，恰好 60 秒不符合。", "failed 仅 TRANSIENT_PROCESSING_ERROR 或 WORKER_INTERRUPTED 的 retryable 为真；CHANNEL_RATE_LIMITED 不因临时性而符合，pending/completed/blocked 为假。", "retryable=true 只是候选资格，retry_failed_task 仍须 paid 来源、启用映射、正常同步和授权等业务前提及确认。"],
+        "forbidden_claims": ["processing 达到 60 秒就一定可以重试。", "所有暂时错误都符合 retry_failed_task。", "retryable=true 无需其他条件即可执行。"], "answerable": True,
+        "evidence": {"procedures/order-worker.docx": ["processing 且 updated_at 距当前严格超过 60 秒也为真", "failed 仅当错误为 TRANSIENT_PROCESSING_ERROR 或 WORKER_INTERRUPTED 才为真", "它不仅需要 retryable=true，也需要完整业务前提。"]},
+    },
+    {
+        "case_id": "rag-dev-processing-startup", "split": "development", "category": "Rule / Condition", "domain": "Worker",
+        "question": "company-a 2.0 Worker 启动恢复会定期扫描所有失败任务吗？processing、failed、blocked、unknown 分别会怎样？",
+        "expected_sources": [["procedures/order-worker.docx"]], "expected_topic": "启动恢复与日常工作循环的范围",
+        "expected_facts": ["启动时 recover_interrupted_tasks 将六类队列的 processing 重置为 pending 并清除错误；这是启动行为，不是定时清理。", "该启动恢复不包括 failed、blocked、unknown；日常循环不会扫描所有失败任务并通用重试。", "不能保证服务自动重启或给出固定恢复时间。"],
+        "forbidden_claims": ["Worker 会定期自动重试所有 failed/blocked/unknown。", "服务一定自动重启并在固定时限恢复。"], "answerable": True,
+        "evidence": {"procedures/order-worker.docx": ["工作进程启动时 recover_interrupted_tasks 会把六类队列里的 processing 重置为 pending 并清除错误。", "不是定时清理，也不包括 failed、blocked 或 unknown。", "日常循环会消费已排队任务，但不会扫描所有失败任务并重试。"]},
+    },
+    {
+        "case_id": "rag-dev-stock-window", "split": "development", "category": "Rule / Condition", "domain": "Waiting / Escalation",
+        "question": "company-a 2.0 仓库刚更新 20 秒，平台仍是旧版本时应等待吗？如果两端同版本而数量错了，也必须等满 30 秒吗？",
+        "expected_sources": [["guides/inventory-guide.pdf", "procedures/waiting-and-escalation.docx", "inventory-version-conflicts.md"]], "expected_topic": "版本传播窗口与同版本数量冲突",
+        "expected_facts": ["版本不同且仓库更新不超过 30 秒属于 waiting，应复查同一库存对象。", "同版本数量不符直接是 QUANTITY_MISMATCH，不适用上述等待豁免。", "30 秒是评估窗口，不是保证发布或自动修好时间；waiting 不满足刷新条件。"],
+        "forbidden_claims": ["任何数量不同都先等 30 秒。", "系统保证第 30 秒自动修好。", "waiting 可以立即并行刷新。"], "answerable": True,
+        "evidence": {"guides/inventory-guide.pdf": ["且仓库更新时间距当前不超过 30 秒时为 waiting", "同版本数量不符直接是 QUANTITY_MISMATCH", "waiting 和 insufficient_information 都不满足刷新条件。"], "procedures/waiting-and-escalation.docx": ["同版本数量错误不适用该豁免。", "不能承诺 30 秒到点就成功。"], "inventory-version-conflicts.md": ["若同版本数量错误，则直接 QUANTITY_MISMATCH。", "assessment=waiting 应先复查"]},
+    },
+    {
+        "case_id": "rag-dev-stock-version", "split": "development", "category": "Similar / Confusing Knowledge", "domain": "Inventory",
+        "question": "company-a 2.0 仓库 version=5、平台 source_version=6，已超过库存窗口却显示 VERSION_NOT_PUBLISHED。这一定是平台落后吗？rule_version 和店铺 version 能代替仓库版本来比吗？",
+        "expected_sources": [["inventory-version-conflicts.md"]], "expected_topic": "版本方向与不同对象计数器",
+        "expected_facts": ["VERSION_NOT_PUBLISHED 只表示窗口外版本不相等，不表达领先方向；题设平台领先仓库。", "平台领先不能 refresh_inventory 发布旧版本覆盖，需要人工核查。", "应比较同一库存对象的仓库 version 与平台 source_version；rule_version 和店铺 version 是不同计数器。"],
+        "forbidden_claims": ["VERSION_NOT_PUBLISHED 一定说明平台较旧。", "可用版本 5 覆盖平台版本 6。", "把店铺 version 与库存 source_version 直接比较。"], "answerable": True,
+        "evidence": {"inventory-version-conflicts.md": ["VERSION_NOT_PUBLISHED 不表达方向", "rule_version 是商家库存规则版本，店铺 version 是配置版本", "系统禁止用 refresh_inventory 覆盖较新平台版本"]},
+    },
+    {
+        "case_id": "rag-dev-stock-refresh", "split": "development", "category": "Rule / Condition", "domain": "Recovery Actions",
+        "question": "company-a 2.0 什么条件才允许 refresh_inventory？订单同步关闭、已有 processing 库存发布任务、来源信息不足分别有什么影响？",
+        "expected_sources": [["guides/inventory-guide.pdf"]], "expected_topic": "安全库存刷新前提与动作范围",
+        "expected_facts": ["需要 assessment=difference、完整仓库和规则快照、当前 authorized、平台版本不高于仓库，且没有 pending/processing 库存发布任务。", "订单同步开关不是库存开关，关闭订单同步本身不阻止符合条件的库存刷新。", "活动发布任务应等待；waiting 或 insufficient_information 不能刷新，应复查或补事实。", "刷新只发布当前仓库快照，不修改实体量、预留量、安全库存或创建映射。"],
+        "forbidden_claims": ["库存有差异就一定可刷新。", "必须先开启订单同步才能刷新库存。", "信息不足可以按零库存发布。", "refresh_inventory 会修改仓库真实数量。"], "answerable": True,
+        "evidence": {"guides/inventory-guide.pdf": ["refresh_inventory 要求 assessment=difference", "不存在 pending 或 processing 的库存发布任务", "库存动作不要求订单同步开关开启", "不是修改仓库实体数量、预留量、安全库存或创建映射。"]},
+    },
+    {
+        "case_id": "rag-dev-mapping-evidence", "split": "development", "category": "Similar / Confusing Knowledge", "domain": "SKU Mapping",
+        "question": "company-a 2.0 商家尚未建订单，处理记录 merchant_sku=null；订单映射读取却 active=true。库存另报 STOCK_MAPPING_MISSING。是不是订单映射仍缺失，刷库存就能补好？",
+        "expected_sources": [["03-sku-mapping.md"]], "expected_topic": "空 merchant_sku 与两种映射的区分",
+        "expected_facts": ["处理记录 merchant_sku 关联既有商家订单，未建订单可以为空，不证明启用订单映射缺失。", "订单映射使用 merchant_sku，库存规则使用 warehouse_sku、safety_stock、rule_version；STOCK_MAPPING_MISSING 指库存规则不足。", "库存刷新不会补订单映射或自动建立库存规则，需要对应配置事实。"],
+        "forbidden_claims": ["merchant_sku=null 足以证明订单映射不存在。", "订单映射等同于库存规则。", "刷新库存会自动补好映射。"], "answerable": True,
+        "evidence": {"03-sku-mapping.md": ["若商家订单尚未建立，这个字段可以为空，即使真实映射存在。", "STOCK_MAPPING_MISSING 说的是库存规则不足", "库存刷新不会补订单映射。"]},
+    },
+    {
+        "case_id": "rag-dev-read-retryable", "split": "development", "category": "Similar / Confusing Knowledge", "domain": "Error / Evidence",
+        "question": "company-a 2.0 读取服务返回 503、retryable=true，但还没读到订单任务。能直接断定任务可 retry_failed_task 吗？读取失败等于 not_found 吗？",
+        "expected_sources": [["error-evidence.md", "reference/error-codes.xlsx"]], "expected_topic": "读取请求重试与业务任务资格",
+        "expected_facts": ["503/retryable=true 是读取请求层面的暂时性，不等于订单任务的 retryable 或 retry_failed_task 资格。", "未成功取得任务时其当前状态仍未知，需补成功读取或人工调查。", "读取失败与指定范围 not_found 不同，不能据此认定对象不存在。"],
+        "forbidden_claims": ["503 的 retryable=true 授权重试订单业务。", "读取失败证明订单或任务不存在。", "尚未读任务就认定任务 failed。"], "answerable": True,
+        "evidence": {"error-evidence.md": ["不等于 GetWorkerTask 的订单业务重试资格。", "查读失败不会自动转换成对象不存在", "读取响应为 503 / retryable=true"], "reference/error-codes.xlsx": ["代码 / 状态：SERVICE_UNAVAILABLE", "HTTP retryable 与订单任务 retryable 不是一回事。", "代码 / 状态：RATE_LIMITED"]},
+    },
+    {
+        "case_id": "rag-dev-connection-evidence", "split": "development", "category": "Similar / Confusing Knowledge", "domain": "Authorization / Connection",
+        "question": "company-a 2.0 授权查询接口返回 forbidden 就说明 connection_status=forbidden 吗？若最新成功读取 authorized，旧 CHANNEL_AUTH_EXPIRED 是否还能证明当前过期？",
+        "expected_sources": [["07-authorization-and-connection.md"]], "expected_topic": "读取权限拒绝、历史错误与当前连接",
+        "expected_facts": ["查询返回 forbidden 可能是读取访问被拒，不等于成功取得店铺 connection_status=forbidden，当前连接需成功读取确认。", "旧授权错误是历史尝试；最新 authorized 是当前事实，二者可以同时存在。", "当前授权正常后应检查业务任务等条件，不能仅凭旧错误要求再次授权或声称旧任务自动重跑。"],
+        "forbidden_claims": ["读取 403 直接证明店铺连接 forbidden。", "旧 401 推翻最新 authorized。", "当前 authorized 证明所有旧任务已经自动重试。"], "answerable": True,
+        "evidence": {"07-authorization-and-connection.md": ["不一定成功读到了 connection_status=forbidden。", "旧 CHANNEL_AUTH_EXPIRED 与当前 authorized 可以同时存在", "授权恢复不自动重排 failed 或 blocked 任务。"]},
+    },
+    {
+        "case_id": "rag-dev-recovery-receipt", "split": "development", "category": "Rule / Condition", "domain": "Recovery Actions",
+        "question": "company-a 2.0 恢复提交超时，原 action_id 的回执也暂时读失败。能认定完全没执行，换新编号再提交吗？受理成功就能报告修好了吗？",
+        "expected_sources": [["procedures/recovery-actions.docx"]], "expected_topic": "稳定动作标识、未知回执与独立验证",
+        "expected_facts": ["请求异常或结果未知应先读取原 action_id 的既有回执及业务事实；回执读失败仍是未知，没有回执不等于业务未执行。", "有效执行租约期间等待，不能换编号绕过幂等或盲目并行再提交。", "受理回执与独立业务验证是不同阶段，验证通过才可报告恢复成功；短轮询未通过不能证明业务永远失败。"],
+        "forbidden_claims": ["没读到回执说明完全没执行。", "换 action_id 再提交一定安全。", "执行受理成功就已修复。"], "answerable": True,
+        "evidence": {"procedures/recovery-actions.docx": ["回执读取失败不能盲目再提交。没有回执不等于业务未执行。", "不能通过换编号绕过幂等。", "执行接口返回成功不等于业务目标已经达到"]},
+    },
+    {
+        "case_id": "rag-dev-approval-expiry", "split": "development", "category": "Rule / Condition", "domain": "Approval / Role",
+        "question": "company-a 2.0 普通员工在自己的会话确认不改设置的单笔恢复，需要管理员吗？方案创建 12 分钟后才同意，能从同意起再算 10 分钟吗？",
+        "expected_sources": [["11-approval-boundary.md"]], "expected_topic": "普通低风险确认与创建起有效期",
+        "expected_facts": ["不改同步设置的四类普通低风险恢复为 user_confirmation，staff 可在自己的会话范围确认，不是全部动作都要求管理员。", "方案从创建起 10 分钟有效，批准不重置截止时间；创建 12 分钟后原方案已过期，不能执行。", "应重新调查、生成新方案并针对新范围确认，不能沿用旧批准修改有效时间。"],
+        "forbidden_claims": ["所有恢复动作都必须管理员批准。", "同意后有效期重新开始 10 分钟。", "直接延长旧方案时间继续执行。"], "answerable": True,
+        "evidence": {"11-approval-boundary.md": ["staff 可以在自己的会话范围内确认普通低风险方案", "方案从创建时起 10 分钟有效，批准不会重置截止时间。", "过期后不能修改时间继续复用旧批准。"]},
+    },
+    {
+        "case_id": "rag-dev-ticket-request", "split": "development", "category": "Rule / Condition", "domain": "Support Ticket",
+        "question": "company-a 2.0 用户明确要人工却没有订单号，能建工单吗？同一会话已有 open 工单，再请求人工是否应该另建？没有可用工程师又意味着什么？",
+        "expected_sources": [["procedures/support-tickets.docx"]], "expected_topic": "主动人工请求、工单复用与空分配",
+        "expected_facts": ["明确人工请求可用 user_requested，信息不齐也可记录未知项；来源会话须属于当前用户和公司。", "同一会话已有 open/in_progress 工单时返回既有工单，不重复创建。", "没有符合分配规则的可用工程师时可以建单但 assigned_to 为空；建单不等于已分配或修复。"],
+        "forbidden_claims": ["缺订单号绝不能建人工工单。", "再次请求人工就新建重复工单。", "建单成功即已分配工程师并修复。"], "answerable": True,
+        "evidence": {"procedures/support-tickets.docx": ["用户明确要求人工可直接触发，资料不齐也可以记录未知项。", "同一个会话已有 open 或 in_progress 工单时返回既有工单", "工单可以创建但 assigned_to 为空"]},
+    },
+    {
+        "case_id": "rag-dev-ticket-status", "split": "development", "category": "Direct Fact", "domain": "Support Ticket",
+        "question": "company-a 2.0 工单的 open、in_progress、closed 各代表什么？出现 in_progress 枚举就证明有任意手动切换状态的界面吗？closed 是永久解决保证吗？",
+        "expected_sources": [["reference/business-states.xlsx", "procedures/support-tickets.docx"]], "expected_topic": "工单状态值与实际接口能力",
+        "expected_facts": ["open 表示待处理，in_progress 是已有处理状态值，closed 表示最近一次复查达到目标。", "状态枚举不证明提供通用手动切换接口。", "closed 不是永久保证，后续复查不通过可重新 open。"],
+        "forbidden_claims": ["枚举存在就支持任意手动切换工单状态。", "closed 证明问题永久不会复发。"], "answerable": True,
+        "evidence": {"reference/business-states.xlsx": ["代码 / 状态：open", "代码 / 状态：in_progress", "代码 / 状态：closed"], "procedures/support-tickets.docx": ["in_progress 是已有状态值，但不代表系统提供通用手动切换接口", "此前 closed 的工单若后续复查不通过，会重新变为 open"]},
+    },
+    {
+        "case_id": "rag-dev-map-plan-approval", "split": "development", "category": "Multi-Source", "domain": "SKU Mapping",
+        "question": "company-a 2.0 单笔恢复已获确认，但当前 merchant_sku 与方案里的映射快照不同。原批准能覆盖新映射吗？重新批准是否延长原方案 10 分钟有效期？",
+        "expected_sources": [["03-sku-mapping.md"], ["11-approval-boundary.md"]], "expected_topic": "映射快照变化与批准有效期",
+        "expected_facts": ["当前 merchant_sku 与快照不同可报 SKU_MAPPING_CHANGED，旧批准不能覆盖新映射；停止旧方案，重新取证并生成新方案。", "有效期从方案创建起 10 分钟，批准或重复批准不重置原截止时间；新方案须按新范围确认。"],
+        "forbidden_claims": ["已批准可忽略 merchant_sku 变化强制恢复。", "重新点批准会延长原方案 10 分钟。"], "answerable": True,
+        "evidence": {"03-sku-mapping.md": ["当前 merchant_sku 与快照不同会报 SKU_MAPPING_CHANGED。", "审批只批准特定映射条件下的恢复，不能让它覆盖后续映射变化。"], "11-approval-boundary.md": ["方案从创建时起 10 分钟有效，批准不会重置截止时间。", "发生变化则重新生成提案并按新范围确认。"]},
+    },
+    {
+        "case_id": "rag-dev-warehouse-gap-ticket", "split": "development", "category": "Multi-Source", "domain": "Shipment",
+        "question": "company-a 2.0 仓库已出库，但商家没有对应发货记录。用户要求人工，同一会话已经有 open 工单。能用 resend_shipment 造回执，或另建一张工单吗？",
+        "expected_sources": [["guides/shipment-guide.pdf"], ["procedures/support-tickets.docx"]], "expected_topic": "仓库事件接收缺口与工单去重",
+        "expected_facts": ["仓库已发货而商家没有匹配记录时，需要人工核对事件投递；不能凭仓库记录造商家回执，resend_shipment 不满足来源条件。", "明确人工请求可按现有会话处理；已有 open 工单应复用既有 ticket_id，记录资料和缺口，不另建重复工单。", "转人工或返回工单不等于发货链路已恢复。"],
+        "forbidden_claims": ["resend_shipment 自动补出丢失商家回执。", "同一会话每次请求人工都新建一张工单。", "工单存在证明平台发货已修复。"], "answerable": True,
+        "evidence": {"guides/shipment-guide.pdf": ["仓库已发货但商家没有匹配记录时，需要人工核对事件投递", "不能凭仓库记录直接造商家回执。"], "procedures/support-tickets.docx": ["同一个会话已有 open 或 in_progress 工单时返回既有工单", "创建工单、分配工程师与业务恢复是不同事件"]},
+    },
+    {
+        "case_id": "rag-dev-engineer-recheck", "split": "development", "category": "Multi-Source", "domain": "Approval / Role",
+        "question": "company-a 的工程师被显式授予 company-b 一个目标工单的只读权限。能否按工单授权读取并复查？若目标 SKU 仍缺失，结果是什么？这份授权能批准库存刷新吗？",
+        "expected_sources": [["support-access-and-roles.md"], ["procedures/support-tickets.docx"]], "expected_topic": "显式目标工单授权、NEEDS_INFO 与写权限",
+        "expected_facts": ["工程师访问依据实际工单读取授权和目标范围，公司不同不是唯一判断；可在授予范围内读取与复查，不能任意扩大范围。", "目标 SKU 等标识或可用证据不足应为 NEEDS_INFO，工单保持 open 并补信息，不能机械标为解决。", "工程师只读授权不授予商家恢复审批或写权限，不能批准库存刷新。"],
+        "forbidden_claims": ["公司不同就绝对无法读取已授予的目标工单。", "同公司工程师默认可查全部业务对象。", "工程师只读授权包含库存写入和批准权。", "缺 SKU 也可直接标 RESOLVED。"], "answerable": True,
+        "evidence": {"support-access-and-roles.md": ["也不能把公司不同作为唯一判断", "工单读取授权只覆盖目标", "engineer 不是商家管理员，不能批准商家恢复"], "procedures/support-tickets.docx": ["NEEDS_INFO 表示资料或证据不足并保持 open。", "缺少案例、目标标识或可用库存事实时不能机械标为解决。"]},
+    },
+    {
+        "case_id": "rag-dev-source-idempotency", "split": "development", "category": "Multi-Source", "domain": "Order",
+        "question": "company-a 2.0 相同内容重复创建同一平台订单返回 duplicate，旧商家任务仍 failed。这能证明重跑成功吗？如果正式恢复方案后来 awaiting_verification，又代表什么？",
+        "expected_sources": [["order-deduplication.md"], ["procedures/recovery-actions.docx"]], "expected_topic": "重复来源投递与恢复方案验证阶段",
+        "expected_facts": ["相同平台来源重复创建返回 duplicate 并再投递同一事件；已有 failed/blocked 任务不会因此自动重置，duplicate 不证明完成。", "awaiting_verification 表示已进入独立业务核查，仍不等于 verified_resolved；需要实际订单唯一性、内容一致等验证通过才报告恢复。"],
+        "forbidden_claims": ["duplicate 表示旧 failed 任务已重跑并完成。", "awaiting_verification 等于 verified_resolved。", "重复创建是可以替代正式恢复的手段。"], "answerable": True,
+        "evidence": {"order-deduplication.md": ["相同内容的重复创建返回 duplicate，并再次投递同一订单事件", "已有 failed 或 blocked 任务不会被重复投递自动重置。"], "procedures/recovery-actions.docx": ["awaiting_verification 表示已进入独立核查", "verified_resolved 表示恢复验证通过。"]},
+    },
+    {
+        "case_id": "rag-dev-version-current", "split": "development", "category": "Version / Scope", "domain": "Version / Legacy",
+        "question": "company-a merchant-console 2.0 普通员工在自己的会话确认 low 单笔恢复且不改设置。有人引用历史 1.0 说任何恢复都要管理员，应采用哪个规则？",
+        "expected_sources": [["09-product-version.md"], ["11-approval-boundary.md"]], "expected_topic": "历史 1.0 排除与 2.0 当前确认策略",
+        "expected_facts": ["历史 1.0 不用于指导当前 2.0 恢复与审批，应使用当前公司、产品、版本和状态对应资料。", "普通不改设置的低风险方案为 user_confirmation，staff 可确认自己会话的方案；明确开启同步设置才要求管理员。"],
+        "forbidden_claims": ["用历史 1.0 全部管理员规则覆盖 2.0。", "所有单笔恢复都要管理员。", "保留旧资料就证明旧操作仍受支持。"], "answerable": True,
+        "evidence": {"09-product-version.md": ["14-legacy-order-sync.md 标为历史 1.0", "不用于指导 2.0 恢复和审批。"], "11-approval-boundary.md": ["staff 可以在自己的会话范围内确认普通低风险方案", "若方案包含 enable_order_sync 或 enable_shipment_sync，策略改为 medium / admin"]},
+    },
+    {
+        "case_id": "rag-dev-channel-scope", "split": "development", "category": "Version / Scope", "domain": "Authorization / Connection",
+        "question": "company-a 2.0 渠道 A 是否比渠道 B 少做授权检查或用不同库存公式？这个能力对照能证明已对接真实商业平台吗？",
+        "expected_sources": [["reference/channel-capabilities.xlsx"]], "expected_topic": "A/B 共同逻辑与模拟渠道适用范围",
+        "expected_facts": ["A/B 执行相同连接授权检查，没有按渠道跳过授权或改变库存公式的分支。", "该对照仅针对当前本地模拟渠道标识，不证明有真实商业平台 API/OAuth 集成。"],
+        "forbidden_claims": ["渠道 A 永久免授权。", "B 使用不同库存公式。", "当前渠道表证明真实商业平台集成已完成。"], "answerable": True,
+        "evidence": {"reference/channel-capabilities.xlsx": ["代码没有按渠道跳过授权或改变库存公式的分支", "对象 / 范围：授权检查", "对象 / 范围：真实渠道集成"]},
+    },
+    {
+        "case_id": "rag-dev-sla", "split": "development", "category": "No-Answer / Unsupported", "domain": "Waiting / Escalation",
+        "question": "请依据 company-a 2.0 正式资料，给出人工工单保证响应和修复的准确分钟数，以及固定升级到第几级工程师的时间表。",
+        "expected_sources": [["procedures/waiting-and-escalation.docx", "procedures/support-tickets.docx", "12-unsupported-features.md"]], "expected_topic": "没有固定人工时限或升级承诺的边界证据",
+        "expected_facts": ["资料没有给出所请求的保证响应/修复分钟数和固定升级时间表，不能提供确定数值。", "可以说明工单用于人工调查，需进一步向 Support 核实安排；建单或等待不保证固定时间解决。"],
+        "forbidden_claims": ["保证 5/10/30/60 分钟响应或修复。", "按固定时间自动升级到指定等级工程师。", "工单会自动修复并关闭。"], "answerable": False,
+        "evidence": {"procedures/waiting-and-escalation.docx": ["人工工单没有承诺固定响应时间、升级层级或自动修复。"], "procedures/support-tickets.docx": ["系统不保证工单创建后立即有人处理、固定响应时间、自动修复或自动关闭。"], "12-unsupported-features.md": ["没有固定响应 SLA、通用手动转派或无条件关闭能力。"]},
+    },
+    {
+        "case_id": "rag-dev-oauth-config", "split": "development", "category": "No-Answer / Unsupported", "domain": "Unsupported Features",
+        "question": "请给出 company-a 2.0 对接真实渠道 A 的 OAuth authorize URL、client_id、回调地址与可直接执行的 token 换取步骤。",
+        "expected_sources": [["07-authorization-and-connection.md", "12-unsupported-features.md", "reference/channel-capabilities.xlsx"]], "expected_topic": "真实 OAuth 配置和集成资料缺失",
+        "expected_facts": ["当前资料仅说明本地模拟连接与重新授权用户指引，没有所请求的真实 OAuth URL、client_id、回调地址或 token 执行配置，无法给出这些参数。", "request_reauthorization 没有后台授权执行器；需向负责实际集成或授权的人核实真实平台资料。"],
+        "forbidden_claims": ["编造 authorize/token URL、client_id、回调地址或真实平台授权操作路线。", "使用实验控制或内部服务身份就能完成真实 OAuth。"], "answerable": False,
+        "evidence": {"07-authorization-and-connection.md": ["不自动完成权限授予、采集真实平台令牌或验证 OAuth。", "不是已接通真实商业平台的证据。"], "12-unsupported-features.md": ["没有真实 OAuth 执行器。"], "reference/channel-capabilities.xlsx": ["对象 / 范围：真实渠道集成"]},
+    },
+    {
+        "case_id": "rag-holdout-auth-stock-approval", "split": "holdout", "category": "Multi-Source", "domain": "Authorization / Connection",
+        "question": "company-a 2.0 员工自己会话内要处理库存 difference，仓库/规则完整、平台不领先且无活动发布任务。订单同步关闭但连接 auth_expired。系统能代授权后马上刷新吗？授权人处理并确认 authorized 后，不改设置的刷新由谁确认？",
+        "expected_sources": [["07-authorization-and-connection.md"], ["guides/inventory-guide.pdf"], ["11-approval-boundary.md"]], "expected_topic": "授权用户指引、库存前提和普通员工确认组合",
+        "expected_facts": ["当前 auth_expired 时可提供重新授权指引，由授权人处理并重新取得 authorized，Support 不代做 OAuth，当前不能执行依赖正常授权的库存刷新。", "授权恢复后仍需核对刷新条件与快照，订单同步关闭本身不阻止库存刷新，不必暗中开启订单同步。", "不改设置的 refresh_inventory 是普通 low/user_confirmation，员工可在自己会话明确确认，不能自动执行。"],
+        "forbidden_claims": ["Support 自动授权后立即刷新。", "库存刷新必须先开启订单同步。", "普通库存刷新一律要求管理员。", "授权恢复即自动重排库存任务。"], "answerable": True,
+        "evidence": {"07-authorization-and-connection.md": ["重新授权指引没有后台执行器", "无法读取授权事实时先查权限和服务，不提出依赖 authorized 的写动作。"], "guides/inventory-guide.pdf": ["店铺当前 authorized", "库存动作不要求订单同步开关开启"], "11-approval-boundary.md": ["refresh_inventory、retry_failed_task 默认风险 low", "staff 可以在自己的会话范围内确认普通低风险方案"]},
+    },
+    {
+        "case_id": "rag-holdout-unknown-shipment-ticket", "split": "holdout", "category": "Multi-Source", "domain": "Shipment",
+        "question": "company-a 2.0 发货写请求响应丢失，任务 unknown。后台查询平台 shipment_id、carrier、tracking_number 与快照相同，但三端发货版本不一致。自动核对可以把任务改 completed 吗？据此能把人工工单复查为 RESOLVED 吗？",
+        "expected_sources": [["shipment-result-unknown.md"], ["procedures/support-tickets.docx"]], "expected_topic": "未知发货核对的较弱匹配与工单完整验证",
+        "expected_facts": ["unknown 的自动核对以平台 shipment_id、承运商、运单与快照匹配为条件，可将相关任务 completed；这比完整恢复验证检查少，不证明三端版本一致。", "工单发货复查要求三端唯一发货、标识、承运商、运单、版本与任务完成；题设版本冲突未达完整目标，不能判 RESOLVED，应保持未解决/open 并人工核对。", "不能以 completed 代替完整验证或覆盖冲突运单、重新出库。"],
+        "forbidden_claims": ["自动核对 completed 就证明三端版本完全一致。", "版本冲突时仍可直接 RESOLVED 关闭工单。", "强制重发或重新出库能自动覆盖冲突。"], "answerable": True,
+        "evidence": {"shipment-result-unknown.md": ["平台记录的 shipment_id、carrier、tracking_number 与原快照一致时，将相关任务 completed", "自动核对比完整恢复验证检查少"], "procedures/support-tickets.docx": ["发货复查核对三端唯一发货、标识、承运商、运单及版本与任务完成。", "UNRESOLVED 保持 open"]},
+    },
+    {
+        "case_id": "rag-holdout-mapping-stock-partial", "split": "holdout", "category": "Multi-Source", "domain": "Inventory",
+        "question": "company-a 2.0 商家没有订单，处理记录 merchant_sku=null，但当前订单映射 active=true。库存规则也存在，仓库 updated_at 却无法解析，页面数量有差异。该重建订单映射还是刷新库存？",
+        "expected_sources": [["03-sku-mapping.md"], ["inventory-version-conflicts.md"]], "expected_topic": "订单关联空值与库存时间证据不足组合",
+        "expected_facts": ["商家尚无订单可以导致关联 merchant_sku 为空，不能否定当前 active 订单映射或要求重建；订单映射与库存规则是不同数据。", "仓库时间无法解析属于 SOURCE_TIME_INVALID/insufficient_information，需补有效来源时间，不能用页面刷新时间代替。", "数量表面不同不补足来源证据，目前不能 refresh_inventory，也不能把未知来源当零。"],
+        "forbidden_claims": ["merchant_sku=null 就应重建订单映射。", "页面刷新时间可代替仓库 updated_at。", "时间无法解析也可按差异直接刷新。"], "answerable": True,
+        "evidence": {"03-sku-mapping.md": ["若商家订单尚未建立，这个字段可以为空，即使真实映射存在。", "订单映射存在不代表库存规则存在，反向也不成立。"], "inventory-version-conflicts.md": ["时间不能解析得到 SOURCE_TIME_INVALID。", "更新时间属于仓库观察依据，不是页面刷新时间", "insufficient_information 应补数据"]},
+    },
+    {
+        "case_id": "rag-holdout-duplicate-order-gap", "split": "holdout", "category": "Multi-Source", "domain": "Order Sync",
+        "question": "company-a 2.0 平台订单已保存，商家旧任务 blocked。原内容重复创建得到 duplicate，改数量重复创建则冲突。这样能覆盖原订单并解锁任务吗？若 Worker 再启动，blocked 会和 processing 一样重排吗？",
+        "expected_sources": [["order-deduplication.md"], ["procedures/order-worker.docx"]], "expected_topic": "平台创建内容幂等与启动队列恢复组合",
+        "expected_facts": ["相同公司/店铺/外部订单号、相同内容重复创建可返回 duplicate 并重投同一事件；数量等内容不同会冲突，不覆盖既有来源。", "重复投递不会将旧 blocked/failed 自动改 pending，duplicate 不说明恢复完成。", "启动恢复重排 processing 而不包括 blocked/failed/unknown；不能用重复创建或等待重启绕过原阻断，应按当前条件调查安全单笔恢复。"],
+        "forbidden_claims": ["改数量重复创建可以覆盖原订单。", "duplicate 表示 blocked 已自动解锁。", "Worker 启动会把 blocked/failed 全部重排。"], "answerable": True,
+        "evidence": {"order-deduplication.md": ["不同 SKU、数量、金额或付款内容会返回冲突，不覆盖既有订单。", "已有 failed 或 blocked 任务不会被重复投递自动重置。"], "procedures/order-worker.docx": ["工作进程启动时 recover_interrupted_tasks 会把六类队列里的 processing 重置为 pending", "也不包括 failed、blocked 或 unknown。"]},
+    },
+    {
+        "case_id": "rag-holdout-worker-dispatch", "split": "holdout", "category": "Rule / Condition", "domain": "Worker",
+        "question": "company-a 2.0 GetWorkerTask 显示订单 completed，但仓库派单任务 failed。对已有派单再调用派单得到 duplicate。retry_failed_task 能修这个派单吗？该等通用自动重试还是调查人工路径？",
+        "expected_sources": [["procedures/order-worker.docx"]], "expected_topic": "已完成订单与失败派单的不同队列和动作",
+        "expected_facts": ["GetWorkerTask 只查询订单任务，订单 completed 不代表派单 completed；订单 retryable 规则不能套到派单。", "已有派单的重复请求不重置失败派单任务，当前 Support 没有 retry_dispatch，retry_failed_task 不用于任意队列。", "不能依赖通用自动失败重试，应保留派单事实并人工调查当前无安全恢复路径的问题。"],
+        "forbidden_claims": ["retry_failed_task 可重试仓库派单。", "duplicate 派单会将 failed 重排。", "订单 completed 证明仓库派单完成。", "只需等待系统自动修复所有派单失败。"], "answerable": True,
+        "evidence": {"procedures/order-worker.docx": ["GetWorkerTask 当前只查询订单任务", "派单接口遇到已有任务会返回重复结果，不重置失败派单任务", "当前 Support 没有 retry_dispatch 动作。", "必要时建人工工单。"]},
+    },
+    {
+        "case_id": "rag-holdout-cross-shop-forbidden", "split": "holdout", "category": "Similar / Confusing Knowledge", "domain": "Error / Evidence",
+        "question": "company-a 2.0 目标店铺 A 的 GetOrder 返回 forbidden，另一店铺 B 同名订单读取成功且 unpaid。能据 B 的结果断定 A 未付款或不存在，并为 A 拼恢复证据吗？",
+        "expected_sources": [["error-evidence.md", "support-access-and-roles.md"]], "expected_topic": "访问拒绝和跨店铺证据替代的边界",
+        "expected_facts": ["A 的 forbidden 只证明读取访问受限，未成功取得 A 来源，不能推断其不存在或 unpaid。", "证据须匹配公司、店铺及目标，B 的同名订单不是 A 的当前事实，不可借用或拼出恢复证据。", "应保持 A 范围，说明未知，补适当访问权限和成功读取或按允许范围请求支持。"],
+        "forbidden_claims": ["A forbidden 证明 A 订单不存在。", "B unpaid 证明 A 也 unpaid。", "跨店铺凑证据即可执行 A 的恢复。"], "answerable": True,
+        "evidence": {"error-evidence.md": ["工具、店铺和对象范围匹配", "不要扩大范围搜索另一个店铺来凑答案。", "GetOrder 返回 forbidden。", "不能说订单不存在或未付款。"], "support-access-and-roles.md": ["forbidden 或认证失败说明当前请求被拒，不能推导订单、库存或店铺不存在。", "不能切换其他对象凑足方案证据。"]},
+    },
+    {
+        "case_id": "rag-holdout-ticket-reopen-export", "split": "holdout", "category": "Multi-Source", "domain": "Support Ticket",
+        "question": "company-a 2.0 工程师只有目标工单的显式只读授权，工单原先 closed，后续复查因缺目标标识为 NEEDS_INFO。还能保持 closed 吗？导出 HTML 后能顺便读取同公司其他用户全部订单或批准恢复吗？",
+        "expected_sources": [["procedures/support-tickets.docx"], ["support-access-and-roles.md"]], "expected_topic": "工单复查重新打开与导出授权边界",
+        "expected_facts": ["NEEDS_INFO 是资料或目标不足，保持 open 并补信息；此前 closed 后续复查不通过会重新 open，不能因曾关闭就继续认定已解决。", "HTML 导出用于交接，不是新的业务检查，也不增加权限。", "显式工单授权只覆盖目标且只读，同公司不赋予工程师任意读取全部对象或批准商家恢复的权利。"],
+        "forbidden_claims": ["此前 closed 所以 NEEDS_INFO 也不需重新打开。", "HTML 导出扩展到全公司订单访问。", "工程师只读工单授权可以批准恢复。"], "answerable": True,
+        "evidence": {"procedures/support-tickets.docx": ["NEEDS_INFO 表示资料或证据不足并保持 open。", "此前 closed 的工单若后续复查不通过，会重新变为 open", "导出不是新的业务检查，也不赋予额外访问权限。"], "support-access-and-roles.md": ["不能说工程师因为同公司就能任意读取全公司对象", "工单读取授权只覆盖目标", "engineer 不是商家管理员，不能批准商家恢复"]},
+    },
+    {
+        "case_id": "rag-holdout-lease-cancel", "split": "holdout", "category": "No-Answer / Unsupported", "domain": "Recovery Actions",
+        "question": "company-a 2.0 恢复方案 executing、执行租约仍有效但回执读取失败。请给出强制取消租约并将它标失败的公开 API 和前端按钮路径，让我马上另建操作。",
+        "expected_sources": [["procedures/recovery-actions.docx"]], "expected_topic": "未提供的强制取消入口与有效租约边界",
+        "expected_facts": ["当前正式资料没有所请求的公开强制取消租约 API、标失败按钮或点击路径，不能编造操作指引。", "有效执行租约应等待或查原 action_id 回执，读取失败仍未知，不能据此盲目重新提交或用新编号绕过幂等。", "可以说明尚未知的事实并进一步核查，必要时联系 Support。"],
+        "forbidden_claims": ["编造取消执行租约的公开接口、按钮或工具。", "回执读取失败证明未执行，可马上新建操作。", "换编号可绕过有效租约安全重复提交。"], "answerable": False,
+        "evidence": {"procedures/recovery-actions.docx": ["存在有效执行租约时应等待", "回执读取失败不能盲目再提交。", "不能编造新动作名称或执行未知写操作。", "不能通过换编号绕过幂等。"]},
+    },
+    {
+        "case_id": "rag-holdout-legacy-payment-menu", "split": "holdout", "category": "Version / Scope", "domain": "Version / Legacy",
+        "question": "我在网上看到自称 company-a Legacy 1.0 的说明，说可以在支付管理菜单把已有 unpaid 订单改 paid，再等系统自动导入。这能作为 merchant-console 2.0 当前操作指南吗？当前资料支持这种支付更新吗？",
+        "expected_sources": [["09-product-version.md"], ["guides/order-guide.pdf"]], "expected_topic": "用户引用旧资料与当前既有订单支付能力",
+        "expected_facts": ["用户描述的旧说法不是当前有效知识；历史 1.0 不用于指导 2.0，需按当前 company-a/merchant-console/2.0 资料核对，不能认定所述旧功能实际实现。", "当前创建接口接受 unpaid，但现有文档没有公开既有订单支付状态更新流程，不能提供该菜单路线或承诺自动转 paid 后导入。", "当前导入需实际来源 paid 及其他前提，不能拿旧说明替代当前事实。"],
+        "forbidden_claims": ["照旧支付管理菜单操作即可在 2.0 修改支付状态。", "历史文案证明 1.0 或 2.0 已实现该菜单。", "现有 unpaid 会自动转 paid 并导入。"], "answerable": True,
+        "evidence": {"09-product-version.md": ["不将旧资料或未来规划当成现有能力。", "不用于指导 2.0 恢复和审批。"], "guides/order-guide.pdf": ["系统没有公开的既有订单支付状态更新流程", "不能承诺未付款订单以后会自动转为可导入。"]},
+    },
+    {
+        "case_id": "rag-holdout-foreign-tenant-version", "split": "holdout", "category": "No-Answer / Unsupported", "domain": "Version / Legacy",
+        "question": "请用现有 company-a merchant-console 2.0 知识，保证说明 company-b 产品 3.0 的安全库存保留几位小数、使用哪种舍入规则。能把现有规则直接当作该公司新版本保证吗？",
+        "expected_sources": [["09-product-version.md"]], "expected_topic": "公司、产品版本外的知识缺口",
+        "expected_facts": ["当前正式知识针对 company-a 的 merchant-console 2.0，没有 company-b/3.0 的小数或舍入规则，无法给出所请求的保证。", "不能将现有公司版本规则推广为另一公司新版本能力，应取得对应范围的正式资料或向 Support 核实。"],
+        "forbidden_claims": ["编造 company-b/3.0 精度或舍入规则。", "company-a/2.0 的规则自动适用于所有公司和未来版本。", "检索不到其他公司资料就证明其功能不存在。"], "answerable": False,
+        "evidence": {"09-product-version.md": ["当前知识针对 company-a 的 merchant-console 2.0", "不将旧资料或未来规划当成现有能力。", "先核对版本、状态、公司、主题和来源。"]},
+    },
 ]
+
+FROZEN_RAG_HASH = "26bc05579ac19439f51fc58868362c9532c8ff9d809eae392ee07926a5921144"
+RAG_SOURCE_HASHES = {
+    "docs/product/01-order-sync-switch.md": "416b92ade7ed9188477ba6d7b9562085a3cbf6e67bf49dcdec593eac820005a3",
+    "docs/product/03-sku-mapping.md": "6ba7062c559a0d8a49a0f6520beabea0a4bf124404eaad0a1c63e3957bed76bc",
+    "docs/product/05-history-recovery.md": "f7f0fc852165ac3d27e28c167c31f0ef4cd0c11d4dbfb405e664c436858b139c",
+    "docs/product/07-authorization-and-connection.md": "b4f728b60ddc86109f2a46684257e0688fc8e9d3a3be87d96c7cfbf5a1e9704c",
+    "docs/product/09-product-version.md": "5e0d59e460ecfaeaccc4ad81ed829b38cfa8b3815e605f7b51b705c4523c42b3",
+    "docs/product/11-approval-boundary.md": "e64a4d860683c6796a301cbbe936175a59cfad3a5fe4415ca1b37fefec8d02a5",
+    "docs/product/12-unsupported-features.md": "dc62852dd0f08b25ed214f85be2148aef429cf82eb5b05507574d8d765f3981d",
+    "docs/product/14-legacy-order-sync.md": "f13b6eef6c2b517952d548ae0046443e8e274a82af7666faa5383c1ca3d2740e",
+    "docs/product/error-evidence.md": "86fe11ffc8b4b832b8d0ef07dc46e94ec0887d08ff265473e6e528f9d7aa5870",
+    "docs/product/guides/inventory-guide.pdf": "062a47ee48a0daf7d57886a09880d3c2890fe13d23dcfff950f86a3e262a485b",
+    "docs/product/guides/order-guide.pdf": "db36bbe1a4d687de4158cac61b6db8596253d799ac8dfa0fede227d50a89c576",
+    "docs/product/guides/shipment-guide.pdf": "19028a650a2dc7f52e5ef46138ede1809262f4156eb9a7be7db7bfb4c136be0c",
+    "docs/product/inventory-version-conflicts.md": "bf87d110591ae1e2becb90452ecf085a23b50eeb38af7f38cab338100a126daf",
+    "docs/product/order-deduplication.md": "62b9c86eb126ad6ee325e838463a3b0b07f980c299a0714b25fcb906daadf417",
+    "docs/product/procedures/order-worker.docx": "a684a243b2e7b8febd9dc887806a09febe860fcda90f81a5f993aa4676b1f763",
+    "docs/product/procedures/recovery-actions.docx": "c85729dc09135be3692ea205a1fa8fbb53b640723b3322a7c26820b932b7bc8f",
+    "docs/product/procedures/support-tickets.docx": "ce5cf2055d54fa712dd8f2c2c795754f64011d255a35060345826ee895259ced",
+    "docs/product/procedures/waiting-and-escalation.docx": "bda66e431dbad4ad2c1af2a453d5867b3ed78dcd2993ba43ea6384392850dedd",
+    "docs/product/reference/business-states.xlsx": "e9cff1115a55500b07ef9516d127b3ef0b9b624a1c44047dee5f0a18b28e456c",
+    "docs/product/reference/channel-capabilities.xlsx": "4a7e8a5dec10a2ae67d1df9c289ac6c19fe16a021c04a46c33bdc52af901e5d7",
+    "docs/product/reference/error-codes.xlsx": "44e500da9f9da46b14d00d6f42b5ad9fbdcba66b6f3a34b8c53f732646a67f67",
+    "docs/product/shipment-result-unknown.md": "f8d2617bf87b74dd0fc655554763bb4cff3f976da9d6e062595cf7fa2e2147d9",
+    "docs/product/support-access-and-roles.md": "253e01e18d9c3bc586a6ec7d716d9e25633b0a2acab9bca9ab11d402172b85f6",
+}
 
 WORKFLOW_CASES = [
     ("flow-order", "order_sync_failure", "订单处理失败，请调查", "retry_order_sync", ["awaiting_confirmation"], False, ["GetOrder", "GetOrderProcessRecords", "GetShopSyncStatus", "GetShopConnectionStatus", "GetWorkerTask"], [["GetOrder"], ["GetOrderProcessRecords"]], ["ORDER_SYNC_RETRYABLE", "失败", "重试", "retry", "fail"]),
@@ -656,9 +996,15 @@ def add_workflow_ground_truth(case: dict) -> None:
 def smoke_cases() -> list[dict]:
     cases = []
     new_workflow_cases = []
-    for case_id, question, sources, facts in RAG_CASES:
-        paths = ["docs/product/" + source for source in sources]
-        cases.append({"case_id": case_id, "category": "rag", "question": question, "scenario": "documents", "initial_state": {"fixture": "documents", "version": "2.0", "company_id": "company-a"}, "permissions": {"user_id": "staff-a", "company_id": "company-a", "shop_id": None, "role": "staff"}, "expected": {"result": "grounded_answer"}, "expected_tools": {"acceptable_tools": [], "required_any": [], "arguments": {}}, "expected_business_state": {}, "expected_handoff": False, "expected_action": None, "retrieval_ground_truth": paths, "claim_ground_truth": {"source": "human-authored labels from original documents", "source_paths": paths, "required_facts": facts}})
+    for definition in RAG_CASES:
+        groups = [["docs/product/" + source for source in group] for group in definition["expected_sources"]]
+        paths = list(dict.fromkeys(source for group in groups for source in group))
+        evidence = {"docs/product/" + source: quotes for source, quotes in definition["evidence"].items()}
+        expected = {"result": "grounded_answer" if definition["answerable"] else "grounded_abstention", "split": definition["split"], "category": definition["category"], "domain": definition["domain"], "expected_sources": paths, "source_groups": groups, "expected_topic": definition["expected_topic"], "answerable": definition["answerable"], "cohort": "rag-40-current-v1"}
+        if definition["split"] == "holdout":
+            expected["model_execution"] = "never_executed"
+        claims = {"source": "human-authored from current formal knowledge documents only", "source_paths": paths, "expected_facts": definition["expected_facts"], "required_facts": definition["expected_facts"], "forbidden_claims": definition["forbidden_claims"], "source_evidence": evidence}
+        cases.append({"case_id": definition["case_id"], "category": "rag", "question": definition["question"], "scenario": "documents", "initial_state": {"fixture": "documents", "version": "2.0", "company_id": "company-a", "product": "merchant-console"}, "permissions": {"user_id": "staff-a", "company_id": "company-a", "shop_id": None, "role": "staff"}, "expected": expected, "expected_tools": {"acceptable_tools": [], "required_any": [], "arguments": {}}, "expected_business_state": {}, "expected_handoff": False, "expected_action": None, "retrieval_ground_truth": paths, "claim_ground_truth": claims})
     for case_id, scenario, question, action, statuses, handoff, tools, groups, patterns in WORKFLOW_CASES + NEW_WORKFLOW_CASES + WORKFLOW_30_CASES + WORKFLOW_34_HOLDOUT_CASES + WORKFLOW_50_CASES:
         arguments = {}
         for name in tools:
@@ -707,6 +1053,78 @@ def smoke_cases() -> list[dict]:
         if case["category"] == "workflow":
             add_workflow_ground_truth(case)
     return result
+
+
+def rag_dataset_hash(cases: list) -> str:
+    rows = [EvalCase.model_validate(case).model_dump() if isinstance(case, dict) else case.model_dump() for case in cases if (case.get("category") if isinstance(case, dict) else case.category) == "rag"]
+    payload = {"version": "rag-40-current-v1", "source_hashes": RAG_SOURCE_HASHES, "cases": sorted(rows, key=lambda case: case["case_id"])}
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def validate_rag_cases(cases: list, check_freeze: bool = True) -> dict:
+    """Read local documents and build text chunks only. No DB, retrieval or model calls."""
+    from backend.app.customer_document_ingestion import build_document_chunks, load_product_documents
+
+    rows = [EvalCase.model_validate(case) if isinstance(case, dict) else case for case in cases]
+    assert len({case.case_id for case in rows}) == len(rows), "Duplicate case IDs"
+    rag = [case for case in rows if case.category == "rag"]
+    assert len(rag) == 40, "Expected 40 RAG cases"
+    splits = Counter(case.expected["split"] for case in rag)
+    assert splits == {"development": 30, "holdout": 10}, "Incorrect RAG split"
+    categories = Counter(case.expected["category"] for case in rag)
+    assert set(categories) == {"Direct Fact", "Rule / Condition", "Multi-Source", "Similar / Confusing Knowledge", "No-Answer / Unsupported", "Version / Scope"}
+    domains = Counter(case.expected["domain"] for case in rag)
+    assert set(domains) == {"Order", "Order Sync", "Worker", "Shipment", "Inventory", "SKU Mapping", "Authorization / Connection", "Error / Evidence", "Recovery Actions", "Waiting / Escalation", "Support Ticket", "Approval / Role", "Unsupported Features", "Version / Legacy"}
+    documents = {document["source_uri"]: document for document in load_product_documents()}
+    assert set(documents) == set(RAG_SOURCE_HASHES), "Formal source list changed"
+    for source, frozen_hash in RAG_SOURCE_HASHES.items():
+        assert hashlib.sha256((PROJECT_ROOT / source).read_bytes()).hexdigest() == frozen_hash, f"Knowledge source changed: {source}; review Ground Truth before reuse"
+    formats = Counter(Path(source).suffix for source in documents)
+    assert formats == {".md": 13, ".pdf": 3, ".docx": 4, ".xlsx": 3}
+    current = {source for source, document in documents.items() if document["version"] == "2.0" and document["company_id"] == "company-a" and document["product"] == "merchant-console"}
+    chunks = {source: build_document_chunks(document) for source, document in documents.items()}
+    total_chunks = sum(len(items) for items in chunks.values())
+    current_chunks = sum(len(chunks[source]) for source in current)
+    used_sources = set()
+    evidence_quotes = 0
+    for case in rag:
+        expected, claims = case.expected, case.claim_ground_truth
+        assert case.scenario == "documents" and case.initial_state == {"fixture": "documents", "version": "2.0", "company_id": "company-a", "product": "merchant-console"}
+        assert case.question.strip() and expected["expected_topic"].strip()
+        assert type(expected["answerable"]) is bool
+        assert expected["result"] == ("grounded_answer" if expected["answerable"] else "grounded_abstention")
+        assert expected["cohort"] == "rag-40-current-v1"
+        sources, groups = expected["expected_sources"], expected["source_groups"]
+        assert sources and len(sources) == len(set(sources))
+        assert groups and all(group and len(group) == len(set(group)) for group in groups)
+        assert set(sources) == {source for group in groups for source in group}
+        assert case.retrieval_ground_truth == sources == claims["source_paths"]
+        assert set(sources).issubset(current), f"Out-of-scope or obsolete source: {case.case_id}"
+        assert claims["expected_facts"] == claims["required_facts"] and claims["expected_facts"]
+        assert all(isinstance(fact, str) and fact.strip() for fact in claims["expected_facts"])
+        assert claims["forbidden_claims"] and all(isinstance(claim, str) and claim.strip() for claim in claims["forbidden_claims"])
+        assert set(claims["source_evidence"]) == set(sources)
+        for source, quotes in claims["source_evidence"].items():
+            assert quotes and len(quotes) == len(set(quotes))
+            content = "".join(documents[source]["content"].split())
+            for quote in quotes:
+                text = "".join(quote.split())
+                assert text and text in content, f"Evidence missing from formal source: {case.case_id} / {source} / {quote}"
+                assert any(text in "".join(chunk["content"].split()) for chunk in chunks[source]), f"Evidence not available in a local chunk: {case.case_id} / {quote}"
+                evidence_quotes += 1
+        used_sources.update(sources)
+        if expected["category"] == "Multi-Source":
+            assert len(groups) >= 2, f"Multi-Source must require distinct topics: {case.case_id}"
+        if expected["category"] == "No-Answer / Unsupported":
+            assert expected["answerable"] is False
+        if expected["split"] == "holdout":
+            assert case.case_id.startswith("rag-holdout-") and expected["model_execution"] == "never_executed"
+    assert used_sources == current, "Some current formal sources have no coverage"
+    dataset_hash = rag_dataset_hash(rows)
+    if check_freeze:
+        assert FROZEN_RAG_HASH != "UNFROZEN" and dataset_hash == FROZEN_RAG_HASH, "Frozen RAG Dataset changed; review suspected Ground Truth errors with the user"
+    multi = sum(len(case.expected["source_groups"]) > 1 for case in rag)
+    return {"valid": True, "rag_cases": len(rag), "splits": dict(splits), "domains": dict(domains), "categories": dict(categories), "single_source": len(rag) - multi, "multi_source": multi, "unanswerable": sum(not case.expected["answerable"] for case in rag), "formal_sources": len(documents), "covered_current_sources": len(used_sources), "offline_chunks": total_chunks, "offline_current_chunks": current_chunks, "evidence_quotes_checked": evidence_quotes, "dataset_hash": dataset_hash, "holdout_ids": [case.case_id for case in rag if case.expected["split"] == "holdout"], "model_calls": 0, "retrieval_runs": 0}
 
 
 def workflow_dataset_hash(cases: list) -> str:
@@ -917,19 +1335,24 @@ def validate_workflow_fixtures(cases: list) -> dict:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Workflow data authoring/validation only; no model evaluation")
+    parser = argparse.ArgumentParser(description="Dataset authoring/validation only; no model evaluation")
     parser.add_argument("--validate", action="store_true", help="Check schema, complete Ground Truth, splits, code sources and frozen hashes")
+    parser.add_argument("--validate-rag", action="store_true", help="Check RAG labels, source evidence and frozen hashes offline; no retrieval or model")
     parser.add_argument("--check-fixtures", action="store_true", help="Initialize all Workflow fixtures in an isolated simulator; no LLM")
     args = parser.parse_args()
     path = PROJECT_ROOT / "evals" / "smoke.jsonl"
-    if args.validate or args.check_fixtures:
+    if args.validate or args.validate_rag or args.check_fixtures:
         cases = load_cases(path)
-        print(json.dumps(validate_workflow_cases(cases), ensure_ascii=False, indent=2))
+        if args.validate or args.check_fixtures:
+            print(json.dumps(validate_workflow_cases(cases), ensure_ascii=False, indent=2))
+        if args.validate_rag:
+            print(json.dumps(validate_rag_cases(cases), ensure_ascii=False, indent=2))
         assert [case.model_dump() for case in cases] == [EvalCase.model_validate(case).model_dump() for case in smoke_cases()], "smoke.jsonl differs from authored definitions"
         if args.check_fixtures:
             print(json.dumps(validate_workflow_fixtures(cases), ensure_ascii=False, indent=2))
     else:
         cases = smoke_cases()
         validate_workflow_cases(cases, check_freeze=FROZEN_WORKFLOW_HASH != "UNFROZEN")
+        validate_rag_cases(cases, check_freeze=FROZEN_RAG_HASH != "UNFROZEN")
         path.write_text("\n".join(json.dumps(case, ensure_ascii=False) for case in cases) + "\n", encoding="utf-8")
         print(f"Wrote {len(cases)} human-authored smoke cases to {path.name}; no models called")

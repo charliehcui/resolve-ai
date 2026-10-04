@@ -23,10 +23,10 @@ def isolated_test_database():
 def test_dataset_split_is_complete_and_quick_does_not_select_holdout():
     cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
     assert validate_smoke(cases)["valid"]
-    assert len(cases) == 83
+    assert len(cases) == 113
     assert sum(case.category == "workflow" for case in cases) == 50
-    assert sum(case.expected.get("split") == "development" for case in cases) == 17
-    assert sum(case.expected.get("split") == "holdout" for case in cases) == 10
+    assert sum(case.category == "workflow" and case.expected.get("split") == "development" for case in cases) == 17
+    assert sum(case.category == "workflow" and case.expected.get("split") == "holdout" for case in cases) == 10
     selected, _ = select_cases(cases, "quick", "workflow", None, None)
     assert sum(case.expected.get("split") == "regression" for case in cases) == 23
     assert len(selected) == 5

@@ -118,6 +118,16 @@ docker compose up -d db
 
 第一次运行 `hybrid_rerank` 会从 Hugging Face 下载 `RERANK_MODEL` 指定的 Qwen3 Reranker 权重；权重保存在用户缓存中，不进入仓库。
 
+## 产品文档导入
+
+`docs import` 在宿主机递归同步 `docs/product/` 的 Markdown、PDF、DOCX、XLSX。当前 23 份来源生成 181 个 Chunk：Markdown 40、PDF 9、DOCX 12、XLSX 120。PDF 使用 PyPDFLoader，DOCX 使用 Docx2txtLoader；普通正文使用 RecursiveCharacterTextSplitter，总长度上限 1200 字符（含来源信息），overlap 目标 150 字符。XLSX 使用 openpyxl，每条完整记录包含全部列名与值，另保留每张表的概述，不使用普通文本切分器。
+
+Markdown 沿用 YAML 元数据。其他格式读取文件内的标题、公司、产品、版本、状态、核对日期和主题；未写明的有效期只从相同公司、产品、版本的 Markdown 获取，缺失或存在歧义时导入失败。`status`、`last_reviewed`、`topic` 保存在每个 Chunk 的正文前缀，其他业务字段继续写入现有文档表，没有新增数据库列。
+
+每次导入都同步文档元数据，复用未变化 Chunk 的向量，替换变化或移除的 Chunk，并清理 `docs/product/` 下已删除、迁移或更换版本的旧来源。全部读取与向量化成功后才在一个事务中写入；目录为空、解析失败或向量化失败不会清空原知识库。Google 429 限流时只重试当前批次，最多三次调用，按服务返回的等待时间执行。导入结果的 `imported` / `skipped` 表示需要新向量 / 复用向量的文档数，元数据始终同步。
+
+Legacy 1.0 仍导入，当前检索通过原有版本及有效期过滤排除过期知识。检索、回答、引用验证与 Customer LangGraph 流程保持现有实现。基础设施回归可单独运行 `python -m pytest tests/test_docs.py tests/test_citations.py tests/test_customer.py`，使用隔离数据库和模拟向量，不运行正式 RAG Evaluation。
+
 ## 终端问答
 
 PowerShell 示例：
@@ -297,7 +307,7 @@ Phase 10 历史验证结果见 `docs/phase-10-report.md`。普通回归测试显
 
 ## 当前限制
 
-- 当前资料集只有 16 个片段，检索质量对照只是小型开发验证，不代表大规模性能。
+- 当前资料集有 23 份来源、181 个片段；既有检索质量对照来自旧资料集，新资料集尚未运行正式 RAG Evaluation，不代表大规模性能。
 - 本地 Qwen3 Reranker 真实可运行，但 CPU 延迟明显高于 Vector/Hybrid；默认模式会随后续真实数据重新评估。
 - Citation Validation 会降低无依据回答风险，但语义模型仍可能误判，不宣称保证答案正确。
 - Customer Agent 不读取任何真实订单、店铺、平台、仓库、日志或库存后台状态。

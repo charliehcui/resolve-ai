@@ -15,11 +15,31 @@ def test_smoke_ground_truth_and_fixtures_are_complete():
     cases = load_cases(PROJECT_ROOT / "evals" / "smoke.jsonl")
     validation = validate_smoke(cases)
     assert validation["valid"]
-    assert validation["categories"] == {"rag": 10, "workflow": 50, "safety": 15, "reliability": 8}
+    assert validation["categories"] == {"rag": 40, "workflow": 50, "safety": 15, "reliability": 8}
     assert [case.model_dump() for case in cases] == [load_cases_from_dict(case) for case in smoke_cases()]
     broken = deepcopy(cases[0])
     broken.scenario = "not_seedable"
     assert not validate_smoke([broken])["valid"]
+
+
+def test_rag_dataset_is_frozen_and_rejects_bad_evidence_and_label_changes():
+    from evals.dataset import validate_rag_cases
+
+    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    result = validate_rag_cases(cases)
+    assert result["splits"] == {"development": 30, "holdout": 10}
+    assert result["unanswerable"] == 4
+    assert result["covered_current_sources"] == 22
+    assert result["single_source"] == 29 and result["multi_source"] == 11
+    changed = deepcopy(cases)
+    changed[0].question += " changed"
+    with pytest.raises(AssertionError, match="Frozen RAG Dataset changed"):
+        validate_rag_cases(changed)
+    changed = deepcopy(cases)
+    source = changed[0].retrieval_ground_truth[0]
+    changed[0].claim_ground_truth["source_evidence"][source] = ["This evidence does not appear in any formal source."]
+    with pytest.raises(AssertionError, match="Evidence missing from formal source"):
+        validate_rag_cases(changed, check_freeze=False)
 
 
 def load_cases_from_dict(case):
