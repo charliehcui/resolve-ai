@@ -30,6 +30,22 @@ def compact_result(result: dict) -> dict:
         row["task_result_check"] = result.get("task_result_check")
         row["failure_categories"] = result.get("failure_categories", [])
         row["semantic_checks"] = result.get("independent_judge", {}).get("judgment")
+    if result["category"] == "rag":
+        row["actual_result_summary"]["answer"] = response.get("answer")
+        row["retrieval_evidence"] = result.get("retrieval_evidence", [])
+        row["retrieval_runs"] = result.get("retrieval_runs", [])
+        row["semantic_checks"] = result.get("independent_judge", {}).get("judgment")
+        row["no_answer_correct"] = result.get("no_answer_correct")
+        row["failure_categories"] = result.get("failure_categories", [])
+        if result["status"] == "passed" and row["semantic_checks"]:
+            # 保留逐事实的答案原文证据，允许只重评 Judge 而不重跑 Agent。
+            row["semantic_checks"] = dict(row["semantic_checks"])
+        observations = result.get("observations", {})
+        row["answer_pipeline"] = {key: observations.get(key, []) for key in ("draft_claims", "completeness_review", "before_claims", "after_claims", "removed_claims", "citation_checks", "structured_output")}
+        row["judge_audit"] = {key: result.get("independent_judge", {}).get(key) for key in ("method", "source_quote_catalog", "raw_grounding_judgment", "raw_coverage_judgment", "structured_output", "reference_normalization", "usage")}
+        rubric = result.get("independent_judge", {}).get("rubric")
+        if rubric:
+            row["evaluation_rubric"] = {key: rubric[key] for key in ("key", "parts", "original_facts", "classification_sees_answer")}
     row["execution_failure_kind"] = execution_failure_kind(result)
     return row
 

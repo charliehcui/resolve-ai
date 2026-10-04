@@ -30,6 +30,13 @@ def test_actual_cost_survives_parser_failure_and_is_separate_from_estimate(budge
     assert calls_for_run("synthetic-run")[0]["estimated_cost"] > 0
 
 
+def test_explicit_low_reasoning_review_is_reserved_with_its_bounded_output(budget_environment):
+    call_id = reserve({"model": "test-model", "max_tokens": 6144, "reasoning": {"effort": "low"}}, 100, "application")
+    assert calls_for_run("synthetic-run")[0]["id"] == call_id
+    with pytest.raises(ValueError, match="bounded limit"):
+        reserve({"model": "test-model", "max_tokens": 6144}, 100, "application")
+
+
 def test_missing_usage_keeps_reservation_and_next_run_cannot_reset_budget(budget_environment, monkeypatch):
     reserve({"model": "test-model", "max_tokens": 4096}, 100, "application")
     first = cost_summary("synthetic-run")

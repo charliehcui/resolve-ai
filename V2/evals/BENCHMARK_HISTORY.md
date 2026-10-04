@@ -93,3 +93,99 @@ Known usage excludes rejected requests and unreported usage. Baseline has 10 cas
 
 This entire Workflow cycle, including preparation and targeted debugging: confirmed OpenRouter cost $0.0735687418; accounted including unresolved-call reserves $0.0778242468; unresolved reserve $0.0042555050; known tokens 2217989; requests 425. Below the requested approximate $0.10 incremental budget.
 Full Development runs: one completed Baseline and one completed optimized validation; no additional full validation. Holdout runs: one. Dataset and fixture hashes unchanged. Existing Baseline passes have zero regressions. Optimization stopped at 97.5%, with the conditional human-request boundary left recorded.
+## RAG Baseline
+
+- Run: `20261004T062922Z-6ef9fd1a`; mode: `vector_only`; passed: 3/30; Error / Timeout: 1 / 0.
+- Report: [reports/rag/baseline/summary.md](../reports/rag/baseline/summary.md)
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.1 |
+| answer_accuracy_after | None |
+| recall_at_5 | 0.08333333333333333 |
+| mrr | 0.07777777777777778 |
+| unsupported_claim_rate_after | None |
+
+- Checks: {"failure_categories": {"Metadata / Scope Problem": 20, "Missing Relevant Source": 27, "Query Understanding / Rewrite": 26, "Provider Error": 1, "Unsupported Claim": 3, "Low Ranking": 1, "Multi-Source Incomplete": 5, "Wrong Source": 1, "No-Answer Failure": 2}, "no_answer": {"correct": 0, "total": 2, "missing_evidence": 0}, "unsupported_final_claims": 3, "forbidden_claims": 1, "provider_error": 1, "evaluation_error": 0}
+- Latency P50 / P95: 7929.957 / 28013.6 ms.
+- Application + Judge known tokens: 170620; OpenRouter actual / accounted: $0.005633146 / $0.005633146; missing call usage: 1; fallback calls: 1.
+- Gemini query embeddings are outside the OpenRouter ledger; existing document embeddings reused.
+
+
+- Unsupported Claim metric count: 3/34 known assertions; raw final-assertion flags: 3. Recovered-inclusive upstream call failures: 1.
+
+- Original automated passes contain fact-coverage omissions; source_review.json preserves the review and original verdicts.
+
+## RAG Optimized Development
+
+- Run: `20261004T082533Z-dc5878e4`; mode: `hybrid`; passed: 16/30; Error / Timeout: 1 / 0.
+- Report: [reports/rag/optimized/summary.md](../reports/rag/optimized/summary.md)
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.5333333333333333 |
+| answer_accuracy_after | None |
+| recall_at_5 | 0.9333333333333333 |
+| mrr | 0.9083333333333333 |
+| unsupported_claim_rate_after | None |
+
+- Checks: {"failure_categories": {"Correct Retrieval but Wrong Answer": 10, "Low Ranking": 3, "Missing Relevant Source": 3, "Query Understanding / Rewrite": 1, "Multi-Source Incomplete": 2, "Wrong Source": 2, "Application Error": 1, "No-Answer Failure": 1}, "no_answer": {"correct": 1, "total": 2, "missing_evidence": 0}, "unsupported_final_claims": 0, "forbidden_claims": 0, "provider_error": 0, "evaluation_error": 0}
+- Latency P50 / P95: 24557.777 / 39154.923 ms.
+- Application + Judge known tokens: 389226; OpenRouter actual / accounted: $0.023691094 / $0.023691094; missing call usage: 51; fallback calls: 51.
+- Gemini query embeddings are outside the OpenRouter ledger; existing document embeddings reused.
+
+- Baseline → Optimized: task_success_rate: 0.1 → 0.5333333333333333; answer_accuracy_after: None → None; recall_at_5: 0.08333333333333333 → 0.9333333333333333; mrr: 0.07777777777777778 → 0.9083333333333333
+
+- Unsupported Claim metric count: 0/107 known assertions; raw final-assertion flags: 0. Recovered-inclusive upstream call failures: 51.
+
+- Target not met. First full validation 25/30; final 16/30, preserved without choosing the higher score. Final run recovered 51 upstream shared-pool 429 responses and is mixed-model; stricter scoring also affected comparison. Agent frozen before Holdout.
+
+## RAG Holdout
+
+- Run: `20261004T085208Z-1036ae10`; mode: `hybrid`; passed: 4/10; Error / Timeout: 0 / 0.
+- Report: [reports/rag/holdout/summary.md](../reports/rag/holdout/summary.md)
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.4 |
+| answer_accuracy_after | 0.4 |
+| recall_at_5 | 0.5166666666666667 |
+| mrr | 0.6333333333333333 |
+| unsupported_claim_rate_after | 0.14285714285714285 |
+
+- Checks: {"failure_categories": {"Missing Relevant Source": 7, "Multi-Source Incomplete": 5, "Wrong Source": 5, "Unsupported Claim": 2, "Query Understanding / Rewrite": 2, "Low Ranking": 1, "No-Answer Failure": 1}, "no_answer": {"correct": 1, "total": 2, "missing_evidence": 0}, "unsupported_final_claims": 2, "forbidden_claims": 0, "provider_error": 0, "evaluation_error": 0}
+- Latency P50 / P95: 30919.264 / 43701.751 ms.
+- Application + Judge known tokens: 138747; OpenRouter actual / accounted: $0.0094702168 / $0.0094702168; missing call usage: 16; fallback calls: 16.
+- Gemini query embeddings are outside the OpenRouter ledger; existing document embeddings reused.
+
+
+- Unsupported Claim metric count: 4/28 known assertions; raw final-assertion flags: 2. Recovered-inclusive upstream call failures: 16.
+
+- Holdout executed exactly once after freeze; original results retained. No subsequent Agent/RAG changes.
+## RAG Optimized Development
+
+- Run: `20261004T131851Z-51f8f0b8`; mode: `hybrid`; passed: 19/30; Error / Timeout: 0 / 0.
+- Report: [reports/rag/answer-optimization/final-development/summary.md](../reports/rag/answer-optimization/final-development/summary.md)
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.6333333333333333 |
+| answer_accuracy_after | 0.6333333333333333 |
+| recall_at_5 | 0.95 |
+| mrr | 0.9083333333333333 |
+| unsupported_claim_rate_after | 0.024 |
+
+- Checks: {"failure_categories": {"Correct Retrieval but Wrong Answer": 10, "Low Ranking": 3, "Missing Relevant Source": 2, "Multi-Source Incomplete": 2, "Wrong Source": 1, "Unsupported Claim": 3, "Query Understanding / Rewrite": 1, "No-Answer Failure": 2}, "no_answer": {"correct": 0, "total": 2, "missing_evidence": 0}, "unsupported_final_claims": 1, "forbidden_claims": 0, "provider_error": 0, "evaluation_error": 0, "core_fact_coverage": {"numerator": 129, "denominator": 143, "missing_evidence_cases": 0, "confirmed_fraction": 0.9020979020979021, "value": 0.9020979020979021}, "all_fact_coverage": {"numerator": 143, "denominator": 197, "missing_evidence_cases": 0, "confirmed_fraction": 0.7258883248730964, "value": 0.7258883248730964}, "expected_fact_coverage": {"numerator": 46, "denominator": 82, "missing_evidence_cases": 0, "confirmed_fraction": 0.5609756097560976, "value": 0.5609756097560976}, "structured_output_errors": 10, "structured_output_recoveries": 10, "structured_output_by_stage": {"answer_completeness": {"errors": 0, "recoveries": 0}, "answer_coverage_judge": {"errors": 2, "recoveries": 2}, "answer_generation": {"errors": 0, "recoveries": 0}, "citation_validation": {"errors": 0, "recoveries": 0}, "grounding_judge": {"errors": 2, "recoveries": 2}, "query_planning": {"errors": 6, "recoveries": 6}}, "upstream_provider_errors": 12}
+- Latency P50 / P95: 55454.27 / 80317.282 ms.
+- Application + Judge known tokens: 716187; OpenRouter actual / accounted: $0.0292672238 / $0.0292672238; missing call usage: 12; fallback calls: 12.
+- Gemini query embeddings are outside the OpenRouter ledger; existing document embeddings reused.
+
+- Answer optimization uses the frozen question-scoped scoring audit. Compare with regraded saved Development answers; earlier all-or-nothing scores use a different policy and cannot measure Agent-only gains.
+
+### Offline final Development adjudication — no new execution
+
+- The `20261004T131851Z-51f8f0b8` automatic result above stays unchanged: 19/30. Final saved-answer semantic review changes seven scoring-only failures, giving 26/30 (86.67%); four genuine failures remain.
+- The same final question-scoped standard on old saved Development answers gives 21/30 (70.00%). Original 16/30 → 21/30 is evaluation correction; 21/30 → 26/30 is the net observed pipeline gain, with fallback differences and two real regressions documented.
+- Core Coverage 130/137 (94.89%); Overall clause Coverage 143/197 (72.59%); strict complete original expected_facts 45/82. All original facts retained. The separate report rubric applies six further Optional classifications to both old and new answers; production rubric/code are unchanged.
+- No-Answer 1/2; Unsupported Claims 2/125 after verifying the cited original workbook row omitted from the evaluator catalog. Correct Retrieval but Wrong Answer: 3. Execution/Provider/Evaluation Error: 0/0/0; 12 upstream failures and 10 structured-output failures recovered.
+- No new Agent, Judge, retrieval or HTTP calls for adjudication. No new full/targeted run or old Holdout execution. [Final report and audit](../reports/rag/answer-optimization/final-offline-review/final.md). Stop without claiming 95% or zero regression.

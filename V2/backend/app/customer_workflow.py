@@ -27,7 +27,7 @@ class CustomerWorkflowState(TypedDict, total=False):
 
 
 def decide_query_next_step_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
-    query_decision, usage = decide_customer_query_next_step(state["question"], state["history"])
+    query_decision, usage = decide_customer_query_next_step(state["question"], state["history"], state["user"]["company_id"])
 
     return {
         "query_decision": query_decision.model_dump(),

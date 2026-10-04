@@ -27,7 +27,12 @@ class Observer(BaseCallbackHandler):
         self.retrieval = []
         self.tools = []
         self.before_claims = []
+        self.draft_claims = []
+        self.completeness_review = {}
         self.after_claims = []
+        self.removed_claims = []
+        self.citation_checks = []
+        self.structured_output = []
         self.diagnoses = []
         self.stack = ExitStack()
 
@@ -90,14 +95,50 @@ class Observer(BaseCallbackHandler):
             self.save()
             result = original_validation(claims, *args, **kwargs)
             self.after_claims = [claim.model_dump() for claim in result[0]]
+            self.removed_claims = list(result[1])
             self.save()
             return result
 
         self.stack.enter_context(patch.object(customer_agent, "validate_claims", observe_validation))
+        original_review = customer_agent.complete_answer_claims
+
+        def observe_review(question, chunks, history, claims, model):
+            self.draft_claims = [claim.model_dump() for claim in claims]
+            self.save()
+            result = original_review(question, chunks, history, claims, model)
+            self.completeness_review = result[2]
+            self.save()
+            return result
+
+        self.stack.enter_context(patch.object(customer_agent, "complete_answer_claims", observe_review))
+        for module in (customer_agent, citations):
+            original_structured = module.invoke_structured
+
+            def observe_structured(*args, _original=original_structured, **kwargs):
+                try:
+                    result = _original(*args, **kwargs)
+                    self.structured_output.extend(result[2])
+                    self.save()
+                    return result
+                except citations.StructuredOutputError as error:
+                    self.structured_output.extend(error.events)
+                    self.save()
+                    raise
+
+            self.stack.enter_context(patch.object(module, "invoke_structured", observe_structured))
+        original_semantic = citations.semantic_claim_checks
+
+        def observe_semantic(*args, **kwargs):
+            result = original_semantic(*args, **kwargs)
+            self.citation_checks = result[0].model_dump()["checks"]
+            self.save()
+            return result
+
+        self.stack.enter_context(patch.object(citations, "semantic_claim_checks", observe_semantic))
         original_retrieval = customer_workflow.retrieve_customer_documents
 
         def observe_retrieval(*args, **kwargs):
-            record = {"start": time.perf_counter(), "status": "running"}
+            record = {"start": time.perf_counter(), "status": "running", "query": args[0] if args else kwargs.get("query"), "filters": {key: kwargs.get(key) for key in ("version", "product", "mode")}}
             self.retrieval.append(record)
             self.save()
             try:
@@ -161,4 +202,4 @@ class Observer(BaseCallbackHandler):
             calls = [dict(call) for call in self.calls.values()]
         selected = [tool for call in calls if call["scope"] == "support" for tool in call.get("tool_calls", [])]
         usage_complete = all(call["input_tokens"] is not None and call["output_tokens"] is not None for call in calls)
-        return {"llm_calls": calls, "selected_tools": selected, "tool_requests": self.tools, "retrieval": self.retrieval, "before_claims": self.before_claims, "after_claims": self.after_claims, "diagnoses": self.diagnoses, "journal_errors": list(self.journal_errors), "performance": {"llm_latency_ms": interval_ms([(call["start"], call["end"]) for call in calls if "end" in call]), "retrieval_latency_ms": interval_ms([(item["start"], item["end"]) for item in self.retrieval if "end" in item]), "tool_execution_latency_ms": interval_ms([(item["start"], item["end"]) for item in self.tools if "end" in item]), "llm_call_count": len(calls), "tool_call_count": len(self.tools), "selected_tool_call_count": len(selected), "input_tokens": sum(call["input_tokens"] for call in calls) if usage_complete else None, "output_tokens": sum(call["output_tokens"] for call in calls) if usage_complete else None, "token_usage_complete": usage_complete}}
+        return {"llm_calls": calls, "selected_tools": selected, "tool_requests": self.tools, "retrieval": self.retrieval, "draft_claims": self.draft_claims, "completeness_review": self.completeness_review, "before_claims": self.before_claims, "after_claims": self.after_claims, "removed_claims": self.removed_claims, "citation_checks": self.citation_checks, "structured_output": self.structured_output, "diagnoses": self.diagnoses, "journal_errors": list(self.journal_errors), "performance": {"llm_latency_ms": interval_ms([(call["start"], call["end"]) for call in calls if "end" in call]), "retrieval_latency_ms": interval_ms([(item["start"], item["end"]) for item in self.retrieval if "end" in item]), "tool_execution_latency_ms": interval_ms([(item["start"], item["end"]) for item in self.tools if "end" in item]), "llm_call_count": len(calls), "tool_call_count": len(self.tools), "selected_tool_call_count": len(selected), "input_tokens": sum(call["input_tokens"] for call in calls) if usage_complete else None, "output_tokens": sum(call["output_tokens"] for call in calls) if usage_complete else None, "token_usage_complete": usage_complete}}

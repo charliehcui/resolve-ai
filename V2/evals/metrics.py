@@ -12,7 +12,7 @@ METRIC_NAMES = SUCCESS_METRICS + RATIO_METRICS + ADVERSE_METRICS
 def applicable_metrics(case: dict) -> list[str]:
     category = case["category"]
     if category == "rag":
-        return ["recall_at_5", "mrr", "answer_accuracy_before", "answer_accuracy_after", *RATIO_METRICS, "handoff_accuracy"]
+        return ["recall_at_5", "mrr", "answer_accuracy_before", "answer_accuracy_after", "unsupported_claim_rate_before", "unsupported_claim_rate_after"]
     if category == "workflow":
         names = ["tool_selection_accuracy", "tool_argument_accuracy", "diagnosis_accuracy", "handoff_accuracy"]
         return names
@@ -28,6 +28,33 @@ def retrieval_scores(ranked: list[str], relevant: list[str]) -> dict:
     recall = len(set(ranked[:5]) & truth) / len(truth)
     reciprocal = next((1 / rank for rank, chunk in enumerate(ranked[:5], 1) if chunk in truth), 0.0)
     return {"recall_at_5": recall, "mrr": reciprocal}
+
+
+def rag_retrieval_scores(chunks: list[dict], case: dict) -> dict:
+    """Top five ranks first, then source-group coverage with topic evidence anchors."""
+    groups = case["expected"]["source_groups"]
+    anchors = case["claim_ground_truth"]["source_evidence"]
+    covered = set()
+    first_rank = None
+    evidence = []
+    for rank, chunk in enumerate(chunks[:5], 1):
+        source = chunk["source_uri"]
+        content = re.sub(r"\s+", "", chunk["content"])
+        topic_match = any(re.sub(r"\s+", "", quote) in content for quote in anchors.get(source, []))
+        # 文本来源允许同主题的转述/相邻段落；表格仍须命中指定状态或错误码行。
+        if not topic_match and any(source in group for group in groups) and not source.endswith(".xlsx"):
+            from backend.app.customer_retrieval import tokenize
+            topic = case["expected"].get("expected_topic", "")
+            terms = {term for term in tokenize(topic) if len(term) > 1 and any(char.isalnum() for char in term) and term not in {"当前", "资料", "范围", "区别", "边界", "实际", "事实", "条件", "说明", "完整"}}
+            body = chunk["content"].split("\n\n", 1)[-1]
+            hits = {term for term in terms if term in body.lower()}
+            topic_match = len(hits) >= 2 and len(hits) >= len(terms) / 2
+        hits = [index for index, group in enumerate(groups) if source in group and topic_match]
+        covered.update(hits)
+        if hits and first_rank is None:
+            first_rank = rank
+        evidence.append({"rank": rank, "chunk_id": chunk["chunk_id"], "source_uri": source, "topic_match": topic_match, "source_groups": hits})
+    return {"recall_at_5": len(covered) / len(groups), "mrr": 1 / first_rank if first_rank else 0.0, "retrieval_evidence": evidence, "covered_source_groups": sorted(covered)}
 
 
 def tool_scores(selected: list[dict], expected: dict, identifiers: dict) -> dict:
@@ -257,6 +284,8 @@ def execution_failure_kind(result: dict) -> str | None:
     text = " ".join(result.get("failure_reasons", [])).casefold()
     if "primary endpoint" in text or "budgetexceeded" in text:
         return "preflight_error"
+    if "judge" in text and ("length limit" in text or "lengthfinishreasonerror" in text):
+        return "judge_error"
     if any(value in text for value in ("429", "openai", "provider returned error", "upstream", "rate limit")):
         return "provider_error"
     if "structuredoutputerror" in text or "jsondecodeerror" in text:
@@ -268,7 +297,7 @@ def execution_failure_kind(result: dict) -> str | None:
     return "evaluation_or_application_error"
 
 
-def claim_scores(before: list[dict], after: list[dict], judgment: dict) -> dict:
+def claim_scores(before: list[dict], after: list[dict], judgment: dict, final_answer: str | None = None) -> dict:
     checks = judgment["claim_checks"]
     if sorted(item["index"] for item in checks) != list(range(len(before))):
         raise ValueError("Independent judge must assess every pre-validation claim exactly once")
@@ -281,7 +310,16 @@ def claim_scores(before: list[dict], after: list[dict], judgment: dict) -> dict:
             remaining[claim["text"]] -= 1
     if any(remaining.values()):
         raise ValueError("Final claims contain text absent from pre-validation observation")
-    return {"answer_accuracy_before": float(judgment["answer_correct_before"]), "answer_accuracy_after": float(judgment["answer_correct_after"]), "unsupported_claim_rate_before": {"numerator": len(before) - len(supported), "denominator": len(before)}, "unsupported_claim_rate_after": {"numerator": sum(index not in supported for index in retained), "denominator": len(after)}, "supported_claim_retention_rate": {"numerator": sum(index in supported for index in retained), "denominator": len(supported)}}
+    scores = {"answer_accuracy_before": float(judgment["answer_correct_before"]), "answer_accuracy_after": float(judgment["answer_correct_after"]), "unsupported_claim_rate_before": {"numerator": len(before) - len(supported), "denominator": len(before)}, "unsupported_claim_rate_after": {"numerator": sum(index not in supported for index in retained), "denominator": len(after)}, "supported_claim_retention_rate": {"numerator": sum(index in supported for index in retained), "denominator": len(supported)}}
+    if final_answer is not None and "unsupported_final_claims" in judgment:
+        from evals.judge import has_answer_content
+        unsupported_texts = {before[index]["text"] for index in retained if index not in supported} | set(judgment["unsupported_final_claims"])
+        numerator = sum(claim["text"] in unsupported_texts for claim in after)
+        denominator = len(after)
+        if not after and has_answer_content(final_answer):
+            numerator, denominator = int(bool(unsupported_texts)), 1
+        scores["unsupported_claim_rate_after"] = {"numerator": numerator, "denominator": denominator}
+    return scores
 
 
 def percentile(values: list[float], probability: float) -> float | None:
@@ -297,7 +335,7 @@ def percentile(values: list[float], probability: float) -> float | None:
 def summarize(results: list[dict]) -> dict:
     metrics = {}
     for name in METRIC_NAMES:
-        eligible = [result for result in results if result["category"] == "workflow"] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
+        eligible = [result for result in results if result["category"] in {"workflow", "rag"}] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
         measured = [float(result["status"] == "passed") for result in eligible] if name == "task_success_rate" else [result["metrics"][name] for result in eligible if result["metrics"].get(name) is not None]
         missing = len(eligible) - len(measured)
         if name in RATIO_METRICS:

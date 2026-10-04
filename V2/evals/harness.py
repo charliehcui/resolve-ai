@@ -39,6 +39,9 @@ def code_hashes() -> dict:
     paths = sorted((PROJECT_ROOT / "evals").glob("*.py"))
     for folder, pattern in (("backend/app", "*.py"), ("backend/prompts", "*.md"), ("simulator/services", "*.py"), ("simulator/lab", "*.py"), ("infra/migrations", "*.sql")):
         paths.extend(sorted((PROJECT_ROOT / folder).glob(pattern)))
+    rubric_path = PROJECT_ROOT / "evals/optimization/answer-rubric.json"
+    if rubric_path.exists():
+        paths.append(rubric_path)
     return {path.relative_to(PROJECT_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
@@ -258,6 +261,9 @@ def summary_with_comparisons(results: list[dict]) -> dict:
 
 
 def render_summary(summary: dict, manifest: dict) -> str:
+    if summary["total_runs"] and summary["by_category"]["rag"]["total_runs"] == summary["total_runs"]:
+        from evals.rag import render_summary as render_rag_summary
+        return render_rag_summary(summary, manifest)
     if manifest.get("workflow_stage") or manifest.get("validation", {}).get("categories") == {"workflow": manifest.get("selected_cases")}:
         return render_workflow_summary(summary, manifest)
     lines = ["# ResolveAI " + ("Final Benchmark" if manifest.get("mode") == "final" else "Quick Evaluation"), "", f"Run: {manifest['run_id']}", f"Dataset cases: {manifest['selected_cases']}; planned runs: {manifest['planned_runs']}", f"Passed {summary['passed']} / Failed {summary['failed']} / Error {summary['error']} / Timeout {summary['timeout']}", "", "All failures remain in eligible denominators. Missing adverse-rate or claim evidence produces null, never an automatic pass.", "", "| Metric | Value | Numerator | Denominator | Missing evidence runs |", "|---|---:|---:|---:|---:|"]
@@ -289,7 +295,18 @@ def render_workflow_summary(summary: dict, manifest: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def select_cases(cases: list, mode: str, category: str | None, case_ids: list[str] | None, variants: list[str] | None, workflow_stage: str | None = None) -> tuple[list, list[str]]:
+def select_cases(cases: list, mode: str, category: str | None, case_ids: list[str] | None, variants: list[str] | None, workflow_stage: str | None = None, rag_stage: str | None = None) -> tuple[list, list[str]]:
+    if rag_stage:
+        if mode != "quick" or category != "rag" or case_ids or workflow_stage or rag_stage not in {"baseline", "optimized", "holdout"}:
+            raise ValueError("RAG stages require the complete frozen split, quick mode and RAG only")
+        split = "holdout" if rag_stage == "holdout" else "development"
+        selected = [case for case in cases if case.category == "rag" and case.expected.get("split") == split]
+        if len(selected) != (10 if split == "holdout" else 30):
+            raise ValueError("RAG stages require the frozen 30/10 split")
+        selected_modes = variants or ["vector_only" if rag_stage == "baseline" else "hybrid"]
+        if len(selected_modes) != 1 or rag_stage == "baseline" and selected_modes != ["vector_only"]:
+            raise ValueError("RAG Baseline uses vector_only; other stages use one selected mode")
+        return selected, selected_modes
     if workflow_stage:
         if mode != "quick" or category != "workflow" or case_ids or variants:
             raise ValueError("Workflow stages require quick mode, Workflow only, and the complete frozen split")
@@ -311,26 +328,26 @@ def select_cases(cases: list, mode: str, category: str | None, case_ids: list[st
     if category not in CATEGORIES:
         raise ValueError("Quick Evaluation requires one explicit --category")
     wanted = case_ids or list(QUICK_CASES[category])
-    limit = 11 if category == "workflow" else 5
+    limit = 15 if category == "rag" else 11 if category == "workflow" else 5
     if not 1 <= len(wanted) <= limit or len(set(wanted)) != len(wanted):
         raise ValueError(f"Quick Evaluation accepts 1-{limit} distinct {category} cases")
     by_id = {case.case_id: case for case in cases if case.category == category}
     if set(wanted) - set(by_id):
         raise ValueError("Unknown cases or cases outside the selected category")
-    if category == "workflow" and any(by_id[case_id].expected.get("split") == "holdout" for case_id in wanted):
-        raise ValueError("Frozen Holdout can only run once using --workflow-stage holdout")
+    if category in {"workflow", "rag"} and any(by_id[case_id].expected.get("split") == "holdout" for case_id in wanted):
+        raise ValueError("Frozen Holdout can only run once using the corresponding --*-stage holdout")
     selected_modes = variants or ["hybrid_rerank"]
     if len(selected_modes) != 1:
         raise ValueError("Quick Evaluation uses one retrieval mode; compare modes in separate targeted checks")
     return [by_id[case_id] for case_id in wanted], selected_modes
 
 
-def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "", workflow_stage: str | None = None) -> dict:
+def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "", workflow_stage: str | None = None, rag_stage: str | None = None) -> dict:
     cases = load_cases(suite)
     validation = validate_smoke(cases)
     if not validation["valid"]:
         raise ValueError(json.dumps(validation, ensure_ascii=False))
-    selected, variants = select_cases(cases, mode, category, case_ids, variants, workflow_stage)
+    selected, variants = select_cases(cases, mode, category, case_ids, variants, workflow_stage, rag_stage)
     if timeout <= 0 or not variants or not set(variants).issubset(MODES):
         raise ValueError("Invalid timeout or retrieval variants")
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
@@ -338,6 +355,16 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
     directory.mkdir(parents=True)
     (directory / "private").mkdir()
     destination = (output or PROJECT_ROOT / "reports" / "workflow" / workflow_stage if workflow_stage else output or PROJECT_ROOT / "reports" / "latest").resolve()
+    if rag_stage:
+        destination = (output or PROJECT_ROOT / "reports" / "rag" / rag_stage).resolve()
+        if (destination / "summary.json").exists():
+            raise FileExistsError("Formal RAG stage results are immutable")
+        if rag_stage == "holdout":
+            optimized = PROJECT_ROOT / "reports" / "rag" / "optimized" / "summary.json"
+            if not optimized.exists() or json.loads(optimized.read_text(encoding="utf-8")).get("not_executed_runs"):
+                raise ValueError("Finish optimized Development before RAG Holdout")
+            with (PROJECT_ROOT / ".local" / "eval" / "rag-holdout-started.json").open("x", encoding="utf-8") as handle:
+                json.dump({"run_id": run_id}, handle)
     if workflow_stage and (destination / "summary.json").exists():
         raise FileExistsError("Workflow stage results are immutable; this stage has already run")
     if workflow_stage == "holdout":
@@ -352,7 +379,17 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
     manifest = {"run_id": run_id, "mode": mode, "started_at_utc": datetime.now(UTC).isoformat(), "suite": suite.name, "dataset_sha256": hashlib.sha256(suite.read_bytes()).hexdigest(), "dataset_cases": len(cases), "selected_cases": len(selected), "planned_runs": len(runs), "validation": validation, "retrieval_modes": variants, "case_timeout_seconds": timeout, "mock_used": False, "models": model_names, "code_hashes": code_hashes(), "source_hashes": {path.relative_to(PROJECT_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted((PROJECT_ROOT / "docs" / "product").glob("*.md"))}, "scope": "Real API ingress, simulator HTTP, PostgreSQL and worker; application logic unchanged.", "latency_scope": "Application wall clock; setup and Judge excluded. Parallel phase intervals use their union.", "judge_limitation": "Same-family automated Judge; original-document evidence; human review pending.", "judge_configuration": {"reasoning_effort": "none", "evidence_format": "original source paragraph references"}, "changes": changes, "stop_on_error": True}
     git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
     manifest["git_head"] = git.stdout.strip() if git.returncode == 0 else None
-    continue_workflow = bool(workflow_stage) or category == "workflow" and bool(case_ids)
+    continue_workflow = bool(workflow_stage or rag_stage) or category in {"workflow", "rag"} and bool(case_ids)
+    manifest["rag_stage"] = rag_stage
+    if category == "rag":
+        from backend.app.customer_document_ingestion import discover_product_documents
+        from evals.dataset import validate_rag_cases
+        manifest["source_hashes"] = {path.relative_to(PROJECT_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in discover_product_documents()}
+        manifest["rag_dataset_validation"] = validate_rag_cases([case.model_dump() for case in cases if case.category == "rag"])
+        manifest["scope"] = "Real API ingress and PostgreSQL; Answer Pipeline and audited scoring frozen during each run. Development optimization only."
+        manifest["judge_configuration"] = {"reasoning_effort": "low", "evidence_format": "separate answer-only literal coverage and original-source grounding", "scoring": "frozen question-scoped core facts; optional coverage reported separately"}
+        manifest["report_path"] = destination.relative_to(PROJECT_ROOT).as_posix() if destination.is_relative_to(PROJECT_ROOT) else str(destination)
+        manifest["rubric_sha256"] = hashlib.sha256((PROJECT_ROOT / "evals/optimization/answer-rubric.json").read_bytes()).hexdigest() if (PROJECT_ROOT / "evals/optimization/answer-rubric.json").exists() else None
     manifest.update(workflow_stage=workflow_stage, stop_on_error=not continue_workflow, workflow_scoring="frozen_workflow_semantic_contract_v1")
     if category == "workflow":
         manifest.update(scope="Real API ingress, simulator HTTP, PostgreSQL and worker; Agent and scoring code frozen during each run.", judge_limitation="Same-family semantic Judge plus independent backend readback; automated judgments remain fallible.", judge_configuration={"primary_reasoning_effort": "none", "mandatory_fallback_reasoning_effort": "low", "evidence_format": "frozen semantic contract, actual tools, persisted actions/tickets and backend facts"})
@@ -365,7 +402,7 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
     processes = []
     original_database = os.environ.get("DATABASE_URL")
     setup_error = None
-    deadline = time.monotonic() + 25 * 60 if mode == "quick" and not workflow_stage else None
+    deadline = time.monotonic() + 25 * 60 if mode == "quick" and not workflow_stage and not rag_stage else None
     try:
         try:
             pricing = refresh_prices()
@@ -391,9 +428,12 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
             results.append(result)
             if case["category"] == "workflow":
                 result["failure_categories"] = workflow_failure_categories(result)
+            if case["category"] == "rag":
+                from evals.rag import failure_categories
+                result["failure_categories"] = failure_categories(result)
             write_json(directory / "evaluation_results.json", index_report(manifest, results))
             category_finished = number == len(runs) or runs[number][0]["category"] != case["category"]
-            if workflow_stage or category_finished or result["status"] in {"error", "timeout"}:
+            if workflow_stage or rag_stage or category_finished or result["status"] in {"error", "timeout"}:
                 print(json.dumps({"event": "error" if result["status"] in {"error", "timeout"} else "category_finished", "run": number, "of": len(runs), "category": case["category"], "case_id": case["case_id"], "status": result["status"]}, ensure_ascii=False), flush=True)
             if result["status"] in {"error", "timeout"} and (not continue_workflow or setup_error):
                 manifest["stopped_after_error"] = {"case_id": case["case_id"], "variant": variant, "status": result["status"]}
@@ -402,7 +442,10 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
         manifest["code_unchanged_during_run"] = manifest["code_hashes"] == code_hashes()
         summary = summary_with_comparisons(results)
         manifest["mock_used"] = bool(summary["mock_runs"])
-        manifest["baseline_eligible"] = (mode == "final" or bool(workflow_stage)) and len(results) == len(runs) and not manifest.get("stopped_after_error") and manifest["code_unchanged_during_run"] and not summary["mock_runs"]
+        manifest["baseline_eligible"] = (mode == "final" or bool(workflow_stage or rag_stage)) and len(results) == len(runs) and not manifest.get("stopped_after_error") and manifest["code_unchanged_during_run"] and not summary["mock_runs"]
+        if category == "rag":
+            from evals.rag import add_summary
+            add_summary(summary, results)
         summary.update(planned_runs=len(runs), not_executed_runs=len(runs) - len(results), baseline_eligible=manifest["baseline_eligible"], not_executed_cases=[{"case_id": case["case_id"], "variant": variant, "repeat": iteration} for case, variant, iteration in runs[len(results):]], models=model_names, manifest=manifest)
         # Only replace our own generated report, never an arbitrary output directory.
         if (destination / "evaluation_results.json").exists():
@@ -417,6 +460,10 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
         save_results(destination, manifest, results, directory)
         write_json(destination / "summary.json", summary)
         (destination / "summary.md").write_text(render_summary(summary, manifest), encoding="utf-8")
+        if rag_stage:
+            from evals.rag import history_entry as rag_history_entry
+            with (PROJECT_ROOT / "evals" / "BENCHMARK_HISTORY.md").open("a", encoding="utf-8") as handle:
+                handle.write(rag_history_entry(summary, manifest))
         stop_services(processes)
         processes = []
         if not directory.resolve().is_relative_to((PROJECT_ROOT / ".local" / "eval" / "runs").resolve()):
@@ -462,6 +509,7 @@ def main() -> None:
     parser.add_argument("--changes", default="", help="Final only: describe this benchmark's changes in BENCHMARK_HISTORY.md")
     parser.add_argument("--validate", action="store_true", help="Validate dataset paths and labels without execution or external calls")
     parser.add_argument("--workflow-stage", choices=["baseline", "optimized", "holdout"], help="Frozen Workflow split only; Holdout runs once after optimized Development")
+    parser.add_argument("--rag-stage", choices=["baseline", "optimized", "holdout"], help="Frozen RAG split only; Holdout runs once after optimized Development")
     args = parser.parse_args()
     if args.validate:
         validation = validate_smoke(load_cases(args.suite))
@@ -470,10 +518,10 @@ def main() -> None:
             raise SystemExit(1)
         return
     try:
-        select_cases(load_cases(args.suite), args.mode, args.category, args.cases, args.retrieval_modes, args.workflow_stage)
+        select_cases(load_cases(args.suite), args.mode, args.category, args.cases, args.retrieval_modes, args.workflow_stage, args.rag_stage)
     except ValueError as error:
         parser.error(str(error))
-    report = run_evaluation(args.suite, args.mode, args.category, args.cases, args.retrieval_modes, args.timeout, changes=args.changes, workflow_stage=args.workflow_stage)
+    report = run_evaluation(args.suite, args.mode, args.category, args.cases, args.retrieval_modes, args.timeout, changes=args.changes, workflow_stage=args.workflow_stage, rag_stage=args.rag_stage)
     if report["summary"]["failed"] or report["summary"]["error"] or report["summary"]["timeout"]:
         raise SystemExit(1)
 

@@ -5,7 +5,7 @@ import pytest
 
 from evals.dataset import smoke_cases
 from evals.harness import empty_result
-from evals.judge import JudgeError, RagJudgment, empty_answer_scores, has_answer_content, judge_rag, resolve_references, source_quotes, validate_judgment
+from evals.judge import JudgeError, RagJudgment, assess_rag_parts, empty_answer_scores, has_answer_content, judge_rag, resolve_references, rubric_text, source_quotes, validate_judgment
 from evals.metrics import summarize
 
 DOCUMENTS = {"docs/product/test.md": "Administrators enable synchronization. Historical orders require separate approval."}
@@ -174,3 +174,45 @@ def test_compound_claim_can_cite_separate_original_quotes_from_multiple_document
     judgment, _ = validate_judgment(resolved, documents, claims, claims[0]["text"], ["Both are required"], claims)
     assert [item["source"] for item in judgment["claim_checks"][0]["evidence"]] == ["a.md", "b.md"]
     assert reference["claim_checks"][0].get("quote") is None
+
+
+def test_optional_omission_does_not_hide_core_coverage():
+    rubric = {"original_facts": ["The value is 7; the maintainer is a helpful contact."], "parts": [{"part_index": 0, "fact_index": 0, "text": "The value is 7", "core": True}, {"part_index": 1, "fact_index": 0, "text": "the maintainer is a helpful contact", "core": False}]}
+    result = {"part_checks": [{"part_index": 0, "passed": True, "answer_quotes": ["value is 7"], "evidence_ids": ["q1"], "reason": "Value"}, {"part_index": 1, "passed": False, "answer_quotes": [], "evidence_ids": [], "reason": "Unasked contact absent"}]}
+    scored = assess_rag_parts(result, rubric, "The value is 7.")
+    assert scored["core_facts_complete"]
+    assert not scored["fact_checks"][0]["passed"]
+    assert scored["core_fact_coverage"] == {"numerator": 1, "denominator": 1}
+    assert scored["all_fact_coverage"] == {"numerator": 1, "denominator": 2}
+
+
+@pytest.mark.parametrize("quotes", [[], ["Contact Support"], [""]])
+def test_judge_cannot_pass_a_fact_using_content_absent_from_answer(quotes):
+    rubric = {"original_facts": ["Contact Support"], "parts": [{"part_index": 0, "fact_index": 0, "text": "Contact Support", "core": True}]}
+    result = {"part_checks": [{"part_index": 0, "passed": True, "answer_quotes": quotes, "evidence_ids": ["q1"], "reason": "Contact exists in document"}]}
+    with pytest.raises(ValueError):
+        assess_rag_parts(result, rubric, "No fixed SLA is documented.")
+
+
+def test_rubric_normalization_cannot_erase_factual_words_or_numbers():
+    assert rubric_text("A；B， 3.0") == rubric_text("A B 3.0")
+    assert rubric_text("A B 3.0") != rubric_text("A B 2.0")
+
+
+def test_coverage_judge_sees_only_answer_and_recovers_fabricated_quote_once(monkeypatch):
+    from evals.judge import rag_answer_coverage
+    replies = iter([{"part_checks": [{"part_index": 0, "passed": True, "answer_ids": ["invented"], "reason": "Invented proof"}]}, {"part_checks": [{"part_index": 0, "passed": False, "answer_ids": [], "reason": "Unasked step absent"}]}])
+    calls = []
+    class FakeModel:
+        def with_structured_output(self, *args, **kwargs):
+            return self
+        def invoke(self, messages):
+            calls.append(messages)
+            return {"parsed": next(replies), "raw": None}
+    monkeypatch.setattr("evals.judge.create_model", lambda **kwargs: FakeModel())
+    rubric = {"parts": [{"part_index": 0, "text": "Contact Support", "core": False}]}
+    judged, _, events = rag_answer_coverage("What is documented?", rubric, "No fixed deadline is documented.")
+    assert not judged["part_checks"][0]["passed"]
+    assert len(calls) == 2
+    assert "original_source_quotes" not in calls[0][1].content
+    assert events[-1]["attempt"] == 2

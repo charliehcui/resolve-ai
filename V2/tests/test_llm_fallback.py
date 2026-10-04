@@ -15,8 +15,14 @@ def test_judge_reasoning_control_does_not_change_application_calls(monkeypatch):
     monkeypatch.setattr("backend.app.llm.ChatOpenAI", lambda **kwargs: parameters.append(kwargs))
     create_model(scope="judge").client("test-model", "test-provider")
     create_model().client("test-model", "test-provider")
+    create_model(scope="judge", reasoning_effort="low").client("test-model", "test-provider")
+    create_model(reasoning_effort="low").client("test-model", "test-provider")
     assert parameters[0]["extra_body"]["reasoning"] == {"effort": "none"}
     assert "reasoning" not in parameters[1]["extra_body"]
+    assert parameters[2]["extra_body"]["reasoning"] == {"effort": "low"}
+    assert parameters[2]["max_tokens"] == 6144
+    assert parameters[3]["extra_body"]["reasoning"] == {"effort": "low"}
+    assert parameters[3]["max_tokens"] == 6144
     assert parameters[0]["extra_body"]["provider"] == parameters[1]["extra_body"]["provider"]
     assert parameters[0]["max_tokens"] == parameters[1]["max_tokens"] == 4096
 

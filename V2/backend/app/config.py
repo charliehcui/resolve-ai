@@ -50,7 +50,7 @@ def get_settings() -> Settings:
     dimension = int(require_env("EMBEDDING_DIMENSION"))
     if dimension != 1024:
         raise RuntimeError("EMBEDDING_DIMENSION must be 1024 for infra/migrations/001_support.sql")
-    retrieval_mode = os.getenv("RETRIEVAL_MODE", "vector_only")
+    retrieval_mode = os.getenv("RETRIEVAL_MODE", "hybrid")
     if retrieval_mode not in {"vector_only", "hybrid", "hybrid_rerank"}:
         raise RuntimeError("RETRIEVAL_MODE must be vector_only, hybrid, or hybrid_rerank")
     return Settings(

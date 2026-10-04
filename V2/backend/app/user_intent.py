@@ -24,6 +24,8 @@ def action_request(text: str, operation: str) -> bool | None:
                 before, after = clause[:match.start()], clause[match.end():]
                 if re.search(r"\b(?:whether|why)\b|是否|为什么|会不会", before, flags=re.IGNORECASE):
                     continue
+                if operation == "human" and re.match(r".{0,8}(?:是否|为什么|会不会|意味着什么|有何含义|\b(?:whether|why|what does)\b)", after, flags=re.IGNORECASE) and not re.search(r"请(?!求)|帮我|我要|我需要|\b(?:please|can you|i want|i need)\b", before, flags=re.IGNORECASE):
+                    continue
                 if re.search(r"(?:" + NEGATION + r").{0,12}$", before, flags=re.IGNORECASE) or re.match(r"\s*(?:暂时|现在|目前)?(?:不要|不用|不需要|无需|not needed)", after, flags=re.IGNORECASE):
                     decision = False
                 elif re.search(r"请|帮我|麻烦|需要|我要|转|交给|找|联系|\b(?:please|need|want|send|escalate|connect|contact|ask|can you)\b", before, flags=re.IGNORECASE) or match.start() == 0:

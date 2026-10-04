@@ -107,6 +107,24 @@ def rank_ids(chunks: list[RetrievedChunk]) -> list[str]:
     return [chunk.chunk_id for chunk in chunks]
 
 
+def select_source_chunks(chunks: list[RetrievedChunk], limit: int = 5) -> list[RetrievedChunk]:
+    selected = []
+    counts = {}
+    for chunk in chunks:
+        if counts.get(chunk.source_uri, 0) < 2:
+            selected.append(chunk)
+            counts[chunk.source_uri] = counts.get(chunk.source_uri, 0) + 1
+        if len(selected) == limit:
+            break
+    if len(selected) < limit:
+        for chunk in chunks:
+            if chunk not in selected:
+                selected.append(chunk)
+            if len(selected) == limit:
+                break
+    return selected
+
+
 @traceable(name="customer_hybrid_retrieval", run_type="retriever")
 def retrieve_customer_documents(query: str, user: UserContext, conversation_id: str | None, version: str | None = None, product: str | None = None, mode: str = "vector_only", limit: int = 5) -> list[RetrievedChunk]:
     if mode not in RETRIEVAL_MODES:
@@ -122,6 +140,8 @@ def retrieve_customer_documents(query: str, user: UserContext, conversation_id: 
         keyword_chunks = keyword_search(query, fetch_visible_chunks(user, product, version))
         fused_chunks = reciprocal_rank_fusion([vector_chunks, keyword_chunks])
     final_chunks = fused_chunks[:limit]
+    if mode == "hybrid":
+        final_chunks = select_source_chunks(fused_chunks, limit)
     if mode == "hybrid_rerank":
         rerank_started = time.perf_counter()
         try:

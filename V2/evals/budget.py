@@ -91,9 +91,9 @@ def rates(model: str | None = None, tag: str | None = None) -> dict:
     return price
 
 
-def max_call_cost() -> float:
+def max_call_cost(output_limit: int | None = None) -> float:
     price = rates()
-    return int(os.getenv("EVAL_MAX_REQUEST_BYTES", "65536")) * price["prompt"] + int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")) * price["completion"]
+    return int(os.getenv("EVAL_MAX_REQUEST_BYTES", "65536")) * price["prompt"] + (output_limit or int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096"))) * price["completion"]
 
 
 def fallback_budget() -> float:
@@ -112,7 +112,9 @@ def reserve(payload: dict, size: int, scope: str) -> str:
     tags = payload.get("provider", {}).get("only", [])
     price = rates(payload.get("model"), tags[0] if len(tags) == 1 else None)
     output_limit = payload.get("max_tokens", payload.get("max_completion_tokens"))
-    if not isinstance(output_limit, int) or not 0 < output_limit <= int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")):
+    reasoning = payload.get("reasoning") or {}
+    allowed_output_limit = max(int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")), 6144 if scope == "judge" or reasoning.get("effort") == "low" else 0)
+    if not isinstance(output_limit, int) or not 0 < output_limit <= allowed_output_limit:
         raise ValueError("Request output tokens must have a bounded limit")
     # UTF-8 byte count plus framing allowance is deliberately conservative, not a measured token count.
     reserved = (size + 2048) * price["prompt"] + output_limit * price["completion"]
@@ -202,14 +204,15 @@ def cost_summary(run_id: str) -> dict:
 
 
 def preflight(cases: list[dict]) -> dict:
-    # Current Customer pipeline: planner + claims + validation + judge. Support: tool-budget turns plus terminal turns.
-    calls = sum(4 if case["category"] == "rag" else int(os.getenv("SUPPORT_MAX_TOOL_CALLS", "6")) + 2 if case["category"] == "workflow" else 0 for case in cases)
+    # RAG: six structured calls with at most one format recovery each; rubrics are frozen before validation.
+    calls = sum(12 if case["category"] == "rag" else int(os.getenv("SUPPORT_MAX_TOOL_CALLS", "6")) + 2 if case["category"] == "workflow" else 0 for case in cases)
     price = rates()
     recovery = price.get("retry_endpoint") or price.get("fallback_endpoint")
-    recovery_maximum = int(os.getenv("EVAL_MAX_REQUEST_BYTES", "65536")) * recovery["prompt"] + int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")) * recovery["completion"] if recovery else 0
+    output_limit = max(int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096")), 6144 if any(case["category"] == "rag" for case in cases) else 0)
+    recovery_maximum = int(os.getenv("EVAL_MAX_REQUEST_BYTES", "65536")) * recovery["prompt"] + output_limit * recovery["completion"] if recovery else 0
     extra_bound = min(calls * recovery_maximum, fallback_budget())
-    bound = calls * max_call_cost() + extra_bound
+    bound = calls * max_call_cost(output_limit) + extra_bound
     summary = cost_summary(os.environ["EVAL_RUN_ID"])
     if bound > summary["remaining_before_stop_usd"]:
         raise BudgetExceeded("Complete run conservative reservation exceeds remaining cumulative budget")
-    return {"planned_call_bound": calls, "primary_bound_usd": calls * max_call_cost(), "fallback_allowance_usd": extra_bound, "conservative_run_bound_usd": bound, "remaining_before_stop_usd": summary["remaining_before_stop_usd"], "assumption": "Full request-byte cap and full output limit per planned logical call. At most one recovery per call, bounded by the run fallback allowance and cumulative stop. Exhausted allowance blocks recovery and records the case failure; it never silently omits a case. Per-call transactional reserve remains authoritative."}
+    return {"planned_call_bound": calls, "primary_bound_usd": calls * max_call_cost(output_limit), "fallback_allowance_usd": extra_bound, "conservative_run_bound_usd": bound, "remaining_before_stop_usd": summary["remaining_before_stop_usd"], "maximum_output_limit": output_limit, "assumption": "Full request-byte cap and full output limit per planned logical call. At most one recovery per call, bounded by the run fallback allowance and cumulative stop. Exhausted allowance blocks recovery and records the case failure; it never silently omits a case. Per-call transactional reserve remains authoritative."}

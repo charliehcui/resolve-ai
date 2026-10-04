@@ -1,0 +1,3667 @@
+{
+  "version": 1,
+  "ground_truth_changed": false,
+  "agent_receives_rubric": false,
+  "development_only": true,
+  "rubrics": {
+    "23deed81ed314cdd0808dd57007e42bcdd578b7490c874dee61880bbb2c02bdb": {
+      "key": "23deed81ed314cdd0808dd57007e42bcdd578b7490c874dee61880bbb2c02bdb",
+      "question": "company-a 的 2.0 店铺订单同步关闭了。恢复一笔订单时怎么处理开关、由谁批准？开了会补齐所有历史订单吗？",
+      "original_facts": [
+        "方案必须明确包含 enable_order_sync 设置选项，涉及店铺设置变更要管理员批准，普通员工的单笔重试同意不能替代。",
+        "开关开启只是恢复前提，不会自动扫描历史订单，也不会自动把旧 blocked/failed 任务重排。",
+        "当前资料没有可确认的前端开关菜单路线；可以说明经过批准的恢复方案。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "方案必须明确包含 enable_order_sync 设置选项，",
+          "core": true,
+          "reason": "The question asks how to handle the switch when restoring an order; this clause directly answers that the plan must include the enable_order_sync setting option."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "涉及店铺设置变更要管理员批准，",
+          "core": true,
+          "reason": "The question asks who should approve; this clause directly answers that admin approval is required for store setting changes."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "普通员工的单笔重试同意不能替代。",
+          "core": true,
+          "reason": "The question asks about approval; this clause clarifies that a regular employee's single retry consent cannot substitute for admin approval, directly addressing the approval requirement."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "开关开启只是恢复前提，",
+          "core": true,
+          "reason": "The question asks what happens when the switch is turned on; this clause directly states that turning on the switch is only a prerequisite for restoration."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不会自动扫描历史订单，",
+          "core": true,
+          "reason": "The question asks whether turning on the switch will backfill all historical orders; this clause directly answers that it will not automatically scan historical orders."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "也不会自动把旧 blocked/failed 任务重排。",
+          "core": true,
+          "reason": "The question asks about backfilling historical orders; this clause directly states that it will not automatically reschedule old blocked/failed tasks, which is part of the answer."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "当前资料没有可确认的前端开关菜单路线；",
+          "core": false,
+          "reason": "The question does not ask for the front-end menu path; this clause is optional background information about unavailable documentation."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "可以说明经过批准的恢复方案。",
+          "core": false,
+          "reason": "The question asks how to handle the switch and who approves; this clause is an optional suggestion to explain an approved restoration plan, not a direct answer to the specific questions."
+        }
+      ],
+      "usage": {
+        "input_tokens": 585,
+        "output_tokens": 422,
+        "total_tokens": 1007
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "方案必须明确包含 enable_order_sync 设置选项，",
+          "core": true,
+          "reason": "The question asks how to handle the switch when restoring an order; this clause directly answers that the plan must include the enable_order_sync setting option."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "涉及店铺设置变更要管理员批准，",
+          "core": true,
+          "reason": "The question asks who should approve; this clause directly answers that admin approval is required for store setting changes."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "普通员工的单笔重试同意不能替代。",
+          "core": true,
+          "reason": "The question asks about approval; this clause clarifies that a regular employee's single retry consent cannot substitute for admin approval, directly addressing the approval requirement."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "开关开启只是恢复前提，",
+          "core": true,
+          "reason": "The question asks what happens when the switch is turned on; this clause directly states that turning on the switch is only a prerequisite for restoration."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不会自动扫描历史订单，",
+          "core": true,
+          "reason": "The question asks whether turning on the switch will backfill all historical orders; this clause directly answers that it will not automatically scan historical orders."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "也不会自动把旧 blocked/failed 任务重排。",
+          "core": true,
+          "reason": "The question asks about backfilling historical orders; this clause directly states that it will not automatically reschedule old blocked/failed tasks, which is part of the answer."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "当前资料没有可确认的前端开关菜单路线；",
+          "core": false,
+          "reason": "The question does not ask for the front-end menu path; this clause is optional background information about unavailable documentation."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "可以说明经过批准的恢复方案。",
+          "core": false,
+          "reason": "The question asks how to handle the switch and who approves; this clause is an optional suggestion to explain an approved restoration plan, not a direct answer to the specific questions."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "c0c23861a93964a7d884c058109409cabfe8a5482dd67616640be942e45ce4a8": {
+      "key": "c0c23861a93964a7d884c058109409cabfe8a5482dd67616640be942e45ce4a8",
+      "question": "company-a 的 2.0 创建订单时接受 paid、unpaid、cancelled 吗？哪些付款状态符合导入资格？",
+      "original_facts": [
+        "创建接口接受 paid、unpaid、cancelled；接受来源订单不等于商家订单已经导入。",
+        "当前导入要求来源 payment_status=paid；unpaid 和 cancelled 不符合导入资格，其他导入前提仍需满足。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "创建接口接受 paid、unpaid、cancelled；",
+          "core": true,
+          "reason": "Directly answers the first subquestion about which statuses the creation API accepts."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "接受来源订单不等于商家订单已经导入。",
+          "core": false,
+          "reason": "Clarifies a distinction not asked about; optional background."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "当前导入要求来源 payment_status=paid；",
+          "core": true,
+          "reason": "Directly answers the second subquestion about which payment status qualifies for import."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "unpaid 和 cancelled 不符合导入资格，",
+          "core": true,
+          "reason": "Directly answers the second subquestion by specifying which statuses do not qualify."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "其他导入前提仍需满足。",
+          "core": false,
+          "reason": "Reminder that other prerequisites exist; not asked about and not needed for the requested recommendation."
+        }
+      ],
+      "usage": {
+        "input_tokens": 470,
+        "output_tokens": 203,
+        "total_tokens": 673
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "创建接口接受 paid、unpaid、cancelled；",
+          "core": true,
+          "reason": "Directly answers the first subquestion about which statuses the creation API accepts."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "接受来源订单不等于商家订单已经导入。",
+          "core": false,
+          "reason": "Clarifies a distinction not asked about; optional background."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "当前导入要求来源 payment_status=paid；",
+          "core": true,
+          "reason": "Directly answers the second subquestion about which payment status qualifies for import."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "unpaid 和 cancelled 不符合导入资格，",
+          "core": true,
+          "reason": "Directly answers the second subquestion by specifying which statuses do not qualify."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "其他导入前提仍需满足。",
+          "core": false,
+          "reason": "Reminder that other prerequisites exist; not asked about and not needed for the requested recommendation."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "1bc4e9f4567bcc9987d3bcb23b239ce8dc3c67b93947dd1c27588c5ffdea6af1": {
+      "key": "1bc4e9f4567bcc9987d3bcb23b239ce8dc3c67b93947dd1c27588c5ffdea6af1",
+      "question": "company-a 的 2.0 报 SKU_MAPPING_MISSING 是缺什么？应由谁补，按哪些标识核对？",
+      "original_facts": [
+        "该错误表示订单没有当前启用的平台 SKU 到商家 merchant_sku 映射。",
+        "按公司、店铺和 platform_sku 核对 active 映射，交负责配置维护的人补齐后再判断单笔恢复。",
+        "Support 不自动创建或猜测映射。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "该错误表示订单没有当前启用的平台 SKU 到商家 merchant_sku 映射。",
+          "core": true,
+          "reason": "直接回答‘缺什么’（缺少当前启用的平台SKU到商家merchant_sku映射），是核心解释。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "按公司、店铺和 platform_sku 核对 active 映射，",
+          "core": true,
+          "reason": "直接回答‘按哪些标识核对’（按公司、店铺和platform_sku核对active映射），是核心操作指引。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "交负责配置维护的人补齐",
+          "core": true,
+          "reason": "Who maintains the missing mapping is asked; subsequent order recovery is not."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "后再判断单笔恢复。",
+          "core": false,
+          "reason": "Who maintains the missing mapping is asked; subsequent order recovery is not."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "Support 不自动创建或猜测映射。",
+          "core": false,
+          "reason": "说明Support不自动创建或猜测映射，属于补充性限制，不直接回答所问的缺什么、谁补、核对标识，且省略不影响回答正确性。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 472,
+        "output_tokens": 196,
+        "total_tokens": 668
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "该错误表示订单没有当前启用的平台 SKU 到商家 merchant_sku 映射。",
+          "core": true,
+          "reason": "直接回答‘缺什么’（缺少当前启用的平台SKU到商家merchant_sku映射），是核心解释。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "按公司、店铺和 platform_sku 核对 active 映射，",
+          "core": true,
+          "reason": "直接回答‘按哪些标识核对’（按公司、店铺和platform_sku核对active映射），是核心操作指引。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "交负责配置维护的人补齐后再判断单笔恢复。",
+          "core": true,
+          "reason": "直接回答‘应由谁补’（交负责配置维护的人补齐），并说明后续步骤，是核心责任分配。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 2,
+          "text": "Support 不自动创建或猜测映射。",
+          "core": false,
+          "reason": "说明Support不自动创建或猜测映射，属于补充性限制，不直接回答所问的缺什么、谁补、核对标识，且省略不影响回答正确性。"
+        }
+      ],
+      "review_notes": [
+        "Who maintains the missing mapping is asked; subsequent order recovery is not."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "057c005328472ad26853e1f2d4458e18eb11e6882d267db06d0298103760bdd0": {
+      "key": "057c005328472ad26853e1f2d4458e18eb11e6882d267db06d0298103760bdd0",
+      "question": "company-a 的 2.0 要确认订单处理完成，除了任务 completed 和一个商家订单号，还要核对哪些事实？",
+      "original_facts": [
+        "读取当前平台来源和商家处理记录，核对来源事件、SKU、数量、金额及商家实际内容一致。",
+        "商家订单恰好一份且订单任务 completed 才支持完整订单处理完成结论；任务文字或单个订单号不足。",
+        "订单处理完成不证明仓库出库或平台发货回传完成。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "读取当前平台来源和商家处理记录，",
+          "core": true,
+          "reason": "The question asks what facts to check; this clause specifies a required action (read records) to perform the check."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "核对来源事件、SKU、数量、金额及商家实际内容一致。",
+          "core": true,
+          "reason": "The question asks what to verify; this clause lists the specific items to verify (source event, SKU, quantity, amount, consistency)."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "商家订单恰好一份且订单任务 completed 才支持完整订单处理完成结论；",
+          "core": true,
+          "reason": "The question asks what facts are needed; this clause states a necessary condition (exactly one order and task completed) for the conclusion."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "任务文字或单个订单号不足。",
+          "core": false,
+          "reason": "This clause merely states that text or a single order number is insufficient, which is a negative restatement of the core condition in part 2, not an additional fact to check."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "订单处理完成不证明仓库出库或平台发货回传完成。",
+          "core": false,
+          "reason": "The question asks what to check for confirming order processing completion; this clause clarifies what the conclusion does not prove, which is a helpful reminder but not a fact that must be verified to answer the question."
+        }
+      ],
+      "usage": {
+        "input_tokens": 508,
+        "output_tokens": 281,
+        "total_tokens": 789
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "读取当前平台来源和商家处理记录，",
+          "core": true,
+          "reason": "The question asks what facts to check; this clause specifies a required action (read records) to perform the check."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "核对来源事件、SKU、数量、金额及商家实际内容一致。",
+          "core": true,
+          "reason": "The question asks what to verify; this clause lists the specific items to verify (source event, SKU, quantity, amount, consistency)."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "商家订单恰好一份且订单任务 completed 才支持完整订单处理完成结论；",
+          "core": true,
+          "reason": "The question asks what facts are needed; this clause states a necessary condition (exactly one order and task completed) for the conclusion."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "任务文字或单个订单号不足。",
+          "core": false,
+          "reason": "This clause merely states that text or a single order number is insufficient, which is a negative restatement of the core condition in part 2, not an additional fact to check."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "订单处理完成不证明仓库出库或平台发货回传完成。",
+          "core": false,
+          "reason": "The question asks what to check for confirming order processing completion; this clause clarifies what the conclusion does not prove, which is a helpful reminder but not a fact that must be verified to answer the question."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "fa55e0d7ae6940fdbc6f9403fe7c803fcac30f4edfde7c00801ca502dde1163e": {
+      "key": "fa55e0d7ae6940fdbc6f9403fe7c803fcac30f4edfde7c00801ca502dde1163e",
+      "question": "company-a 2.0 有一笔历史 paid 来源订单，但商家没有事件回执、订单任务或订单。没有 task_id 就不能恢复吗？是否能顺便批量补其他历史订单？",
+      "original_facts": [
+        "retry_order_sync 不要求一定已有事件回执或订单任务，可以针对缺失的单笔商家订单。",
+        "仍需当前 paid 来源、启用 SKU 映射、正常授权与开启的同步等完整事实，活动任务应等待，已有内容冲突不能覆盖。",
+        "不支持顺便批量扫描或一键补齐其他历史订单。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "retry_order_sync 不要求一定已有事件回执或订单任务，",
+          "core": true,
+          "reason": "直接回答用户关于‘没有事件回执或订单任务’是否必要的疑问，是核心条件判断。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "可以针对缺失的单笔商家订单。",
+          "core": true,
+          "reason": "直接回答用户关于‘没有task_id就不能恢复’的疑问，说明可以针对缺失订单操作，是核心。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "仍需当前 paid 来源、启用 SKU 映射、正常授权与开启的同步等完整事实，",
+          "core": true,
+          "reason": "列出恢复操作仍需的完整事实条件，缺失这些条件会导致推荐错误或无法执行，是核心。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "活动任务应等待，",
+          "core": false,
+          "reason": "属于背景性提醒，用户未询问活动任务处理，且不影响当前订单恢复的核心判断。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "已有内容冲突不能覆盖。",
+          "core": false,
+          "reason": "属于背景性提醒，用户未询问内容冲突情况，且不影响当前订单恢复的核心判断。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不支持顺便批量扫描或一键补齐其他历史订单。",
+          "core": true,
+          "reason": "直接回答用户关于‘是否能顺便批量补其他历史订单’的明确请求，是核心否定回答。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 549,
+        "output_tokens": 239,
+        "total_tokens": 788
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "retry_order_sync 不要求一定已有事件回执或订单任务，",
+          "core": true,
+          "reason": "直接回答用户关于‘没有事件回执或订单任务’是否必要的疑问，是核心条件判断。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "可以针对缺失的单笔商家订单。",
+          "core": true,
+          "reason": "直接回答用户关于‘没有task_id就不能恢复’的疑问，说明可以针对缺失订单操作，是核心。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "仍需当前 paid 来源、启用 SKU 映射、正常授权与开启的同步等完整事实，",
+          "core": true,
+          "reason": "列出恢复操作仍需的完整事实条件，缺失这些条件会导致推荐错误或无法执行，是核心。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "活动任务应等待，",
+          "core": false,
+          "reason": "属于背景性提醒，用户未询问活动任务处理，且不影响当前订单恢复的核心判断。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "已有内容冲突不能覆盖。",
+          "core": false,
+          "reason": "属于背景性提醒，用户未询问内容冲突情况，且不影响当前订单恢复的核心判断。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不支持顺便批量扫描或一键补齐其他历史订单。",
+          "core": true,
+          "reason": "直接回答用户关于‘是否能顺便批量补其他历史订单’的明确请求，是核心否定回答。"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "7d6a3edad9a64dff33e87e4127dd0dcfea5a95766328ccd994abbbbea0b9fe56": {
+      "key": "7d6a3edad9a64dff33e87e4127dd0dcfea5a95766328ccd994abbbbea0b9fe56",
+      "question": "company-a 2.0 订单任务 completed，但仓库 awaiting_shipment，平台没有运单。completed 算已经发货吗？resend_shipment 能让仓库寄出包裹吗？",
+      "original_facts": [
+        "订单处理 completed 不代表出库；awaiting_shipment 是仓库已收单但还待登记实际发货。",
+        "没有仓库发货事实时应由仓库处理实际发货，不提出 resend_shipment 替代出库。",
+        "resend_shipment 是重发已有发货信息，不能创建包裹或执行出库。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "订单处理 completed 不代表出库；",
+          "core": true,
+          "reason": "Directly answers the explicit question 'completed 算已经发货吗？' by stating it does not represent shipment."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "awaiting_shipment 是仓库已收单但还待登记实际发货。",
+          "core": true,
+          "reason": "Defines 'awaiting_shipment' status, which is necessary to understand the current state and answer the question about shipment status."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "没有仓库发货事实时应由仓库处理实际发货，",
+          "core": true,
+          "reason": "Provides the correct action (warehouse handling) when no shipment fact exists, directly addressing the user's implied need for a solution."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不提出 resend_shipment 替代出库。",
+          "core": true,
+          "reason": "Directly answers the explicit question 'resend_shipment 能让仓库寄出包裹吗？' by stating it should not be used as a substitute for shipment."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "resend_shipment 是重发已有发货信息，",
+          "core": true,
+          "reason": "Defines what 'resend_shipment' does, which is essential to explain why it cannot fulfill the requested action."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能创建包裹或执行出库。",
+          "core": true,
+          "reason": "Directly answers the explicit question by stating resend_shipment cannot create a package or execute shipment."
+        }
+      ],
+      "usage": {
+        "input_tokens": 551,
+        "output_tokens": 305,
+        "total_tokens": 856
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "订单处理 completed 不代表出库；",
+          "core": true,
+          "reason": "Directly answers the explicit question 'completed 算已经发货吗？' by stating it does not represent shipment."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "awaiting_shipment 是仓库已收单但还待登记实际发货。",
+          "core": true,
+          "reason": "Defines 'awaiting_shipment' status, which is necessary to understand the current state and answer the question about shipment status."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "没有仓库发货事实时应由仓库处理实际发货，",
+          "core": true,
+          "reason": "Provides the correct action (warehouse handling) when no shipment fact exists, directly addressing the user's implied need for a solution."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不提出 resend_shipment 替代出库。",
+          "core": true,
+          "reason": "Directly answers the explicit question 'resend_shipment 能让仓库寄出包裹吗？' by stating it should not be used as a substitute for shipment."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "resend_shipment 是重发已有发货信息，",
+          "core": true,
+          "reason": "Defines what 'resend_shipment' does, which is essential to explain why it cannot fulfill the requested action."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能创建包裹或执行出库。",
+          "core": true,
+          "reason": "Directly answers the explicit question by stating resend_shipment cannot create a package or execute shipment."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "f605680e253d2de76eb66e8a8fb496962582278505da67b60fd17d3978762811": {
+      "key": "f605680e253d2de76eb66e8a8fb496962582278505da67b60fd17d3978762811",
+      "question": "company-a 2.0 店铺当前 auth_expired 时 request_reauthorization 会后台替我完成 OAuth 吗？这能证明其他店铺也失效了吗？",
+      "original_facts": [
+        "auth_expired 或 forbidden 可生成 request_reauthorization 指引，由店铺授权人处理平台授权后重新查询。",
+        "指引没有后台执行器，不会替用户完成 OAuth 或生成真实令牌。",
+        "当前失败只属于指定店铺，不能推断其他店铺或整个渠道失效。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "auth_expired 或 forbidden 可生成 request_reauthorization 指引，",
+          "core": false,
+          "reason": "The supplied auth_expired premise identifies the requested guidance; eligibility in other connection states is unasked."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "由店铺授权人处理平台授权",
+          "core": true,
+          "reason": "Who handles OAuth answers the requested execution boundary; a later reread is optional."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "后重新查询。",
+          "core": false,
+          "reason": "Who handles OAuth answers the requested execution boundary; a later reread is optional."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "指引没有后台执行器，",
+          "core": true,
+          "reason": "Directly addresses the first question by stating there is no background executor to automatically complete OAuth."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不会替用户完成 OAuth 或生成真实令牌。",
+          "core": true,
+          "reason": "Directly answers the first question by confirming the system will not complete OAuth or generate a real token for the user."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "当前失败只属于指定店铺，",
+          "core": true,
+          "reason": "Directly addresses the second question by stating the failure is specific to the designated store."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "不能推断其他店铺或整个渠道失效。",
+          "core": true,
+          "reason": "Directly answers the second question by stating that the failure cannot be inferred for other stores or the entire channel."
+        }
+      ],
+      "usage": {
+        "input_tokens": 527,
+        "output_tokens": 275,
+        "total_tokens": 802
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "auth_expired 或 forbidden 可生成 request_reauthorization 指引，",
+          "core": true,
+          "reason": "Directly answers the first question about whether request_reauthorization is generated when auth_expired occurs."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "由店铺授权人处理平台授权后重新查询。",
+          "core": true,
+          "reason": "Completes the description of the reauthorization process, which is necessary to understand the answer to the first question."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "指引没有后台执行器，",
+          "core": true,
+          "reason": "Directly addresses the first question by stating there is no background executor to automatically complete OAuth."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不会替用户完成 OAuth 或生成真实令牌。",
+          "core": true,
+          "reason": "Directly answers the first question by confirming the system will not complete OAuth or generate a real token for the user."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "当前失败只属于指定店铺，",
+          "core": true,
+          "reason": "Directly addresses the second question by stating the failure is specific to the designated store."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能推断其他店铺或整个渠道失效。",
+          "core": true,
+          "reason": "Directly answers the second question by stating that the failure cannot be inferred for other stores or the entire channel."
+        }
+      ],
+      "review_notes": [
+        "The supplied auth_expired premise identifies the requested guidance; eligibility in other connection states is unasked.",
+        "Who handles OAuth answers the requested execution boundary; a later reread is optional."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "31d332de4dd14bca41c000948a261f3fdeef62e941093a7ac65c7931f82daaca": {
+      "key": "31d332de4dd14bca41c000948a261f3fdeef62e941093a7ac65c7931f82daaca",
+      "question": "company-a 2.0 ORDER_SYNC_DISABLED 和 ORDER_NOT_PAID 各代表什么？在旧记录里看到它们就能认定现在仍然这样吗？",
+      "original_facts": [
+        "ORDER_SYNC_DISABLED 是订单同步关闭导致阻断；ORDER_NOT_PAID 是当前来源付款状态不等于 paid、未满足资格。",
+        "旧错误只记录当次尝试，需重新读取指定店铺的开关和当前来源付款状态，不能直接认定现状。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "ORDER_SYNC_DISABLED 是订单同步关闭导致阻断；",
+          "core": true,
+          "reason": "直接回答两个状态的含义，是问题的核心部分。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "ORDER_NOT_PAID 是当前来源付款状态不等于 paid、未满足资格。",
+          "core": true,
+          "reason": "直接回答第二个状态的含义，是问题的核心部分。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "旧错误只记录当次尝试，",
+          "core": true,
+          "reason": "解释旧记录的性质，直接回答能否认定现状的问题。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需重新读取指定店铺的开关和当前来源付款状态，",
+          "core": true,
+          "reason": "说明需要重新读取，直接回答能否认定现状的问题。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能直接认定现状。",
+          "core": true,
+          "reason": "明确结论，直接回答能否认定现状的问题。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 506,
+        "output_tokens": 148,
+        "total_tokens": 654
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "ORDER_SYNC_DISABLED 是订单同步关闭导致阻断；",
+          "core": true,
+          "reason": "直接回答两个状态的含义，是问题的核心部分。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "ORDER_NOT_PAID 是当前来源付款状态不等于 paid、未满足资格。",
+          "core": true,
+          "reason": "直接回答第二个状态的含义，是问题的核心部分。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "旧错误只记录当次尝试，",
+          "core": true,
+          "reason": "解释旧记录的性质，直接回答能否认定现状的问题。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需重新读取指定店铺的开关和当前来源付款状态，",
+          "core": true,
+          "reason": "说明需要重新读取，直接回答能否认定现状的问题。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能直接认定现状。",
+          "core": true,
+          "reason": "明确结论，直接回答能否认定现状的问题。"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "fcb19e669096bb5c6793827670fc92e4e3fb09da257c1f72b868f244b0f7cc73": {
+      "key": "fcb19e669096bb5c6793827670fc92e4e3fb09da257c1f72b868f244b0f7cc73",
+      "question": "company-a 2.0 库存可售量怎么算？实体 80、预留 10、安全库存 5 应发布多少？算成负数怎么办？",
+      "original_facts": [
+        "期望可售量为 max(physical_quantity - reserved_quantity - safety_stock, 0)。",
+        "题设应发布 65；差值负数时取 0，不能发布负库存。",
+        "实体、预留量取自仓库，安全库存取自商家库存规则。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "期望可售量为 max(physical_quantity - reserved_quantity - safety_stock, 0)。",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '库存可售量怎么算' by providing the formula."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "题设应发布 65；",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '应发布多少' with the specific number 65."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "差值负数时取 0，",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '算成负数怎么办' by stating the handling rule."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不能发布负库存。",
+          "core": true,
+          "reason": "Reinforces the answer to '算成负数怎么办' by prohibiting negative inventory release."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "实体、预留量取自仓库，",
+          "core": false,
+          "reason": "Provides helpful background on data sources but does not answer any explicit question/subquestion; omission would not make the recommendation materially wrong."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "安全库存取自商家库存规则。",
+          "core": false,
+          "reason": "Provides helpful background on data sources but does not answer any explicit question/subquestion; omission would not make the recommendation materially wrong."
+        }
+      ],
+      "usage": {
+        "input_tokens": 512,
+        "output_tokens": 275,
+        "total_tokens": 787
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "期望可售量为 max(physical_quantity - reserved_quantity - safety_stock, 0)。",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '库存可售量怎么算' by providing the formula."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "题设应发布 65；",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '应发布多少' with the specific number 65."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "差值负数时取 0，",
+          "core": true,
+          "reason": "Directly answers the explicit subquestion '算成负数怎么办' by stating the handling rule."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不能发布负库存。",
+          "core": true,
+          "reason": "Reinforces the answer to '算成负数怎么办' by prohibiting negative inventory release."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "实体、预留量取自仓库，",
+          "core": false,
+          "reason": "Provides helpful background on data sources but does not answer any explicit question/subquestion; omission would not make the recommendation materially wrong."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "安全库存取自商家库存规则。",
+          "core": false,
+          "reason": "Provides helpful background on data sources but does not answer any explicit question/subquestion; omission would not make the recommendation materially wrong."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "8426e4a068fd77582906a34ba1c413b20a18a88da3b37b4828c70805a31848f2": {
+      "key": "8426e4a068fd77582906a34ba1c413b20a18a88da3b37b4828c70805a31848f2",
+      "question": "company-a 2.0 当前支持自动退款、跨仓调拨和真实商业平台自动授权集成吗？",
+      "original_facts": [
+        "当前不支持自动退款和跨仓调拨。",
+        "重新授权只有用户指引，没有真实 OAuth 执行器；当前渠道是模拟业务标识，不能声称已联通真实平台与仓库。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前不支持自动退款和跨仓调拨。",
+          "core": true,
+          "reason": "直接回答用户询问的自动退款和跨仓调拨支持情况，省略会导致回答不完整或错误。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "重新授权只有用户指引，",
+          "core": false,
+          "reason": "仅描述重新授权的现状，未直接回答用户询问的自动授权集成问题，属于背景信息。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "没有真实 OAuth 执行器；",
+          "core": false,
+          "reason": "The question asks whether automatic real-platform authorization integration is supported; the executor implementation detail is optional once that capability boundary is correctly answered."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "当前渠道是模拟业务标识，",
+          "core": true,
+          "reason": "说明当前渠道为模拟标识，是判断是否已联通真实平台与仓库的关键条件。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能声称已联通真实平台与仓库。",
+          "core": true,
+          "reason": "直接否定已联通真实平台与仓库，是回答用户关于真实商业平台自动授权集成问题的核心结论。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 452,
+        "output_tokens": 201,
+        "total_tokens": 653
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前不支持自动退款和跨仓调拨。",
+          "core": true,
+          "reason": "直接回答用户询问的自动退款和跨仓调拨支持情况，省略会导致回答不完整或错误。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 1,
+          "text": "重新授权只有用户指引，",
+          "core": false,
+          "reason": "仅描述重新授权的现状，未直接回答用户询问的自动授权集成问题，属于背景信息。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "没有真实 OAuth 执行器；",
+          "core": true,
+          "reason": "直接说明没有真实OAuth执行器，是判断是否支持真实商业平台自动授权集成的核心事实。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "当前渠道是模拟业务标识，",
+          "core": true,
+          "reason": "说明当前渠道为模拟标识，是判断是否已联通真实平台与仓库的关键条件。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能声称已联通真实平台与仓库。",
+          "core": true,
+          "reason": "直接否定已联通真实平台与仓库，是回答用户关于真实商业平台自动授权集成问题的核心结论。"
+        }
+      ],
+      "review_notes": [
+        "The question asks whether automatic real-platform authorization integration is supported; the executor implementation detail is optional once that capability boundary is correctly answered."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "5ff9c27dc3c9f739c52513957efcc9eea0c41507ed46546efafda47e5f48a325": {
+      "key": "5ff9c27dc3c9f739c52513957efcc9eea0c41507ed46546efafda47e5f48a325",
+      "question": "company-a 2.0 GetWorkerTask 的 retryable 怎么判断？processing 恰好 60 秒与超过 60 秒、failed 的限流与暂时处理错误有何不同？为 true 就能直接执行吗？",
+      "original_facts": [
+        "processing 必须距 updated_at 严格超过 60 秒才符合该时间条件，恰好 60 秒不符合。",
+        "failed 仅 TRANSIENT_PROCESSING_ERROR 或 WORKER_INTERRUPTED 的 retryable 为真；CHANNEL_RATE_LIMITED 不因临时性而符合，pending/completed/blocked 为假。",
+        "retryable=true 只是候选资格，retry_failed_task 仍须 paid 来源、启用映射、正常同步和授权等业务前提及确认。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "processing 必须距 updated_at 严格超过 60 秒才符合该时间条件，",
+          "core": true,
+          "reason": "直接回答 processing 时间条件的判断标准，是问题明确询问的核心部分。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "恰好 60 秒不符合。",
+          "core": true,
+          "reason": "补充说明恰好 60 秒不符合条件，与上一句共同完整回答 processing 的判断标准。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "failed 仅 TRANSIENT_PROCESSING_ERROR 或 WORKER_INTERRUPTED 的 retryable 为真；",
+          "core": true,
+          "reason": "直接回答 failed 状态下 retryable 为真的具体条件，是问题明确询问的核心部分。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "CHANNEL_RATE_LIMITED 不因临时性而符合，",
+          "core": true,
+          "reason": "直接回答 CHANNEL_RATE_LIMITED 不符合条件，是问题中 '限流' 与 '暂时处理错误' 区别的核心说明。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "pending/completed/blocked 为假。",
+          "core": false,
+          "reason": "The question supplies processing and failed states; unasked pending/completed/blocked branches are optional."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "retryable=true 只是候选资格，",
+          "core": true,
+          "reason": "直接回答 '为 true 就能直接执行吗' 的核心否定，说明 retryable=true 仅是候选资格。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "retry_failed_task 仍须 paid 来源、启用映射、正常同步和授权等业务前提及确认。",
+          "core": true,
+          "reason": "具体说明 retryable=true 后仍需满足的业务前提，完整回答 '不能直接执行' 的原因。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 669,
+        "output_tokens": 284,
+        "total_tokens": 953
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "processing 必须距 updated_at 严格超过 60 秒才符合该时间条件，",
+          "core": true,
+          "reason": "直接回答 processing 时间条件的判断标准，是问题明确询问的核心部分。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "恰好 60 秒不符合。",
+          "core": true,
+          "reason": "补充说明恰好 60 秒不符合条件，与上一句共同完整回答 processing 的判断标准。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "failed 仅 TRANSIENT_PROCESSING_ERROR 或 WORKER_INTERRUPTED 的 retryable 为真；",
+          "core": true,
+          "reason": "直接回答 failed 状态下 retryable 为真的具体条件，是问题明确询问的核心部分。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "CHANNEL_RATE_LIMITED 不因临时性而符合，",
+          "core": true,
+          "reason": "直接回答 CHANNEL_RATE_LIMITED 不符合条件，是问题中 '限流' 与 '暂时处理错误' 区别的核心说明。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "pending/completed/blocked 为假。",
+          "core": true,
+          "reason": "补充说明其他状态为假，完整回答 failed 及非 failed 状态的判断规则。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "retryable=true 只是候选资格，",
+          "core": true,
+          "reason": "直接回答 '为 true 就能直接执行吗' 的核心否定，说明 retryable=true 仅是候选资格。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "retry_failed_task 仍须 paid 来源、启用映射、正常同步和授权等业务前提及确认。",
+          "core": true,
+          "reason": "具体说明 retryable=true 后仍需满足的业务前提，完整回答 '不能直接执行' 的原因。"
+        }
+      ],
+      "review_notes": [
+        "The question supplies processing and failed states; unasked pending/completed/blocked branches are optional."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "765a855ac743c142ff3ec35dbb3fd2fde0cf55b03fcec17627a28e02c1d9a228": {
+      "key": "765a855ac743c142ff3ec35dbb3fd2fde0cf55b03fcec17627a28e02c1d9a228",
+      "question": "company-a 2.0 Worker 启动恢复会定期扫描所有失败任务吗？processing、failed、blocked、unknown 分别会怎样？",
+      "original_facts": [
+        "启动时 recover_interrupted_tasks 将六类队列的 processing 重置为 pending 并清除错误；这是启动行为，不是定时清理。",
+        "该启动恢复不包括 failed、blocked、unknown；日常循环不会扫描所有失败任务并通用重试。",
+        "不能保证服务自动重启或给出固定恢复时间。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "启动时 recover_interrupted_tasks 将六类队列的 processing 重置为 pending 并清除错误；",
+          "core": true,
+          "reason": "Directly answers the question about processing tasks during startup."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "这是启动行为，",
+          "core": false,
+          "reason": "Helpful background clarifying the nature of the startup behavior."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不是定时清理。",
+          "core": true,
+          "reason": "Directly answers the question about periodic scanning; omission would mislead."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "该启动恢复不包括 failed、blocked、unknown；",
+          "core": true,
+          "reason": "Directly answers the question about failed, blocked, unknown tasks."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "日常循环不会扫描所有失败任务并通用重试。",
+          "core": true,
+          "reason": "Directly answers the question about periodic scanning of all failed tasks."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能保证服务自动重启或给出固定恢复时间。",
+          "core": false,
+          "reason": "Helpful background; not required to answer the specific question about scanning and statuses."
+        }
+      ],
+      "usage": {
+        "input_tokens": 529,
+        "output_tokens": 228,
+        "total_tokens": 757
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "启动时 recover_interrupted_tasks 将六类队列的 processing 重置为 pending 并清除错误；",
+          "core": true,
+          "reason": "Directly answers the question about processing tasks during startup."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "这是启动行为，",
+          "core": false,
+          "reason": "Helpful background clarifying the nature of the startup behavior."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不是定时清理。",
+          "core": true,
+          "reason": "Directly answers the question about periodic scanning; omission would mislead."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "该启动恢复不包括 failed、blocked、unknown；",
+          "core": true,
+          "reason": "Directly answers the question about failed, blocked, unknown tasks."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "日常循环不会扫描所有失败任务并通用重试。",
+          "core": true,
+          "reason": "Directly answers the question about periodic scanning of all failed tasks."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能保证服务自动重启或给出固定恢复时间。",
+          "core": false,
+          "reason": "Helpful background; not required to answer the specific question about scanning and statuses."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "96e9e62a7b0a6ec5d1024fcee88b63d42705e8bd7788e93f25f8ac714a41d668": {
+      "key": "96e9e62a7b0a6ec5d1024fcee88b63d42705e8bd7788e93f25f8ac714a41d668",
+      "question": "company-a 2.0 仓库刚更新 20 秒，平台仍是旧版本时应等待吗？如果两端同版本而数量错了，也必须等满 30 秒吗？",
+      "original_facts": [
+        "版本不同且仓库更新不超过 30 秒属于 waiting，应复查同一库存对象。",
+        "同版本数量不符直接是 QUANTITY_MISMATCH，不适用上述等待豁免。",
+        "30 秒是评估窗口，不是保证发布或自动修好时间；waiting 不满足刷新条件。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "版本不同且仓库更新不超过 30 秒属于 waiting，",
+          "core": true,
+          "reason": "Directly answers the first question: when versions differ and warehouse update is within 30 seconds, waiting is the rule."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "应复查同一库存对象。",
+          "core": false,
+          "reason": "Optional implementation detail about what to do during waiting; not required to answer whether to wait."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "同版本数量不符直接是 QUANTITY_MISMATCH，",
+          "core": true,
+          "reason": "Directly answers the second question: same version with quantity mismatch is QUANTITY_MISMATCH, not waiting."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不适用上述等待豁免。",
+          "core": true,
+          "reason": "Directly answers the second question: the waiting exemption does not apply to same-version quantity mismatch."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "30 秒是评估窗口，",
+          "core": false,
+          "reason": "Helpful background clarifying the 30-second window; not required to answer either question."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不是保证发布或自动修好时间；",
+          "core": false,
+          "reason": "Helpful background clarifying what the window is not; not required to answer either question."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "waiting 不满足刷新条件。",
+          "core": false,
+          "reason": "Helpful background about waiting not meeting refresh conditions; not required to answer either question."
+        }
+      ],
+      "usage": {
+        "input_tokens": 553,
+        "output_tokens": 309,
+        "total_tokens": 862
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "版本不同且仓库更新不超过 30 秒属于 waiting，",
+          "core": true,
+          "reason": "Directly answers the first question: when versions differ and warehouse update is within 30 seconds, waiting is the rule."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "应复查同一库存对象。",
+          "core": false,
+          "reason": "Optional implementation detail about what to do during waiting; not required to answer whether to wait."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "同版本数量不符直接是 QUANTITY_MISMATCH，",
+          "core": true,
+          "reason": "Directly answers the second question: same version with quantity mismatch is QUANTITY_MISMATCH, not waiting."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不适用上述等待豁免。",
+          "core": true,
+          "reason": "Directly answers the second question: the waiting exemption does not apply to same-version quantity mismatch."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "30 秒是评估窗口，",
+          "core": false,
+          "reason": "Helpful background clarifying the 30-second window; not required to answer either question."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不是保证发布或自动修好时间；",
+          "core": false,
+          "reason": "Helpful background clarifying what the window is not; not required to answer either question."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "waiting 不满足刷新条件。",
+          "core": false,
+          "reason": "Helpful background about waiting not meeting refresh conditions; not required to answer either question."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "c0a9d311124d8c014c507550148886344dccbcb0c6dd1c1b988816766421b522": {
+      "key": "c0a9d311124d8c014c507550148886344dccbcb0c6dd1c1b988816766421b522",
+      "question": "company-a 2.0 仓库 version=5、平台 source_version=6，已超过库存窗口却显示 VERSION_NOT_PUBLISHED。这一定是平台落后吗？rule_version 和店铺 version 能代替仓库版本来比吗？",
+      "original_facts": [
+        "VERSION_NOT_PUBLISHED 只表示窗口外版本不相等，不表达领先方向；题设平台领先仓库。",
+        "平台领先不能 refresh_inventory 发布旧版本覆盖，需要人工核查。",
+        "应比较同一库存对象的仓库 version 与平台 source_version；rule_version 和店铺 version 是不同计数器。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "VERSION_NOT_PUBLISHED 只表示窗口外版本不相等，",
+          "core": true,
+          "reason": "Directly answers the user's question about what VERSION_NOT_PUBLISHED means; omission would leave the meaning unclear and the recommendation materially wrong."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不表达领先方向；",
+          "core": true,
+          "reason": "Completes the definition of VERSION_NOT_PUBLISHED from the same fact; omission would make the explanation incomplete and misleading."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "题设平台领先仓库。",
+          "core": true,
+          "reason": "Directly addresses the user's question '这一定是平台落后吗？' by stating the opposite direction; omission would leave the core dispute unresolved."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "平台领先不能 refresh_inventory 发布旧版本覆盖，",
+          "core": false,
+          "reason": "The question asks version direction and counters, not permission to execute inventory refresh."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "需要人工核查。",
+          "core": false,
+          "reason": "Manual investigation is an unasked next step after interpreting version direction."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "应比较同一库存对象的仓库 version 与平台 source_version；",
+          "core": false,
+          "reason": "The warehouse version and platform source_version are supplied premises; restating the comparison fields is optional. Direction and non-interchangeable counters remain core."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "rule_version 和店铺 version 是不同计数器。",
+          "core": true,
+          "reason": "Completes the explanation of why rule_version and 店铺 version cannot substitute; omission would leave the reasoning incomplete and the answer misleading."
+        }
+      ],
+      "usage": {
+        "input_tokens": 574,
+        "output_tokens": 373,
+        "total_tokens": 947
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "VERSION_NOT_PUBLISHED 只表示窗口外版本不相等，",
+          "core": true,
+          "reason": "Directly answers the user's question about what VERSION_NOT_PUBLISHED means; omission would leave the meaning unclear and the recommendation materially wrong."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不表达领先方向；",
+          "core": true,
+          "reason": "Completes the definition of VERSION_NOT_PUBLISHED from the same fact; omission would make the explanation incomplete and misleading."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "题设平台领先仓库。",
+          "core": true,
+          "reason": "Directly addresses the user's question '这一定是平台落后吗？' by stating the opposite direction; omission would leave the core dispute unresolved."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "平台领先不能 refresh_inventory 发布旧版本覆盖，",
+          "core": true,
+          "reason": "Answers the implicit question of what action to take given the platform-leading scenario; omission would make the recommendation unsafe (allowing an invalid operation)."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "需要人工核查。",
+          "core": true,
+          "reason": "Completes the required action from the same fact; omission would leave the recommendation incomplete and potentially unsafe."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "应比较同一库存对象的仓库 version 与平台 source_version；",
+          "core": true,
+          "reason": "Directly answers the user's question 'rule_version 和店铺 version 能代替仓库版本来比吗？' by specifying the correct comparison; omission would make the answer materially wrong."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "rule_version 和店铺 version 是不同计数器。",
+          "core": true,
+          "reason": "Completes the explanation of why rule_version and 店铺 version cannot substitute; omission would leave the reasoning incomplete and the answer misleading."
+        }
+      ],
+      "review_notes": [
+        "The question asks version direction and counters, not permission to execute inventory refresh.",
+        "Manual investigation is an unasked next step after interpreting version direction.",
+        "The warehouse version and platform source_version are supplied premises; restating the comparison fields is optional. Direction and non-interchangeable counters remain core."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "2adb7b64b04c86f1704f53f19d31f34eca3d03f61a684e27f80e45e8707c9093": {
+      "key": "2adb7b64b04c86f1704f53f19d31f34eca3d03f61a684e27f80e45e8707c9093",
+      "question": "company-a 2.0 什么条件才允许 refresh_inventory？订单同步关闭、已有 processing 库存发布任务、来源信息不足分别有什么影响？",
+      "original_facts": [
+        "需要 assessment=difference、完整仓库和规则快照、当前 authorized、平台版本不高于仓库，且没有 pending/processing 库存发布任务。",
+        "订单同步开关不是库存开关，关闭订单同步本身不阻止符合条件的库存刷新。",
+        "活动发布任务应等待；waiting 或 insufficient_information 不能刷新，应复查或补事实。",
+        "刷新只发布当前仓库快照，不修改实体量、预留量、安全库存或创建映射。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "需要 assessment=difference、完整仓库和规则快照、当前 authorized、平台版本不高于仓库，",
+          "core": true,
+          "reason": "直接回答‘什么条件才允许refresh_inventory’中的核心条件。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "且没有 pending/processing 库存发布任务。",
+          "core": true,
+          "reason": "直接回答‘什么条件才允许refresh_inventory’中的禁止条件。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "订单同步开关不是库存开关，",
+          "core": true,
+          "reason": "直接回答‘订单同步关闭有什么影响’中的定性解释。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "关闭订单同步本身不阻止符合条件的库存刷新。",
+          "core": true,
+          "reason": "直接回答‘订单同步关闭有什么影响’中的具体结论。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "活动发布任务应等待；",
+          "core": true,
+          "reason": "直接回答‘已有processing库存发布任务有什么影响’中的处理建议。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "waiting 或 insufficient_information 不能刷新，",
+          "core": true,
+          "reason": "直接回答‘来源信息不足有什么影响’中的禁止刷新结论。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "应复查或补事实。",
+          "core": false,
+          "reason": "‘应复查或补事实’是未明确请求的后续操作建议，属于可选背景。"
+        },
+        {
+          "part_index": 7,
+          "fact_index": 3,
+          "text": "刷新只发布当前仓库快照，",
+          "core": false,
+          "reason": "‘刷新只发布当前仓库快照’是未请求的补充说明，不影响核心回答。"
+        },
+        {
+          "part_index": 8,
+          "fact_index": 3,
+          "text": "不修改实体量、预留量、安全库存或创建映射。",
+          "core": false,
+          "reason": "‘不修改实体量…’是未请求的细节列举，属于可选背景。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 646,
+        "output_tokens": 316,
+        "total_tokens": 962
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "需要 assessment=difference、完整仓库和规则快照、当前 authorized、平台版本不高于仓库，",
+          "core": true,
+          "reason": "直接回答‘什么条件才允许refresh_inventory’中的核心条件。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "且没有 pending/processing 库存发布任务。",
+          "core": true,
+          "reason": "直接回答‘什么条件才允许refresh_inventory’中的禁止条件。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "订单同步开关不是库存开关，",
+          "core": true,
+          "reason": "直接回答‘订单同步关闭有什么影响’中的定性解释。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "关闭订单同步本身不阻止符合条件的库存刷新。",
+          "core": true,
+          "reason": "直接回答‘订单同步关闭有什么影响’中的具体结论。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "活动发布任务应等待；",
+          "core": true,
+          "reason": "直接回答‘已有processing库存发布任务有什么影响’中的处理建议。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "waiting 或 insufficient_information 不能刷新，",
+          "core": true,
+          "reason": "直接回答‘来源信息不足有什么影响’中的禁止刷新结论。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "应复查或补事实。",
+          "core": false,
+          "reason": "‘应复查或补事实’是未明确请求的后续操作建议，属于可选背景。"
+        },
+        {
+          "part_index": 7,
+          "fact_index": 3,
+          "text": "刷新只发布当前仓库快照，",
+          "core": false,
+          "reason": "‘刷新只发布当前仓库快照’是未请求的补充说明，不影响核心回答。"
+        },
+        {
+          "part_index": 8,
+          "fact_index": 3,
+          "text": "不修改实体量、预留量、安全库存或创建映射。",
+          "core": false,
+          "reason": "‘不修改实体量…’是未请求的细节列举，属于可选背景。"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "71cfccd5e1921d173e2f73bd173b5bb47fc05eee8b951f1645b4f0f48715becf": {
+      "key": "71cfccd5e1921d173e2f73bd173b5bb47fc05eee8b951f1645b4f0f48715becf",
+      "question": "company-a 2.0 商家尚未建订单，处理记录 merchant_sku=null；订单映射读取却 active=true。库存另报 STOCK_MAPPING_MISSING。是不是订单映射仍缺失，刷库存就能补好？",
+      "original_facts": [
+        "处理记录 merchant_sku 关联既有商家订单，未建订单可以为空，不证明启用订单映射缺失。",
+        "订单映射使用 merchant_sku，库存规则使用 warehouse_sku、safety_stock、rule_version；STOCK_MAPPING_MISSING 指库存规则不足。",
+        "库存刷新不会补订单映射或自动建立库存规则，需要对应配置事实。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "处理记录 merchant_sku 关联既有商家订单，",
+          "core": false,
+          "reason": "Helpful internal field definition, not a required answer to the explicit evidence-sufficiency and refresh questions. Core still requires null is compatible with no merchant order, null does not prove missing mapping, STOCK_MAPPING_MISSING concerns inventory rules, and refresh cannot create mappings or rules."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "未建订单可以为空，",
+          "core": true,
+          "reason": "Directly addresses the question's premise that null merchant_sku implies missing mapping, by explaining null is allowed for uncreated orders."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不证明启用订单映射缺失。",
+          "core": true,
+          "reason": "Directly negates the question's assumption that null merchant_sku proves missing order mapping."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "订单映射使用 merchant_sku，",
+          "core": false,
+          "reason": "Helpful internal field definition, not a required answer to the explicit evidence-sufficiency and refresh questions. Core still requires null is compatible with no merchant order, null does not prove missing mapping, STOCK_MAPPING_MISSING concerns inventory rules, and refresh cannot create mappings or rules."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "库存规则使用 warehouse_sku、safety_stock、rule_version；",
+          "core": false,
+          "reason": "Provides background on inventory rule fields, not directly answering whether order mapping is missing or whether stock refresh fixes it."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "STOCK_MAPPING_MISSING 指库存规则不足。",
+          "core": true,
+          "reason": "Defines STOCK_MAPPING_MISSING, directly relevant to the question's mention of that status."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "库存刷新不会补订单映射或自动建立库存规则，",
+          "core": true,
+          "reason": "Directly answers the question's core: whether stock refresh can fix the missing mapping or rules."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "需要对应配置事实。",
+          "core": false,
+          "reason": "General statement about needing configuration, not directly answering the specific question about order mapping or stock refresh."
+        }
+      ],
+      "usage": {
+        "input_tokens": 611,
+        "output_tokens": 362,
+        "total_tokens": 973
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "处理记录 merchant_sku 关联既有商家订单，",
+          "core": true,
+          "reason": "Directly addresses the question's premise that merchant_sku being null indicates missing order mapping, by clarifying the relationship."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "未建订单可以为空，",
+          "core": true,
+          "reason": "Directly addresses the question's premise that null merchant_sku implies missing mapping, by explaining null is allowed for uncreated orders."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不证明启用订单映射缺失。",
+          "core": true,
+          "reason": "Directly negates the question's assumption that null merchant_sku proves missing order mapping."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "订单映射使用 merchant_sku，",
+          "core": true,
+          "reason": "Clarifies what order mapping uses, directly relevant to the question about order mapping status."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "库存规则使用 warehouse_sku、safety_stock、rule_version；",
+          "core": false,
+          "reason": "Provides background on inventory rule fields, not directly answering whether order mapping is missing or whether stock refresh fixes it."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "STOCK_MAPPING_MISSING 指库存规则不足。",
+          "core": true,
+          "reason": "Defines STOCK_MAPPING_MISSING, directly relevant to the question's mention of that status."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "库存刷新不会补订单映射或自动建立库存规则，",
+          "core": true,
+          "reason": "Directly answers the question's core: whether stock refresh can fix the missing mapping or rules."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "需要对应配置事实。",
+          "core": false,
+          "reason": "General statement about needing configuration, not directly answering the specific question about order mapping or stock refresh."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it.",
+      "scope_review": {
+        "type": "human_question_scope_correction",
+        "original_facts_changed": false,
+        "discovered_during": "targeted answer diagnosis",
+        "criterion": "Relevance alone does not make an internal schema detail required. Explicit requested conclusions remain core; omitted optional definitions remain absent in overall coverage.",
+        "answer_used_as_requirement": false
+      }
+    },
+    "6c5dbdcef12f4d10e23a7bb49d149458a9110a515e52687ff1603925947d8f68": {
+      "key": "6c5dbdcef12f4d10e23a7bb49d149458a9110a515e52687ff1603925947d8f68",
+      "question": "company-a 2.0 读取服务返回 503、retryable=true，但还没读到订单任务。能直接断定任务可 retry_failed_task 吗？读取失败等于 not_found 吗？",
+      "original_facts": [
+        "503/retryable=true 是读取请求层面的暂时性，不等于订单任务的 retryable 或 retry_failed_task 资格。",
+        "未成功取得任务时其当前状态仍未知，需补成功读取或人工调查。",
+        "读取失败与指定范围 not_found 不同，不能据此认定对象不存在。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "503/retryable=true 是读取请求层面的暂时性，",
+          "core": true,
+          "reason": "Directly answers the first subquestion: whether a 503/retryable=true response allows directly concluding the task can be retry_failed_task. The clause states it is a request-level temporary condition, not equivalent to task-level retry eligibility."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不等于订单任务的 retryable 或 retry_failed_task 资格。",
+          "core": true,
+          "reason": "Completes the answer to the first subquestion by explicitly negating the equivalence between request-level retryable and task-level retry_failed_task qualification."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "未成功取得任务时其当前状态仍未知，",
+          "core": true,
+          "reason": "Directly addresses the premise that the task has not been read yet; explains that without successful reading, the task's current status is unknown, which is essential to the core question about whether a conclusion can be drawn."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需补成功读取或人工调查。",
+          "core": false,
+          "reason": "Provides a recommended next step (supplement with successful read or manual investigation), which is optional advice rather than a core answer to the yes/no question or the definition question."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "读取失败与指定范围 not_found 不同，",
+          "core": true,
+          "reason": "Directly answers the second subquestion: whether a read failure equals not_found. States they are different, which is core to the definition question."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能据此认定对象不存在。",
+          "core": true,
+          "reason": "Completes the answer to the second subquestion by stating the consequence: cannot conclude the object does not exist based on read failure alone."
+        }
+      ],
+      "usage": {
+        "input_tokens": 546,
+        "output_tokens": 367,
+        "total_tokens": 913
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "503/retryable=true 是读取请求层面的暂时性，",
+          "core": true,
+          "reason": "Directly answers the first subquestion: whether a 503/retryable=true response allows directly concluding the task can be retry_failed_task. The clause states it is a request-level temporary condition, not equivalent to task-level retry eligibility."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不等于订单任务的 retryable 或 retry_failed_task 资格。",
+          "core": true,
+          "reason": "Completes the answer to the first subquestion by explicitly negating the equivalence between request-level retryable and task-level retry_failed_task qualification."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "未成功取得任务时其当前状态仍未知，",
+          "core": true,
+          "reason": "Directly addresses the premise that the task has not been read yet; explains that without successful reading, the task's current status is unknown, which is essential to the core question about whether a conclusion can be drawn."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需补成功读取或人工调查。",
+          "core": false,
+          "reason": "Provides a recommended next step (supplement with successful read or manual investigation), which is optional advice rather than a core answer to the yes/no question or the definition question."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "读取失败与指定范围 not_found 不同，",
+          "core": true,
+          "reason": "Directly answers the second subquestion: whether a read failure equals not_found. States they are different, which is core to the definition question."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "不能据此认定对象不存在。",
+          "core": true,
+          "reason": "Completes the answer to the second subquestion by stating the consequence: cannot conclude the object does not exist based on read failure alone."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "e206dab3b4325e57cfd400a980fc69bed1185d732f20eaafdc88ff9ea1c8d26a": {
+      "key": "e206dab3b4325e57cfd400a980fc69bed1185d732f20eaafdc88ff9ea1c8d26a",
+      "question": "company-a 2.0 授权查询接口返回 forbidden 就说明 connection_status=forbidden 吗？若最新成功读取 authorized，旧 CHANNEL_AUTH_EXPIRED 是否还能证明当前过期？",
+      "original_facts": [
+        "查询返回 forbidden 可能是读取访问被拒，不等于成功取得店铺 connection_status=forbidden，当前连接需成功读取确认。",
+        "旧授权错误是历史尝试；最新 authorized 是当前事实，二者可以同时存在。",
+        "当前授权正常后应检查业务任务等条件，不能仅凭旧错误要求再次授权或声称旧任务自动重跑。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "查询返回 forbidden 可能是读取访问被拒，",
+          "core": true,
+          "reason": "Directly answers the first question: 'forbidden' from the API does not necessarily mean connection_status=forbidden."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不等于成功取得店铺 connection_status=forbidden，",
+          "core": true,
+          "reason": "Directly answers the first question: clarifies that the API response is not equivalent to the actual status."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "当前连接需成功读取确认。",
+          "core": true,
+          "reason": "Directly answers the first question: explains that the current connection status must be confirmed by a successful read."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "旧授权错误是历史尝试；",
+          "core": true,
+          "reason": "Directly answers the second question: states that the old error is historical, implying it does not prove current expiration."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "最新 authorized 是当前事实，",
+          "core": true,
+          "reason": "Directly answers the second question: states that the latest 'authorized' is the current fact, overriding the old error."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "二者可以同时存在。",
+          "core": true,
+          "reason": "Directly answers the second question: confirms that both can exist simultaneously, meaning the old error does not prove current expiration."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "当前授权正常后应检查业务任务等条件，",
+          "core": false,
+          "reason": "Provides helpful background about what to do after authorization is normal, but is not required to answer either question."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "不能仅凭旧错误要求再次授权或声称旧任务自动重跑。",
+          "core": false,
+          "reason": "Provides helpful guidance on what not to do, but is not required to answer either question."
+        }
+      ],
+      "usage": {
+        "input_tokens": 597,
+        "output_tokens": 371,
+        "total_tokens": 968
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "查询返回 forbidden 可能是读取访问被拒，",
+          "core": true,
+          "reason": "Directly answers the first question: 'forbidden' from the API does not necessarily mean connection_status=forbidden."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不等于成功取得店铺 connection_status=forbidden，",
+          "core": true,
+          "reason": "Directly answers the first question: clarifies that the API response is not equivalent to the actual status."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "当前连接需成功读取确认。",
+          "core": true,
+          "reason": "Directly answers the first question: explains that the current connection status must be confirmed by a successful read."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "旧授权错误是历史尝试；",
+          "core": true,
+          "reason": "Directly answers the second question: states that the old error is historical, implying it does not prove current expiration."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "最新 authorized 是当前事实，",
+          "core": true,
+          "reason": "Directly answers the second question: states that the latest 'authorized' is the current fact, overriding the old error."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "二者可以同时存在。",
+          "core": true,
+          "reason": "Directly answers the second question: confirms that both can exist simultaneously, meaning the old error does not prove current expiration."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "当前授权正常后应检查业务任务等条件，",
+          "core": false,
+          "reason": "Provides helpful background about what to do after authorization is normal, but is not required to answer either question."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "不能仅凭旧错误要求再次授权或声称旧任务自动重跑。",
+          "core": false,
+          "reason": "Provides helpful guidance on what not to do, but is not required to answer either question."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "6c26422f939b10438ecfb4e83dd7f17d2aa41cf30e173821fe5470146a3f0d86": {
+      "key": "6c26422f939b10438ecfb4e83dd7f17d2aa41cf30e173821fe5470146a3f0d86",
+      "question": "company-a 2.0 恢复提交超时，原 action_id 的回执也暂时读失败。能认定完全没执行，换新编号再提交吗？受理成功就能报告修好了吗？",
+      "original_facts": [
+        "请求异常或结果未知应先读取原 action_id 的既有回执及业务事实；回执读失败仍是未知，没有回执不等于业务未执行。",
+        "有效执行租约期间等待，不能换编号绕过幂等或盲目并行再提交。",
+        "受理回执与独立业务验证是不同阶段，验证通过才可报告恢复成功；短轮询未通过不能证明业务永远失败。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "请求异常或结果未知应先读取原 action_id 的既有回执及业务事实；",
+          "core": true,
+          "reason": "The question asks whether to re-submit with a new ID after a timeout and receipt read failure. This clause directly answers that by stating the required first step (read existing receipt and business facts), making omission materially misleading."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "回执读失败仍是未知，",
+          "core": true,
+          "reason": "The question assumes receipt read failure means no execution. This clause directly contradicts that assumption by clarifying the status remains unknown, which is essential to avoid an unsafe conclusion."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "没有回执不等于业务未执行。",
+          "core": true,
+          "reason": "The question implies no receipt equals no execution. This clause directly refutes that implication, which is core to correctly answering whether re-submission is safe."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "有效执行租约期间等待，",
+          "core": true,
+          "reason": "The question asks about re-submitting with a new ID. This clause establishes the context of an effective lease period, which is necessary to understand why re-submission is prohibited."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能换编号绕过幂等或盲目并行再提交。",
+          "core": true,
+          "reason": "The question explicitly asks whether to re-submit with a new ID. This clause directly answers that it cannot be done, making omission materially wrong."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "受理回执与独立业务验证是不同阶段，",
+          "core": true,
+          "reason": "The question asks whether acceptance success means repair is complete. This clause distinguishes receipt from business verification, which is core to answering that question correctly."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "验证通过才可报告恢复成功；",
+          "core": true,
+          "reason": "The question asks if acceptance success allows reporting repair. This clause directly states verification is required first, making omission materially misleading."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "短轮询未通过不能证明业务永远失败。",
+          "core": true,
+          "reason": "The question implies short polling failure might mean permanent failure. This clause directly corrects that assumption, which is essential to avoid an unsafe recommendation."
+        }
+      ],
+      "usage": {
+        "input_tokens": 616,
+        "output_tokens": 445,
+        "total_tokens": 1061
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "请求异常或结果未知应先读取原 action_id 的既有回执及业务事实；",
+          "core": true,
+          "reason": "The question asks whether to re-submit with a new ID after a timeout and receipt read failure. This clause directly answers that by stating the required first step (read existing receipt and business facts), making omission materially misleading."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "回执读失败仍是未知，",
+          "core": true,
+          "reason": "The question assumes receipt read failure means no execution. This clause directly contradicts that assumption by clarifying the status remains unknown, which is essential to avoid an unsafe conclusion."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "没有回执不等于业务未执行。",
+          "core": true,
+          "reason": "The question implies no receipt equals no execution. This clause directly refutes that implication, which is core to correctly answering whether re-submission is safe."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "有效执行租约期间等待，",
+          "core": true,
+          "reason": "The question asks about re-submitting with a new ID. This clause establishes the context of an effective lease period, which is necessary to understand why re-submission is prohibited."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不能换编号绕过幂等或盲目并行再提交。",
+          "core": true,
+          "reason": "The question explicitly asks whether to re-submit with a new ID. This clause directly answers that it cannot be done, making omission materially wrong."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "受理回执与独立业务验证是不同阶段，",
+          "core": true,
+          "reason": "The question asks whether acceptance success means repair is complete. This clause distinguishes receipt from business verification, which is core to answering that question correctly."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "验证通过才可报告恢复成功；",
+          "core": true,
+          "reason": "The question asks if acceptance success allows reporting repair. This clause directly states verification is required first, making omission materially misleading."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "短轮询未通过不能证明业务永远失败。",
+          "core": true,
+          "reason": "The question implies short polling failure might mean permanent failure. This clause directly corrects that assumption, which is essential to avoid an unsafe recommendation."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "af3b700b232f5c5b76216bf82c3747446c432cd5f5043eb89b7c09ce755a7d85": {
+      "key": "af3b700b232f5c5b76216bf82c3747446c432cd5f5043eb89b7c09ce755a7d85",
+      "question": "company-a 2.0 普通员工在自己的会话确认不改设置的单笔恢复，需要管理员吗？方案创建 12 分钟后才同意，能从同意起再算 10 分钟吗？",
+      "original_facts": [
+        "不改同步设置的四类普通低风险恢复为 user_confirmation，staff 可在自己的会话范围确认，不是全部动作都要求管理员。",
+        "方案从创建起 10 分钟有效，批准不重置截止时间；创建 12 分钟后原方案已过期，不能执行。",
+        "应重新调查、生成新方案并针对新范围确认，不能沿用旧批准修改有效时间。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "不改同步设置的四类普通低风险恢复为 user_confirmation，",
+          "core": true,
+          "reason": "Directly answers the first question about whether the recovery needs an administrator."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "staff 可在自己的会话范围确认，",
+          "core": true,
+          "reason": "Directly answers the first question by specifying that staff can confirm within their own session."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不是全部动作都要求管理员。",
+          "core": true,
+          "reason": "Directly answers the first question by clarifying that not all actions require an administrator."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "方案从创建起 10 分钟有效，",
+          "core": true,
+          "reason": "Directly answers the second question about the 10-minute validity period from creation."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "批准不重置截止时间；",
+          "core": true,
+          "reason": "Directly answers the second question by stating that approval does not reset the deadline."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "创建 12 分钟后原方案已过期，",
+          "core": true,
+          "reason": "Directly answers the second question by showing that the original plan expired after 12 minutes."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "不能执行。",
+          "core": true,
+          "reason": "Directly answers the second question by concluding that the expired plan cannot be executed."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "应重新调查、生成新方案并针对新范围确认，",
+          "core": true,
+          "reason": "Directly answers the second question by specifying the required corrective action."
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "不能沿用旧批准修改有效时间。",
+          "core": true,
+          "reason": "Directly answers the second question by prohibiting using the old approval to modify the effective time."
+        }
+      ],
+      "usage": {
+        "input_tokens": 625,
+        "output_tokens": 362,
+        "total_tokens": 987
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "不改同步设置的四类普通低风险恢复为 user_confirmation，",
+          "core": true,
+          "reason": "Directly answers the first question about whether the recovery needs an administrator."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "staff 可在自己的会话范围确认，",
+          "core": true,
+          "reason": "Directly answers the first question by specifying that staff can confirm within their own session."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不是全部动作都要求管理员。",
+          "core": true,
+          "reason": "Directly answers the first question by clarifying that not all actions require an administrator."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "方案从创建起 10 分钟有效，",
+          "core": true,
+          "reason": "Directly answers the second question about the 10-minute validity period from creation."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "批准不重置截止时间；",
+          "core": true,
+          "reason": "Directly answers the second question by stating that approval does not reset the deadline."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "创建 12 分钟后原方案已过期，",
+          "core": true,
+          "reason": "Directly answers the second question by showing that the original plan expired after 12 minutes."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "不能执行。",
+          "core": true,
+          "reason": "Directly answers the second question by concluding that the expired plan cannot be executed."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "应重新调查、生成新方案并针对新范围确认，",
+          "core": true,
+          "reason": "Directly answers the second question by specifying the required corrective action."
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "不能沿用旧批准修改有效时间。",
+          "core": true,
+          "reason": "Directly answers the second question by prohibiting using the old approval to modify the effective time."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "4f92cbce08c8e9f1e3ba3c0181f8bc68a3512e442dece12c461dca3a999e1fb2": {
+      "key": "4f92cbce08c8e9f1e3ba3c0181f8bc68a3512e442dece12c461dca3a999e1fb2",
+      "question": "company-a 2.0 用户明确要人工却没有订单号，能建工单吗？同一会话已有 open 工单，再请求人工是否应该另建？没有可用工程师又意味着什么？",
+      "original_facts": [
+        "明确人工请求可用 user_requested，信息不齐也可记录未知项；来源会话须属于当前用户和公司。",
+        "同一会话已有 open/in_progress 工单时返回既有工单，不重复创建。",
+        "没有符合分配规则的可用工程师时可以建单但 assigned_to 为空；建单不等于已分配或修复。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "明确人工请求可用 user_requested，",
+          "core": true,
+          "reason": "Directly answers whether a ticket can be created when a user explicitly requests human agent without an order number."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "信息不齐也可记录未知项；",
+          "core": false,
+          "reason": "Optional background; the question does not ask about recording unknown items."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "来源会话须属于当前用户和公司。",
+          "core": false,
+          "reason": "User and company ownership are already scoped premises; the question does not ask cross-scope ticket creation."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "同一会话已有 open/in_progress 工单时返回既有工单，",
+          "core": true,
+          "reason": "Directly answers whether a new ticket should be created when an open ticket exists in the same session."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不重复创建。",
+          "core": false,
+          "reason": "Redundant restatement of part_index 3; already covered."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "没有符合分配规则的可用工程师时可以建单但 assigned_to 为空；",
+          "core": true,
+          "reason": "Directly answers what it means when no available engineer exists."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "建单不等于已分配或修复。",
+          "core": false,
+          "reason": "Optional clarification; the question does not ask about the meaning of ticket creation vs. assignment."
+        }
+      ],
+      "usage": {
+        "input_tokens": 567,
+        "output_tokens": 284,
+        "total_tokens": 851
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "明确人工请求可用 user_requested，",
+          "core": true,
+          "reason": "Directly answers whether a ticket can be created when a user explicitly requests human agent without an order number."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "信息不齐也可记录未知项；",
+          "core": false,
+          "reason": "Optional background; the question does not ask about recording unknown items."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "来源会话须属于当前用户和公司。",
+          "core": true,
+          "reason": "Core condition for ticket creation; omission could allow tickets from wrong session/user."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "同一会话已有 open/in_progress 工单时返回既有工单，",
+          "core": true,
+          "reason": "Directly answers whether a new ticket should be created when an open ticket exists in the same session."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "不重复创建。",
+          "core": false,
+          "reason": "Redundant restatement of part_index 3; already covered."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "没有符合分配规则的可用工程师时可以建单但 assigned_to 为空；",
+          "core": true,
+          "reason": "Directly answers what it means when no available engineer exists."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 2,
+          "text": "建单不等于已分配或修复。",
+          "core": false,
+          "reason": "Optional clarification; the question does not ask about the meaning of ticket creation vs. assignment."
+        }
+      ],
+      "review_notes": [
+        "User and company ownership are already scoped premises; the question does not ask cross-scope ticket creation."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "b7ff8f6986e73834cf672eda5000f89ea28caed7f0ef472d18cf37eaf72ac418": {
+      "key": "b7ff8f6986e73834cf672eda5000f89ea28caed7f0ef472d18cf37eaf72ac418",
+      "question": "company-a 2.0 工单的 open、in_progress、closed 各代表什么？出现 in_progress 枚举就证明有任意手动切换状态的界面吗？closed 是永久解决保证吗？",
+      "original_facts": [
+        "open 表示待处理，in_progress 是已有处理状态值，closed 表示最近一次复查达到目标。",
+        "状态枚举不证明提供通用手动切换接口。",
+        "closed 不是永久保证，后续复查不通过可重新 open。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "open 表示待处理，",
+          "core": true,
+          "reason": "直接回答 open 的含义"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "in_progress 是已有处理状态值，",
+          "core": true,
+          "reason": "直接回答 in_progress 的含义"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "closed 表示最近一次复查达到目标。",
+          "core": true,
+          "reason": "直接回答 closed 的含义"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "状态枚举不证明提供通用手动切换接口。",
+          "core": true,
+          "reason": "直接回答枚举是否证明手动切换界面"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "closed 不是永久保证，",
+          "core": true,
+          "reason": "直接回答 closed 是否永久保证"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "后续复查不通过可重新 open。",
+          "core": true,
+          "reason": "补充 closed 非永久保证的后续机制"
+        }
+      ],
+      "usage": {
+        "input_tokens": 512,
+        "output_tokens": 151,
+        "total_tokens": 663
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "open 表示待处理，",
+          "core": true,
+          "reason": "直接回答 open 的含义"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "in_progress 是已有处理状态值，",
+          "core": true,
+          "reason": "直接回答 in_progress 的含义"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "closed 表示最近一次复查达到目标。",
+          "core": true,
+          "reason": "直接回答 closed 的含义"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "状态枚举不证明提供通用手动切换接口。",
+          "core": true,
+          "reason": "直接回答枚举是否证明手动切换界面"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 2,
+          "text": "closed 不是永久保证，",
+          "core": true,
+          "reason": "直接回答 closed 是否永久保证"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 2,
+          "text": "后续复查不通过可重新 open。",
+          "core": true,
+          "reason": "补充 closed 非永久保证的后续机制"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "03b0d31c31c14f6a453e807428549052fc70f4a6e46cd4447a9a7c1ddc0cb12b": {
+      "key": "03b0d31c31c14f6a453e807428549052fc70f4a6e46cd4447a9a7c1ddc0cb12b",
+      "question": "company-a 2.0 单笔恢复已获确认，但当前 merchant_sku 与方案里的映射快照不同。原批准能覆盖新映射吗？重新批准是否延长原方案 10 分钟有效期？",
+      "original_facts": [
+        "当前 merchant_sku 与快照不同可报 SKU_MAPPING_CHANGED，旧批准不能覆盖新映射；停止旧方案，重新取证并生成新方案。",
+        "有效期从方案创建起 10 分钟，批准或重复批准不重置原截止时间；新方案须按新范围确认。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前 merchant_sku 与快照不同可报 SKU_MAPPING_CHANGED，",
+          "core": true,
+          "reason": "Directly answers the first question about whether the old approval can cover the new mapping."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "旧批准不能覆盖新映射；",
+          "core": true,
+          "reason": "Directly answers the first question by stating the old approval cannot cover the new mapping."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "停止旧方案，",
+          "core": true,
+          "reason": "Provides the required action (stop old plan) that is necessary for the correct recommendation."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "重新取证并生成新方案。",
+          "core": true,
+          "reason": "Provides the required action (re-collect evidence and generate new plan) that is necessary for the correct recommendation."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "有效期从方案创建起 10 分钟，",
+          "core": true,
+          "reason": "Directly answers the second question about whether re-approval extends the 10-minute validity."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "批准或重复批准不重置原截止时间；",
+          "core": true,
+          "reason": "Directly answers the second question by stating approval or re-approval does not reset the deadline."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "新方案须按新范围确认。",
+          "core": true,
+          "reason": "Provides the required action (new plan must be confirmed per new scope) that is necessary for the correct recommendation."
+        }
+      ],
+      "usage": {
+        "input_tokens": 565,
+        "output_tokens": 306,
+        "total_tokens": 871
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前 merchant_sku 与快照不同可报 SKU_MAPPING_CHANGED，",
+          "core": true,
+          "reason": "Directly answers the first question about whether the old approval can cover the new mapping."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "旧批准不能覆盖新映射；",
+          "core": true,
+          "reason": "Directly answers the first question by stating the old approval cannot cover the new mapping."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "停止旧方案，",
+          "core": true,
+          "reason": "Provides the required action (stop old plan) that is necessary for the correct recommendation."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "重新取证并生成新方案。",
+          "core": true,
+          "reason": "Provides the required action (re-collect evidence and generate new plan) that is necessary for the correct recommendation."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "有效期从方案创建起 10 分钟，",
+          "core": true,
+          "reason": "Directly answers the second question about whether re-approval extends the 10-minute validity."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "批准或重复批准不重置原截止时间；",
+          "core": true,
+          "reason": "Directly answers the second question by stating approval or re-approval does not reset the deadline."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "新方案须按新范围确认。",
+          "core": true,
+          "reason": "Provides the required action (new plan must be confirmed per new scope) that is necessary for the correct recommendation."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "20c35b348f40120cf7b883d29a207092dcdb5b59435cd89b12ef0153a04f2d49": {
+      "key": "20c35b348f40120cf7b883d29a207092dcdb5b59435cd89b12ef0153a04f2d49",
+      "question": "company-a 2.0 仓库已出库，但商家没有对应发货记录。用户要求人工，同一会话已经有 open 工单。能用 resend_shipment 造回执，或另建一张工单吗？",
+      "original_facts": [
+        "仓库已发货而商家没有匹配记录时，需要人工核对事件投递；不能凭仓库记录造商家回执，resend_shipment 不满足来源条件。",
+        "明确人工请求可按现有会话处理；已有 open 工单应复用既有 ticket_id，记录资料和缺口，不另建重复工单。",
+        "转人工或返回工单不等于发货链路已恢复。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "仓库已发货而商家没有匹配记录时，",
+          "core": true,
+          "reason": "直接对应问题中‘仓库已出库但商家无发货记录’的前提条件，是判断后续操作的基础。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "需要人工核对事件投递；",
+          "core": true,
+          "reason": "直接回答用户‘人工核对’的必要性，是核心处理步骤。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不能凭仓库记录造商家回执，",
+          "core": true,
+          "reason": "直接否定用户‘造回执’的提议，是核心禁止性结论。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "resend_shipment 不满足来源条件。",
+          "core": true,
+          "reason": "具体解释为何 resend_shipment 不可用，直接回应问题中的选项。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "明确人工请求可按现有会话处理；",
+          "core": true,
+          "reason": "确认人工请求可按现有会话处理，直接回应问题中的‘人工’请求。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "已有 open 工单应复用既有 ticket_id，",
+          "core": true,
+          "reason": "直接回答‘已有 open 工单’应复用，否定另建工单的提议。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "记录资料和缺口，",
+          "core": false,
+          "reason": "属于操作细节，不直接回答用户‘能否造回执或另建工单’的核心问题。"
+        },
+        {
+          "part_index": 7,
+          "fact_index": 1,
+          "text": "不另建重复工单。",
+          "core": true,
+          "reason": "直接否定另建工单，是核心结论。"
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "转人工或返回工单不等于发货链路已恢复。",
+          "core": false,
+          "reason": "属于提醒性背景，不直接回答用户的具体操作问题。"
+        }
+      ],
+      "usage": {
+        "input_tokens": 635,
+        "output_tokens": 330,
+        "total_tokens": 965
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "仓库已发货而商家没有匹配记录时，",
+          "core": true,
+          "reason": "直接对应问题中‘仓库已出库但商家无发货记录’的前提条件，是判断后续操作的基础。"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "需要人工核对事件投递；",
+          "core": true,
+          "reason": "直接回答用户‘人工核对’的必要性，是核心处理步骤。"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "不能凭仓库记录造商家回执，",
+          "core": true,
+          "reason": "直接否定用户‘造回执’的提议，是核心禁止性结论。"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "resend_shipment 不满足来源条件。",
+          "core": true,
+          "reason": "具体解释为何 resend_shipment 不可用，直接回应问题中的选项。"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "明确人工请求可按现有会话处理；",
+          "core": true,
+          "reason": "确认人工请求可按现有会话处理，直接回应问题中的‘人工’请求。"
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "已有 open 工单应复用既有 ticket_id，",
+          "core": true,
+          "reason": "直接回答‘已有 open 工单’应复用，否定另建工单的提议。"
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "记录资料和缺口，",
+          "core": false,
+          "reason": "属于操作细节，不直接回答用户‘能否造回执或另建工单’的核心问题。"
+        },
+        {
+          "part_index": 7,
+          "fact_index": 1,
+          "text": "不另建重复工单。",
+          "core": true,
+          "reason": "直接否定另建工单，是核心结论。"
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "转人工或返回工单不等于发货链路已恢复。",
+          "core": false,
+          "reason": "属于提醒性背景，不直接回答用户的具体操作问题。"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "e89fdeeb771f3b58596dc10dff2390f482e5513997408df3c5d6f0123c456173": {
+      "key": "e89fdeeb771f3b58596dc10dff2390f482e5513997408df3c5d6f0123c456173",
+      "question": "company-a 的工程师被显式授予 company-b 一个目标工单的只读权限。能否按工单授权读取并复查？若目标 SKU 仍缺失，结果是什么？这份授权能批准库存刷新吗？",
+      "original_facts": [
+        "工程师访问依据实际工单读取授权和目标范围，公司不同不是唯一判断；可在授予范围内读取与复查，不能任意扩大范围。",
+        "目标 SKU 等标识或可用证据不足应为 NEEDS_INFO，工单保持 open 并补信息，不能机械标为解决。",
+        "工程师只读授权不授予商家恢复审批或写权限，不能批准库存刷新。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "工程师访问依据实际工单读取授权和目标范围，",
+          "core": true,
+          "reason": "Directly addresses the first question about whether the engineer can read and review based on work order authorization."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "公司不同不是唯一判断；",
+          "core": false,
+          "reason": "Provides helpful background that company difference is not the sole criterion, but is not required to answer the explicit questions."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "可在授予范围内读取与复查，",
+          "core": true,
+          "reason": "Directly answers the first question: the engineer can read and review within the granted scope."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "不能任意扩大范围。",
+          "core": false,
+          "reason": "Reminder of scope limitation; not a direct answer to any explicit question and omission would not make the recommendation wrong or unsafe."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "目标 SKU 等标识或可用证据不足应为 NEEDS_INFO，",
+          "core": true,
+          "reason": "Directly answers the second question: if target SKU evidence is insufficient, the result is NEEDS_INFO."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "工单保持 open 并补信息，",
+          "core": true,
+          "reason": "Directly answers the second question: the work order remains open and information must be supplemented."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "不能机械标为解决。",
+          "core": false,
+          "reason": "Repeats a supplied premise (cannot mechanically mark as resolved); not required to answer the explicit question."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "工程师只读授权不授予商家恢复审批或写权限，",
+          "core": true,
+          "reason": "Directly supports the answer to the third question: read-only authorization does not grant write permissions."
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "不能批准库存刷新。",
+          "core": true,
+          "reason": "Directly answers the third question: the authorization cannot approve inventory refresh."
+        }
+      ],
+      "usage": {
+        "input_tokens": 626,
+        "output_tokens": 397,
+        "total_tokens": 1023
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "工程师访问依据实际工单读取授权和目标范围，",
+          "core": true,
+          "reason": "Directly addresses the first question about whether the engineer can read and review based on work order authorization."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "公司不同不是唯一判断；",
+          "core": false,
+          "reason": "Provides helpful background that company difference is not the sole criterion, but is not required to answer the explicit questions."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "可在授予范围内读取与复查，",
+          "core": true,
+          "reason": "Directly answers the first question: the engineer can read and review within the granted scope."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "不能任意扩大范围。",
+          "core": false,
+          "reason": "Reminder of scope limitation; not a direct answer to any explicit question and omission would not make the recommendation wrong or unsafe."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "目标 SKU 等标识或可用证据不足应为 NEEDS_INFO，",
+          "core": true,
+          "reason": "Directly answers the second question: if target SKU evidence is insufficient, the result is NEEDS_INFO."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "工单保持 open 并补信息，",
+          "core": true,
+          "reason": "Directly answers the second question: the work order remains open and information must be supplemented."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "不能机械标为解决。",
+          "core": false,
+          "reason": "Repeats a supplied premise (cannot mechanically mark as resolved); not required to answer the explicit question."
+        },
+        {
+          "part_index": 7,
+          "fact_index": 2,
+          "text": "工程师只读授权不授予商家恢复审批或写权限，",
+          "core": true,
+          "reason": "Directly supports the answer to the third question: read-only authorization does not grant write permissions."
+        },
+        {
+          "part_index": 8,
+          "fact_index": 2,
+          "text": "不能批准库存刷新。",
+          "core": true,
+          "reason": "Directly answers the third question: the authorization cannot approve inventory refresh."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "dc7f6ecd9b28097b044c9f74297128a77d5412ba58abada0f10aaf260e4c5514": {
+      "key": "dc7f6ecd9b28097b044c9f74297128a77d5412ba58abada0f10aaf260e4c5514",
+      "question": "company-a 2.0 相同内容重复创建同一平台订单返回 duplicate，旧商家任务仍 failed。这能证明重跑成功吗？如果正式恢复方案后来 awaiting_verification，又代表什么？",
+      "original_facts": [
+        "相同平台来源重复创建返回 duplicate 并再投递同一事件；已有 failed/blocked 任务不会因此自动重置，duplicate 不证明完成。",
+        "awaiting_verification 表示已进入独立业务核查，仍不等于 verified_resolved；需要实际订单唯一性、内容一致等验证通过才报告恢复。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "相同平台来源重复创建返回 duplicate",
+          "core": true,
+          "reason": "Event redelivery is unasked background; the duplicate result is relevant to the requested interpretation."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": " 并再投递同一事件；",
+          "core": false,
+          "reason": "Event redelivery is unasked background; the duplicate result is relevant to the requested interpretation."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "已有 failed/blocked 任务不会因此自动重置，",
+          "core": true,
+          "reason": "Directly answers the first question: failed tasks are not reset, so duplicate does not prove success."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 0,
+          "text": "duplicate 不证明完成。",
+          "core": true,
+          "reason": "Directly answers the first question: duplicate does not prove completion."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "awaiting_verification 表示已进入独立业务核查，",
+          "core": true,
+          "reason": "Directly answers the second question: what awaiting_verification means."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "仍不等于 verified_resolved；",
+          "core": true,
+          "reason": "Directly answers the second question: awaiting_verification is not verified_resolved."
+        },
+        {
+          "part_index": 6,
+          "fact_index": 1,
+          "text": "需要实际订单唯一性、内容一致等验证通过才报告恢复。",
+          "core": false,
+          "reason": "Specific uniqueness/content verification checks are unasked background in a status-meaning question. The distinction from verified_resolved remains core."
+        }
+      ],
+      "usage": {
+        "input_tokens": 547,
+        "output_tokens": 242,
+        "total_tokens": 789
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "相同平台来源重复创建返回 duplicate 并再投递同一事件；",
+          "core": true,
+          "reason": "Directly answers the first question: duplicate does not prove success."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "已有 failed/blocked 任务不会因此自动重置，",
+          "core": true,
+          "reason": "Directly answers the first question: failed tasks are not reset, so duplicate does not prove success."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "duplicate 不证明完成。",
+          "core": true,
+          "reason": "Directly answers the first question: duplicate does not prove completion."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "awaiting_verification 表示已进入独立业务核查，",
+          "core": true,
+          "reason": "Directly answers the second question: what awaiting_verification means."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "仍不等于 verified_resolved；",
+          "core": true,
+          "reason": "Directly answers the second question: awaiting_verification is not verified_resolved."
+        },
+        {
+          "part_index": 5,
+          "fact_index": 1,
+          "text": "需要实际订单唯一性、内容一致等验证通过才报告恢复。",
+          "core": true,
+          "reason": "Directly answers the second question: what is needed for recovery to be reported."
+        }
+      ],
+      "review_notes": [
+        "Specific uniqueness/content verification checks are unasked background in a status-meaning question. The distinction from verified_resolved remains core.",
+        "Event redelivery is unasked background; the duplicate result is relevant to the requested interpretation."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "67dbd01b4739a7f4d56357cdf512a88de56734d8128ce03ce7d237c49a8caf14": {
+      "key": "67dbd01b4739a7f4d56357cdf512a88de56734d8128ce03ce7d237c49a8caf14",
+      "question": "company-a merchant-console 2.0 普通员工在自己的会话确认 low 单笔恢复且不改设置。有人引用历史 1.0 说任何恢复都要管理员，应采用哪个规则？",
+      "original_facts": [
+        "历史 1.0 不用于指导当前 2.0 恢复与审批，应使用当前公司、产品、版本和状态对应资料。",
+        "普通不改设置的低风险方案为 user_confirmation，staff 可确认自己会话的方案；明确开启同步设置才要求管理员。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "历史 1.0 不用于指导当前 2.0 恢复与审批，",
+          "core": true,
+          "reason": "The question asks which rule should be adopted when someone cites the historical 1.0 rule. This clause directly states that the historical 1.0 rule should not be used to guide the current 2.0 recovery and approval, which is essential to answering the question."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "应使用当前公司、产品、版本和状态对应资料。",
+          "core": false,
+          "reason": "Restating company/product/version/status metadata is optional once the answer uses the correct current rule."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "普通不改设置的低风险方案为 user_confirmation，",
+          "core": true,
+          "reason": "The question asks about the rule for a low single recovery without changing settings. This clause provides the specific rule that the low-risk solution for ordinary staff without changing settings is user_confirmation, which is core to answering the question."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "staff 可确认自己会话的方案；",
+          "core": true,
+          "reason": "This clause directly states that staff can confirm their own session's solution, which is the specific permission rule for the scenario described in the question (ordinary staff confirming their own session for a low single recovery without changing settings)."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "明确开启同步设置才要求管理员。",
+          "core": false,
+          "reason": "Changing settings is explicitly excluded by the question; the alternative admin branch is optional."
+        }
+      ],
+      "usage": {
+        "input_tokens": 507,
+        "output_tokens": 363,
+        "total_tokens": 870
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "历史 1.0 不用于指导当前 2.0 恢复与审批，",
+          "core": true,
+          "reason": "The question asks which rule should be adopted when someone cites the historical 1.0 rule. This clause directly states that the historical 1.0 rule should not be used to guide the current 2.0 recovery and approval, which is essential to answering the question."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "应使用当前公司、产品、版本和状态对应资料。",
+          "core": true,
+          "reason": "The question asks which rule should be used. This clause specifies that the current company, product, version, and status corresponding materials should be used, which is the core rule to adopt."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "普通不改设置的低风险方案为 user_confirmation，",
+          "core": true,
+          "reason": "The question asks about the rule for a low single recovery without changing settings. This clause provides the specific rule that the low-risk solution for ordinary staff without changing settings is user_confirmation, which is core to answering the question."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "staff 可确认自己会话的方案；",
+          "core": true,
+          "reason": "This clause directly states that staff can confirm their own session's solution, which is the specific permission rule for the scenario described in the question (ordinary staff confirming their own session for a low single recovery without changing settings)."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "明确开启同步设置才要求管理员。",
+          "core": true,
+          "reason": "The question asks about the rule when someone cites the historical 1.0 rule that any recovery requires an administrator. This clause clarifies the condition under which an administrator is required (only when sync settings are explicitly enabled), which is core to distinguishing the correct rule from the historical one."
+        }
+      ],
+      "review_notes": [
+        "Restating company/product/version/status metadata is optional once the answer uses the correct current rule.",
+        "Changing settings is explicitly excluded by the question; the alternative admin branch is optional."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "679eac50c28dcf55c707aa9c4f9f4e3ad8bda901a6b90a7d252f2d573d244c56": {
+      "key": "679eac50c28dcf55c707aa9c4f9f4e3ad8bda901a6b90a7d252f2d573d244c56",
+      "question": "company-a 2.0 渠道 A 是否比渠道 B 少做授权检查或用不同库存公式？这个能力对照能证明已对接真实商业平台吗？",
+      "original_facts": [
+        "A/B 执行相同连接授权检查，没有按渠道跳过授权或改变库存公式的分支。",
+        "该对照仅针对当前本地模拟渠道标识，不证明有真实商业平台 API/OAuth 集成。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "A/B 执行相同连接授权检查，",
+          "core": true,
+          "reason": "直接回答渠道A/B授权检查是否相同"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "没有按渠道跳过授权或改变库存公式的分支。",
+          "core": true,
+          "reason": "直接回答是否存在按渠道不同的库存公式或跳过授权"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "该对照仅针对当前本地模拟渠道标识，",
+          "core": true,
+          "reason": "限定对照范围，是判断证明力的前提"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不证明有真实商业平台 API/OAuth 集成。",
+          "core": true,
+          "reason": "直接回答该对照能否证明真实商业平台对接"
+        }
+      ],
+      "usage": {
+        "input_tokens": 674,
+        "output_tokens": 94,
+        "total_tokens": 768
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "A/B 执行相同连接授权检查，",
+          "core": true,
+          "reason": "直接回答渠道A/B授权检查是否相同"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "没有按渠道跳过授权或改变库存公式的分支。",
+          "core": true,
+          "reason": "直接回答是否存在按渠道不同的库存公式或跳过授权"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "该对照仅针对当前本地模拟渠道标识，",
+          "core": true,
+          "reason": "限定对照范围，是判断证明力的前提"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "不证明有真实商业平台 API/OAuth 集成。",
+          "core": true,
+          "reason": "直接回答该对照能否证明真实商业平台对接"
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "dec037c0037884f02bde3b15907b0facdb13b7c68495caec8a673fb2c6bd7907": {
+      "key": "dec037c0037884f02bde3b15907b0facdb13b7c68495caec8a673fb2c6bd7907",
+      "question": "请依据 company-a 2.0 正式资料，给出人工工单保证响应和修复的准确分钟数，以及固定升级到第几级工程师的时间表。",
+      "original_facts": [
+        "资料没有给出所请求的保证响应/修复分钟数和固定升级时间表，不能提供确定数值。",
+        "可以说明工单用于人工调查，需进一步向 Support 核实安排；建单或等待不保证固定时间解决。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "资料没有给出所请求的保证响应/修复分钟数和固定升级时间表，",
+          "core": true,
+          "reason": "直接回答问题：资料未给出所请求的分钟数和升级时间表"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不能提供确定数值。",
+          "core": true,
+          "reason": "明确结论：无法提供确定数值"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "可以说明工单用于人工调查，",
+          "core": false,
+          "reason": "工单用途背景，非所问数值"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需进一步向 Support 核实安排；",
+          "core": false,
+          "reason": "The question asks for exact documented numbers, not an unasked contact recommendation."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "建单或等待不保证固定时间解决。",
+          "core": false,
+          "reason": "补充说明，非核心"
+        }
+      ],
+      "usage": {
+        "input_tokens": 702,
+        "output_tokens": 112,
+        "total_tokens": 814
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "资料没有给出所请求的保证响应/修复分钟数和固定升级时间表，",
+          "core": true,
+          "reason": "直接回答问题：资料未给出所请求的分钟数和升级时间表"
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "不能提供确定数值。",
+          "core": true,
+          "reason": "明确结论：无法提供确定数值"
+        },
+        {
+          "part_index": 2,
+          "fact_index": 1,
+          "text": "可以说明工单用于人工调查，",
+          "core": false,
+          "reason": "工单用途背景，非所问数值"
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "需进一步向 Support 核实安排；",
+          "core": true,
+          "reason": "给出可行的下一步：向 Support 核实"
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "建单或等待不保证固定时间解决。",
+          "core": false,
+          "reason": "补充说明，非核心"
+        }
+      ],
+      "review_notes": [
+        "The question asks for exact documented numbers, not an unasked contact recommendation."
+      ],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    },
+    "43f7702e017da52c23c362332602cb5cd8ae1def8304b83c91ae741c0acde440": {
+      "key": "43f7702e017da52c23c362332602cb5cd8ae1def8304b83c91ae741c0acde440",
+      "question": "请给出 company-a 2.0 对接真实渠道 A 的 OAuth authorize URL、client_id、回调地址与可直接执行的 token 换取步骤。",
+      "original_facts": [
+        "当前资料仅说明本地模拟连接与重新授权用户指引，没有所请求的真实 OAuth URL、client_id、回调地址或 token 执行配置，无法给出这些参数。",
+        "request_reauthorization 没有后台授权执行器；需向负责实际集成或授权的人核实真实平台资料。"
+      ],
+      "parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前资料仅说明本地模拟连接与重新授权用户指引，",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to acknowledge that the available documentation does not contain the requested parameters."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "没有所请求的真实 OAuth URL、client_id、回调地址或 token 执行配置，",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to state that the requested OAuth URL, client_id, callback URL, and token execution configuration are absent from the available materials."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "无法给出这些参数。",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to state that the requested parameters cannot be provided based on the available documentation."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "request_reauthorization 没有后台授权执行器；",
+          "core": false,
+          "reason": "This is optional background information about the absence of a backend authorization executor; it does not directly answer the request for OAuth parameters or steps."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "需向负责实际集成或授权的人核实真实平台资料。",
+          "core": false,
+          "reason": "This is an optional suggestion for next steps (contacting the responsible person); the user did not ask what to do next, only for the parameters and steps."
+        }
+      ],
+      "usage": {
+        "input_tokens": 502,
+        "output_tokens": 270,
+        "total_tokens": 772
+      },
+      "structured_output": [
+        {
+          "stage": "evaluation_rubric",
+          "attempt": 1,
+          "status": "valid"
+        }
+      ],
+      "policy": "Classify each numbered original fact clause using ONLY the question and original facts, before seeing any answer. Return every part_index once; do not generate, rewrite or score an answer.\ncore=true if the clause answers an explicit question/subquestion, or its omission makes the requested recommendation materially wrong, unsafe or misleading. Helpful background, unasked implementation details, repeated supplied premises, broad scope reminders, or unsolicited contact/next steps are optional. A hypothetical branch excluded by the supplied premises is optional. Do not infer a request to perform a repair from a question about the meaning of a field or status. A safety/permission condition is core when the question asks whether that action may be performed or its condition is in dispute, not whenever that topic appears. Do not require every possible condition in a status definition, formula or supplied calculation. A missing requested exact configuration must be acknowledged; a contact suggestion is optional unless the user asks what to do next. A truthful waiting recommendation need not list every prohibited action. Read the full original fact to interpret a dependent clause. A core clause cannot become optional because an answer might omit it. Keep reasons short.",
+      "classification_sees_answer": false,
+      "classifier_parts": [
+        {
+          "part_index": 0,
+          "fact_index": 0,
+          "text": "当前资料仅说明本地模拟连接与重新授权用户指引，",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to acknowledge that the available documentation does not contain the requested parameters."
+        },
+        {
+          "part_index": 1,
+          "fact_index": 0,
+          "text": "没有所请求的真实 OAuth URL、client_id、回调地址或 token 执行配置，",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to state that the requested OAuth URL, client_id, callback URL, and token execution configuration are absent from the available materials."
+        },
+        {
+          "part_index": 2,
+          "fact_index": 0,
+          "text": "无法给出这些参数。",
+          "core": true,
+          "reason": "Omission makes the answer materially wrong because it fails to state that the requested parameters cannot be provided based on the available documentation."
+        },
+        {
+          "part_index": 3,
+          "fact_index": 1,
+          "text": "request_reauthorization 没有后台授权执行器；",
+          "core": false,
+          "reason": "This is optional background information about the absence of a backend authorization executor; it does not directly answer the request for OAuth parameters or steps."
+        },
+        {
+          "part_index": 4,
+          "fact_index": 1,
+          "text": "需向负责实际集成或授权的人核实真实平台资料。",
+          "core": false,
+          "reason": "This is an optional suggestion for next steps (contacting the responsible person); the user did not ask what to do next, only for the parameters and steps."
+        }
+      ],
+      "review_notes": [],
+      "human_reviewed": true,
+      "review_policy": "Question scope only: explicit subquestions and materially necessary safety conditions are core; supplied premises, excluded branches and unasked execution/contact steps are optional. Every original character is retained. This manifest is fixed for before/after; the agent receives none of it."
+    }
+  }
+}

@@ -49,7 +49,7 @@ def normalize_embedding_vector(values: list[float]) -> list[float]:
 @traceable(name="google_embedding", run_type="embedding")
 def generate_text_embeddings(texts: list[str], task_type: str) -> list[list[float]]:
     settings = get_settings()
-    client = genai.Client(api_key=settings.embedding_api_key)
+    client = genai.Client(api_key=settings.embedding_api_key, http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=4, initial_delay=2, max_delay=15)))
 
     result = client.models.embed_content(
         model=settings.embedding_model,

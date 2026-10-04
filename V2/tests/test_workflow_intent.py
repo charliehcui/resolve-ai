@@ -19,6 +19,11 @@ def test_human_routing_uses_scoped_directives_and_current_intent(text, expected)
     assert is_human_request(text) is expected
 
 
+@pytest.mark.parametrize("text, expected", [("再次请求人工是否需要另一张工单？", False), ("商家找工程师意味着什么？", False), ("Can you contact an engineer and explain what does support need?", True), ("请转人工，告诉我需要哪些资料", True), ("我请求人工处理这个问题", True)])
+def test_asking_about_handoff_rules_is_not_an_action_request(text, expected):
+    assert is_human_request(text) is expected
+
+
 @pytest.mark.parametrize("text, recovery, paused", [("暂时不用处理", False, True), ("暂时不用处理，但请核对当前状态", False, False), ("不要重试，先说明已有事实", False, False), ("不要转人工，请重试订单", True, False)])
 def test_pausing_or_refusing_one_action_does_not_refuse_another(text, recovery, paused):
     assert action_request(text, "recovery") is recovery

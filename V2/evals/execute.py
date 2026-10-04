@@ -17,7 +17,7 @@ from backend.app.auth import authenticate
 from backend.app.database import create_conversation, get_connection
 from backend.app.handoff import create_support_handoff
 from evals.judge import JudgeError, empty_answer_scores, judge_rag, judge_workflow
-from evals.metrics import applicable_metrics, claim_scores, retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check, workflow_result_check
+from evals.metrics import applicable_metrics, claim_scores, rag_retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check, workflow_result_check
 from evals.observe import Observer
 from evals.runtime import configure_tokens
 from evals.scenarios import arm_fault, business_snapshot, mutate_facts, reset_case, seed_case
@@ -157,14 +157,16 @@ def score_observed_tools_and_retrieval(case: dict, output: dict) -> None:
     if case["category"] == "rag":
         with get_connection() as connection:
             rows = connection.execute("SELECT c.chunk_id::text, d.source_uri FROM support.document_chunks c JOIN support.product_documents d ON c.document_id = d.document_id WHERE d.source_uri = ANY(%s) AND d.company_id = %s", (case["retrieval_ground_truth"], case["permissions"]["company_id"])).fetchall()
-            runs = connection.execute("SELECT mode, chunk_ids, vector_ranks, keyword_ranks, fused_ranks, rerank_ranks, rerank_error, latency_ms FROM support.retrieval_runs WHERE conversation_id = %s ORDER BY created_at", (output["conversation_id"],)).fetchall()
+            runs = connection.execute("SELECT query, search_query, filters, mode, chunk_ids, vector_ranks, keyword_ranks, fused_ranks, rerank_ranks, rerank_error, latency_ms FROM support.retrieval_runs WHERE conversation_id = %s ORDER BY created_at", (output["conversation_id"],)).fetchall()
         if {row["source_uri"] for row in rows} != set(case["retrieval_ground_truth"]):
             raise RuntimeError("Retrieval ground truth sources were not ingested")
-        relevant = [row["chunk_id"] for row in rows]
-        ranked = [chunk["chunk_id"] for item in observations["retrieval"] for chunk in item.get("chunks", [])]
-        output["retrieval_ground_truth_chunks"] = rows
         output["retrieval_runs"] = runs
-        output["metrics"].update(retrieval_scores(ranked, relevant))
+        retrievals = observations["retrieval"]
+        chunks = retrievals[-1].get("chunks", []) if retrievals else []
+        scored = rag_retrieval_scores(chunks, case)
+        output["retrieval_evidence"] = scored.pop("retrieval_evidence")
+        output["covered_source_groups"] = scored.pop("covered_source_groups")
+        output["metrics"].update(scored)
     elif case["category"] == "workflow":
         output["metrics"].update(tool_scores(observations["selected_tools"], case["expected_tools"], output["initial"]))
 
@@ -179,9 +181,16 @@ def score_agent(case: dict, output: dict) -> None:
     if case["category"] == "rag":
         before, after = observations["before_claims"], observations["after_claims"]
         output["metrics"].update(empty_answer_scores(before, turn["answer"]))
-        judged = judge_rag(case, before, after, turn["answer"])
+        chunks = [chunk for item in observations["retrieval"] for chunk in item.get("chunks", [])]
+        judged = judge_rag(case, before, after, turn["answer"], chunks)
         output["independent_judge"] = judged
-        output["metrics"].update(claim_scores(before, after, judged["judgment"]))
+        output["metrics"].update(claim_scores(before, after, judged["judgment"], turn["answer"]))
+        judgment = judged["judgment"]
+        output["failure_reasons"].extend("Missing core fact: " + item["reason"] for item in judgment.get("fact_checks", []) if item.get("core_required", True) and not item.get("core_passed", item["passed"]))
+        output["failure_reasons"].extend("Forbidden Claim: " + claim for claim in judgment.get("forbidden_claims", []))
+        output["failure_reasons"].extend("Unsupported Claim: " + claim for claim in judgment.get("unsupported_final_claims", []))
+        if not case["expected"]["answerable"]:
+            output["no_answer_correct"] = judgment["no_answer_correct"] and judgment["answer_correct_after"]
     else:
         status = "support_transfer" if turn.get("needs_support") else turn.get("status")
         action = (turn.get("action_plan") or {}).get("action_type")
@@ -296,6 +305,8 @@ def evaluate(case: dict, variant: str, directory: Path, output_path: Path) -> di
         else:
             score_action(case, output)
         for name in output["applicable_metrics"]:
+            if case["category"] == "rag" and name in {"recall_at_5", "mrr"}:
+                continue
             if name in {"answer_accuracy_before", "unsupported_claim_rate_before"}:
                 continue
             value = output["metrics"].get(name)
