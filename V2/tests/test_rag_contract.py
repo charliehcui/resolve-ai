@@ -20,7 +20,7 @@ def test_sources_are_and_groups_with_or_alternatives_and_actual_five_ranks():
 
 
 def test_rag_stage_isolation_and_baseline_mode():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     development, modes = select_cases(cases, "quick", "rag", None, None, rag_stage="baseline")
     assert len(development) == 30 and modes == ["vector_only"]
     assert all(case.expected["split"] == "development" for case in development)

@@ -25,7 +25,7 @@ def local_harness(monkeypatch):
 
 
 def test_only_quick_and_final_selection():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     assert validate_smoke(cases)["valid"]
     selected, variants = select_cases(cases, "quick", "workflow", None, None)
     assert len(selected) == 4
@@ -40,7 +40,7 @@ def test_only_quick_and_final_selection():
 
 
 def test_explicit_full_workflow_selection_preserves_small_defaults():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     ids = [case.case_id for case in cases if case.category == "workflow"]
     selected, _ = select_cases(cases, "quick", "workflow", ids, None)
     assert len(selected) == 11
@@ -64,7 +64,7 @@ def test_quick_runs_only_selected_cases_and_keeps_failure_evidence(tmp_path, mon
 
     monkeypatch.setattr("evals.harness.execute_case", execute)
     output = tmp_path / "quick"
-    report = run_evaluation(PROJECT_ROOT / "evals/smoke.jsonl", category="workflow", output=output)
+    report = run_evaluation(PROJECT_ROOT / "evals/data/smoke.jsonl", category="workflow", output=output)
     assert len(attempts) == 4
     assert report["summary"]["passed"] == 3
     assert report["summary"]["failed"] == 1
@@ -90,7 +90,7 @@ def test_quick_stops_on_first_error_and_lists_unexecuted_cases(tmp_path, monkeyp
         return result
 
     monkeypatch.setattr("evals.harness.execute_case", execute)
-    report = run_evaluation(PROJECT_ROOT / "evals/smoke.jsonl", category="workflow", output=tmp_path / "error")
+    report = run_evaluation(PROJECT_ROOT / "evals/data/smoke.jsonl", category="workflow", output=tmp_path / "error")
     assert len(attempts) == 1
     assert report["summary"]["error"] == 1
     assert report["summary"]["not_executed_runs"] == 3
@@ -101,7 +101,7 @@ def test_quick_stops_on_first_error_and_lists_unexecuted_cases(tmp_path, monkeyp
 def test_dataset_still_matches_human_authored_source():
     from evals.dataset import EvalCase, smoke_cases
 
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     assert [case.model_dump() for case in cases] == [EvalCase.model_validate(case).model_dump() for case in smoke_cases()]
 
 
@@ -125,7 +125,7 @@ def test_cleanup_file_lock_preserves_completed_results_and_records_warning(tmp_p
     monkeypatch.setattr("evals.harness.shutil.rmtree", locked)
     output = tmp_path / "locked"
     try:
-        report = run_evaluation(PROJECT_ROOT / "evals/smoke.jsonl", category="workflow", case_ids=["flow-auth"], output=output)
+        report = run_evaluation(PROJECT_ROOT / "evals/data/smoke.jsonl", category="workflow", case_ids=["flow-auth"], output=output)
         assert report["summary"]["passed"] == 1
         assert report["summary"]["error"] == 0
         assert report["manifest"]["cleanup_warning"]["error_type"] == "PermissionError"

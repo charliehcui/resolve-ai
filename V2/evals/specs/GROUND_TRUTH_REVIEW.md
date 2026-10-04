@@ -4,7 +4,7 @@
 
 最终 50 例：Development 17 + Regression 23 = 40；全新 Holdout 10。保留原有 34 例，新增 16 例，没有删除或合并。原有 12 个历史 Holdout 全部降为 Regression，Case ID 的历史前缀不决定分组，`expected.split` 是唯一依据。
 
-逐例完整标准保存在 `smoke.jsonl` 的 `workflow_ground_truth`，包括必须确认的事实、语义 Diagnosis、任一合法读取路径、Optional / Unnecessary Tools、参数、Handoff、Action、Task Success、Unsupported Claims、真实代码符号和 Fixture 断言。初始业务状态在 `initial_state.business_facts`。事实列表须全部满足，不能只命中任一关键词。
+逐例完整标准保存在 `../data/smoke.jsonl` 的 `workflow_ground_truth`，包括必须确认的事实、语义 Diagnosis、任一合法读取路径、Optional / Unnecessary Tools、参数、Handoff、Action、Task Success、Unsupported Claims、真实代码符号和 Fixture 断言。初始业务状态在 `initial_state.business_facts`。事实列表须全部满足，不能只命中任一关键词。
 
 ## 既有 34 例逐例审查
 
@@ -118,7 +118,7 @@ Optimization Agent 只可运行并优化 Development/Regression，不可改 Data
 
 ## RAG Ground Truth Review — 当前 40 例
 
-审查日期：2026-10-04。RAG 标准只依据 23 份当前正式知识文件的实际正文，不用上文 Workflow 标签或文档链接的业务代码补答案；旧 RAG 快照已被本节和当前数据替换，旧 source path 不再是活动标签。完整字段、逐例事实、禁止说法和证据锚点在 dataset.py / smoke.jsonl，分层评分与冻结口径见 RAG_EVAL_SPEC.md。
+审查日期：2026-10-04。RAG 标准只依据 23 份当前正式知识文件的实际正文，不用上文 Workflow 标签或文档链接的业务代码补答案；旧 RAG 快照已被本节和当前数据替换，旧 source path 不再是活动标签。完整字段、逐例事实、禁止说法和证据锚点在 ../dataset.py / ../data/smoke.jsonl，分层评分与冻结口径见 RAG_EVAL_SPEC.md。
 
 原有 10 个 ID 全部重建：rag-sync 去除无依据的前端菜单；rag-paid 区分创建接口接受 unpaid/cancelled 和仅 paid 符合导入；rag-mapping 分清订单映射与库存规则；rag-completion 明确事件/数量/金额/唯一性；rag-history 区分无任务仍可单笔恢复和批量历史不支持；rag-shipment 不把订单完成当出库；rag-auth 保留用户授权指引范围；rag-codes 用当前 XLSX 原行与历史范围；rag-stock 用 PDF 公式与推导计算；rag-scope 仅使用正式文件明确列出的未支持能力。均不根据当前 Agent 表现修标。
 

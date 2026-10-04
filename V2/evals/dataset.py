@@ -1340,7 +1340,7 @@ if __name__ == "__main__":
     parser.add_argument("--validate-rag", action="store_true", help="Check RAG labels, source evidence and frozen hashes offline; no retrieval or model")
     parser.add_argument("--check-fixtures", action="store_true", help="Initialize all Workflow fixtures in an isolated simulator; no LLM")
     args = parser.parse_args()
-    path = PROJECT_ROOT / "evals" / "smoke.jsonl"
+    path = PROJECT_ROOT / "evals" / "data" / "smoke.jsonl"
     if args.validate or args.validate_rag or args.check_fixtures:
         cases = load_cases(path)
         if args.validate or args.check_fixtures:

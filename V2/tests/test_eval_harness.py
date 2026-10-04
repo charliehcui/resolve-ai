@@ -12,7 +12,7 @@ from simulator.lab.checks import check_case
 
 
 def test_smoke_ground_truth_and_fixtures_are_complete():
-    cases = load_cases(PROJECT_ROOT / "evals" / "smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals" / "data" / "smoke.jsonl")
     validation = validate_smoke(cases)
     assert validation["valid"]
     assert validation["categories"] == {"rag": 40, "workflow": 50, "safety": 15, "reliability": 8}
@@ -25,7 +25,7 @@ def test_smoke_ground_truth_and_fixtures_are_complete():
 def test_rag_dataset_is_frozen_and_rejects_bad_evidence_and_label_changes():
     from evals.dataset import validate_rag_cases
 
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     result = validate_rag_cases(cases)
     assert result["splits"] == {"development": 30, "holdout": 10}
     assert result["unanswerable"] == 4

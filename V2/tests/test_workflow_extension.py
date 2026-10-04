@@ -21,7 +21,7 @@ def isolated_test_database():
 
 
 def test_dataset_split_is_complete_and_quick_does_not_select_holdout():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     assert validate_smoke(cases)["valid"]
     assert len(cases) == 113
     assert sum(case.category == "workflow" for case in cases) == 50
@@ -41,7 +41,7 @@ def test_workflow_freeze_rejects_changed_labels_and_fixture_definitions(monkeypa
 
     from evals.dataset import validate_workflow_cases
 
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     assert validate_workflow_cases(cases)["development_regression"] == 40
     changed = deepcopy(cases)
     next(case for case in changed if case.category == "workflow").question += " changed"
@@ -53,7 +53,7 @@ def test_workflow_freeze_rejects_changed_labels_and_fixture_definitions(monkeypa
 
 
 def test_workflow_freeze_has_action_dependent_routes_and_only_fresh_holdout():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     workflow = {case.case_id: case for case in cases if case.category == "workflow"}
     assert workflow["flow-order"].workflow_ground_truth["required_tool_routes"] == [["GetOrder", "GetOrderProcessRecords"], ["GetWorkerTask"]]
     assert workflow["flow-holdout34-platform-without-dispatch"].expected["split"] == "regression"

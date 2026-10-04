@@ -21,7 +21,7 @@ def case_by_id(case_id):
 
 
 def test_workflow_stages_enforce_frozen_split_and_block_quick_holdout():
-    cases = load_cases(PROJECT_ROOT / "evals/smoke.jsonl")
+    cases = load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl")
     development, _ = select_cases(cases, "quick", "workflow", None, None, "baseline")
     holdout, _ = select_cases(cases, "quick", "workflow", None, None, "holdout")
     assert len(development) == 40 and len(holdout) == 10

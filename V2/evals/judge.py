@@ -199,7 +199,7 @@ core=true if the clause answers an explicit question/subquestion, or its omissio
                 clauses.append({"part_index": len(clauses), "fact_index": index, "text": clause})
     data = {"question": case["question"], "facts": facts, "clauses": clauses}
     key = hashlib.sha256(json.dumps({"policy": prompt, **data}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-    frozen_path = PROJECT_ROOT / "evals" / "optimization" / "answer-rubric.json"
+    frozen_path = PROJECT_ROOT / "evals" / "rag" / "answer-rubric.json"
     if frozen_path.exists():
         frozen = json.loads(frozen_path.read_text(encoding="utf-8"))
         if key in frozen["rubrics"]:

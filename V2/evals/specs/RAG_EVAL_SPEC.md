@@ -69,7 +69,7 @@ Baseline / Optimization 只能选 category=rag 且 expected.split=development �
 
 Dataset SHA256：`26bc05579ac19439f51fc58868362c9532c8ff9d809eae392ee07926a5921144`。
 
-算法：只取 RAG 条目，EvalCase.model_dump 规范化并按 case_id 排序；与 version=rag-40-current-v1 及 dataset.py 中 23 份文件的 RAG_SOURCE_HASHES 封装；UTF-8、ensure_ascii=False、sort_keys=True、separators=(",", ":") 序列化后求 SHA256。数据、分组、答案和实际来源字节都参与冻结，未把 Chunk 数或运行时 ID 冻结为答案。后续 Chunk 划分改变不应改变语义标准。
+算法：只取 RAG 条目，EvalCase.model_dump 规范化并按 case_id 排序；与 version=rag-40-current-v1 及 ../dataset.py 中 23 份文件的 RAG_SOURCE_HASHES 封装；UTF-8、ensure_ascii=False、sort_keys=True、separators=(",", ":") 序列化后求 SHA256。数据、分组、答案和实际来源字节都参与冻结，未把 Chunk 数或运行时 ID 冻结为答案。后续 Chunk 划分改变不应改变语义标准。
 
 只读验证命令：`python -m evals.dataset --validate-rag`。检查加载、唯一 ID、30/10 分组、字段与别名、23 源快照、当前范围、22 源覆盖，以及 150 条证据在正式正文和离线 Chunk 中存在；不读写 DB，不调用模型、生成向量或执行检索。静态检查通过。没有修改 RAG、Agent、Prompt 或知识文件，73 条非 RAG 数据逐项保持一致，Workflow 冻结 Hash 保持不变。
 

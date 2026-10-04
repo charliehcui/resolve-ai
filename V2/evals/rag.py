@@ -127,7 +127,7 @@ def retrieval_comparison() -> dict:
     from backend.app.database import get_connection
     from backend.app.models import RetrievedChunk
 
-    cases = [case.model_dump() for case in load_cases(PROJECT_ROOT / "evals/smoke.jsonl") if case.category == "rag" and case.expected["split"] == "development"]
+    cases = [case.model_dump() for case in load_cases(PROJECT_ROOT / "evals/data/smoke.jsonl") if case.category == "rag" and case.expected["split"] == "development"]
     baseline = json.loads((PROJECT_ROOT / "reports/rag/baseline/evaluation_results.json").read_text(encoding="utf-8"))
     baseline_rows = {row["case_id"]: row for row in baseline["results"]}
     cache = json.loads((PROJECT_ROOT / ".local/eval/quick/environment.json").read_text(encoding="utf-8"))

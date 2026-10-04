@@ -39,7 +39,7 @@ def code_hashes() -> dict:
     paths = sorted((PROJECT_ROOT / "evals").glob("*.py"))
     for folder, pattern in (("backend/app", "*.py"), ("backend/prompts", "*.md"), ("simulator/services", "*.py"), ("simulator/lab", "*.py"), ("infra/migrations", "*.sql")):
         paths.extend(sorted((PROJECT_ROOT / folder).glob(pattern)))
-    rubric_path = PROJECT_ROOT / "evals/optimization/answer-rubric.json"
+    rubric_path = PROJECT_ROOT / "evals/rag/answer-rubric.json"
     if rubric_path.exists():
         paths.append(rubric_path)
     return {path.relative_to(PROJECT_ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
@@ -389,7 +389,7 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
         manifest["scope"] = "Real API ingress and PostgreSQL; Answer Pipeline and audited scoring frozen during each run. Development optimization only."
         manifest["judge_configuration"] = {"reasoning_effort": "low", "evidence_format": "separate answer-only literal coverage and original-source grounding", "scoring": "frozen question-scoped core facts; optional coverage reported separately"}
         manifest["report_path"] = destination.relative_to(PROJECT_ROOT).as_posix() if destination.is_relative_to(PROJECT_ROOT) else str(destination)
-        manifest["rubric_sha256"] = hashlib.sha256((PROJECT_ROOT / "evals/optimization/answer-rubric.json").read_bytes()).hexdigest() if (PROJECT_ROOT / "evals/optimization/answer-rubric.json").exists() else None
+        manifest["rubric_sha256"] = hashlib.sha256((PROJECT_ROOT / "evals/rag/answer-rubric.json").read_bytes()).hexdigest() if (PROJECT_ROOT / "evals/rag/answer-rubric.json").exists() else None
     manifest.update(workflow_stage=workflow_stage, stop_on_error=not continue_workflow, workflow_scoring="frozen_workflow_semantic_contract_v1")
     if category == "workflow":
         manifest.update(scope="Real API ingress, simulator HTTP, PostgreSQL and worker; Agent and scoring code frozen during each run.", judge_limitation="Same-family semantic Judge plus independent backend readback; automated judgments remain fallible.", judge_configuration={"primary_reasoning_effort": "none", "mandatory_fallback_reasoning_effort": "low", "evidence_format": "frozen semantic contract, actual tools, persisted actions/tickets and backend facts"})
@@ -501,7 +501,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(prog="python -m evals.run", description="Quick module feedback by default; Final Benchmark only when explicitly selected.")
     parser.add_argument("--mode", choices=["quick", "final"], default="quick")
-    parser.add_argument("--suite", type=Path, default=PROJECT_ROOT / "evals" / "smoke.jsonl")
+    parser.add_argument("--suite", type=Path, default=PROJECT_ROOT / "evals" / "data" / "smoke.jsonl")
     parser.add_argument("--category", choices=CATEGORIES)
     parser.add_argument("--cases", nargs="+", help="Quick only: explicit case IDs from one category; up to 11 Workflow cases, otherwise 5")
     parser.add_argument("--retrieval-modes", nargs="+", choices=MODES)
