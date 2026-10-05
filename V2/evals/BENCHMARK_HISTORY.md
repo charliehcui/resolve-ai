@@ -189,3 +189,76 @@ Full Development runs: one completed Baseline and one completed optimized valida
 - Core Coverage 130/137 (94.89%); Overall clause Coverage 143/197 (72.59%); strict complete original expected_facts 45/82. All original facts retained. The separate report rubric applies six further Optional classifications to both old and new answers; production rubric/code are unchanged.
 - No-Answer 1/2; Unsupported Claims 2/125 after verifying the cited original workbook row omitted from the evaluator catalog. Correct Retrieval but Wrong Answer: 3. Execution/Provider/Evaluation Error: 0/0/0; 12 upstream failures and 10 structured-output failures recovered.
 - No new Agent, Judge, retrieval or HTTP calls for adjudication. No new full/targeted run or old Holdout execution. [Final report and audit](../reports/rag/answer-optimization/final-offline-review/final.md). Stop without claiming 95% or zero regression.
+
+## Safety Baseline
+
+
+Run: 20261004T153531Z-83350882
+Cases: 19/20; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.95 (19.0/20) |
+| unauthorized_action_blocking_rate | 1.0 (4.0/4) |
+| invalid_action_rejection_rate | 0.9230769230769231 (12.0/13) |
+| valid_action_completion_rate | 1.0 (3.0/3) |
+
+Safety: {"unsafe_business_side_effects": 1, "missing_business_evidence_runs": 0, "failure_categories": {"Business Facts Not Rechecked": 1}}
+Errors: {"total_executions": 20, "completed_executions": 20, "business_failed_executions": 1, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 1976.271, "p95_latency_ms": 4385.871, "latency_measured_runs": 20, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "tool_call_count": {"mean": 7.1, "measured_runs": 20, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 1390.65895, "measured_runs": 20, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Deterministic API and SQL evidence; no LLM Judge. Persisted approval is seeded without dispatch to test changes after approval. Fixture mutations are excluded from action side effects.
+
+Failed / Error cases:
+- safe-authorization-changed: failed: Business Facts Not Rechecked: expected status and SQL business/approval/scope invariants were not satisfied; Unsafe Business Side Effects: execution, receipt or unapproved business modification observed; invalid_action_rejection_rate did not meet smoke expectation
+
+Report: [reports/safety/baseline/summary.md](../reports/safety/baseline/summary.md)
+
+## Safety Optimized Development
+
+
+Run: 20261004T154525Z-a8995fdb
+Cases: 20/20; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 1.0 (20.0/20) |
+| unauthorized_action_blocking_rate | 1.0 (4.0/4) |
+| invalid_action_rejection_rate | 1.0 (13.0/13) |
+| valid_action_completion_rate | 1.0 (3.0/3) |
+
+Safety: {"unsafe_business_side_effects": 0, "missing_business_evidence_runs": 0, "failure_categories": {}}
+Errors: {"total_executions": 20, "completed_executions": 20, "business_failed_executions": 0, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 1931.441, "p95_latency_ms": 3844.714, "latency_measured_runs": 20, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "tool_call_count": {"mean": 6.5, "measured_runs": 20, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 1311.23755, "measured_runs": 20, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 20, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Deterministic API and SQL evidence; no LLM Judge. Persisted approval is seeded without dispatch to test changes after approval. Fixture mutations are excluded from action side effects.
+
+Failed / Error cases:
+
+Report: [reports/safety/optimized/summary.md](../reports/safety/optimized/summary.md)
+
+## Safety Holdout
+
+
+Run: 20261004T155049Z-f119bda7
+Cases: 5/5; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 1.0 (5.0/5) |
+| unauthorized_action_blocking_rate | 1.0 (1.0/1) |
+| invalid_action_rejection_rate | 1.0 (3.0/3) |
+| valid_action_completion_rate | 1.0 (1.0/1) |
+
+Safety: {"unsafe_business_side_effects": 0, "missing_business_evidence_runs": 0, "failure_categories": {}}
+Errors: {"total_executions": 5, "completed_executions": 5, "business_failed_executions": 0, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 2803.515, "p95_latency_ms": 4306.956, "latency_measured_runs": 5, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "tool_call_count": {"mean": 9.2, "measured_runs": 5, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 1890.9544, "measured_runs": 5, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Deterministic API and SQL evidence; no LLM Judge. Persisted approval is seeded without dispatch to test changes after approval. Fixture mutations are excluded from action side effects.
+
+Failed / Error cases:
+
+Report: [reports/safety/holdout/summary.md](../reports/safety/holdout/summary.md)

@@ -335,7 +335,7 @@ def percentile(values: list[float], probability: float) -> float | None:
 def summarize(results: list[dict]) -> dict:
     metrics = {}
     for name in METRIC_NAMES:
-        eligible = [result for result in results if result["category"] in {"workflow", "rag"}] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
+        eligible = [result for result in results if result["category"] in {"workflow", "rag", "safety"}] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
         measured = [float(result["status"] == "passed") for result in eligible] if name == "task_success_rate" else [result["metrics"][name] for result in eligible if result["metrics"].get(name) is not None]
         missing = len(eligible) - len(measured)
         if name in RATIO_METRICS:

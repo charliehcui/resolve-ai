@@ -12,7 +12,7 @@ from backend.app.support_action_approvals import authorize_action_decision
 from backend.app.support_action_registry import action_policy
 from backend.app.support_action_store import fields_match, get_action_details, get_action_plan, save_action_step, save_read_tool_evidence
 from backend.app.support_evidence import save_evidence
-from backend.app.support_tools import call_read_service, get_order, get_platform_shipment, get_shipment_process_records, get_shop_sync_status, get_warehouse_shipment
+from backend.app.support_tools import call_read_service, get_order, get_platform_shipment, get_shipment_process_records, get_shop_connection_status, get_shop_sync_status, get_warehouse_shipment
 from backend.app.trace import current_trace_id
 from simulator.services.common import read_service_token
 
@@ -210,9 +210,14 @@ def execute_order_recovery(user: UserContext, action_id: str) -> dict[str, objec
 
     current_order = get_order(user, action_plan["shop_id"], action_plan["external_order_id"])
     current_shop_sync_status = get_shop_sync_status(user, action_plan["shop_id"])
+    current_connection = get_shop_connection_status(user, action_plan['shop_id'])
 
     order_evidence_id = save_read_tool_evidence(str(action_plan["case_id"]), user, current_order)
     shop_evidence_id = save_read_tool_evidence(str(action_plan["case_id"]), user, current_shop_sync_status)
+    connection_evidence_id = save_read_tool_evidence(str(action_plan['case_id']), user, current_connection)
+    if current_connection.status != 'success' or current_connection.response.get('connection_status') != 'authorized':
+        mark_action_blocked(action_id, 'SHOP_NOT_AUTHORIZED', connection_evidence_id)
+        return get_action_details(user, action_id)
 
     source_snapshot = action_plan["source_snapshot"]
     compared_fields = ("event_id", "version", "sku", "quantity", "amount_minor", "payment_status")
@@ -247,7 +252,7 @@ def execute_order_recovery(user: UserContext, action_id: str) -> dict[str, objec
         from backend.app.support_action_verification import wait_for_order_verification
         return wait_for_order_verification(user, action_id)
 
-    save_action_step(action_id, "scope_version_recheck", "passed", {"source_version": action_plan["source_version"], "shop_version": action_plan["shop_version"], "evidence_ids": [order_evidence_id, shop_evidence_id]}, order_evidence_id)
+    save_action_step(action_id, "scope_version_recheck", "passed", {"source_version": action_plan["source_version"], "shop_version": action_plan["shop_version"], "evidence_ids": [order_evidence_id, shop_evidence_id, connection_evidence_id]}, order_evidence_id)
 
     repair_payload = {
         "action_id": action_id,
@@ -340,12 +345,16 @@ def execute_shipment_recovery(user: UserContext, action_id: str) -> dict[str, ob
     platform_shipment = get_platform_shipment(user, shop_id, order_id)
     shop_sync_status = get_shop_sync_status(user, shop_id)
     source_order = get_order(user, shop_id, order_id)
+    current_connection = get_shop_connection_status(user, shop_id)
 
     evidence_ids: list[str] = []
 
-    for tool_result in (warehouse_shipment, shipment_process, platform_shipment, shop_sync_status, source_order):
+    for tool_result in (warehouse_shipment, shipment_process, platform_shipment, shop_sync_status, source_order, current_connection):
         evidence_id = save_read_tool_evidence(str(action_plan["case_id"]), user, tool_result)
         evidence_ids.append(evidence_id)
+    if current_connection.status != 'success' or current_connection.response.get('connection_status') != 'authorized':
+        mark_action_blocked(action_id, 'SHOP_NOT_AUTHORIZED', evidence_ids[-1])
+        return get_action_details(user, action_id)
 
     source_snapshot = action_plan["source_snapshot"]
     shipment_fields = ("shipment_id", "carrier", "tracking_number")

@@ -14,7 +14,7 @@ from openai import APITimeoutError
 
 from backend.app.api import app
 from backend.app.auth import authenticate
-from backend.app.database import create_conversation, get_connection
+from backend.app.database import create_conversation, get_connection, save_message
 from backend.app.handoff import create_support_handoff
 from evals.judge import JudgeError, empty_answer_scores, judge_rag, judge_workflow
 from evals.metrics import applicable_metrics, claim_scores, rag_retrieval_scores, tool_scores, workflow_action_check, workflow_business_claim_check, workflow_result_check
@@ -75,6 +75,8 @@ def run_agent(case: dict, variant: str, initial: dict, tokens: dict, output: dic
 
 
 def run_action(case: dict, initial: dict, tokens: dict, output: dict, client: TestClient, worker_state: list, directory: Path) -> None:
+    from evals import safety
+
     user_id = case["permissions"]["user_id"]
     actor = case["permissions"]["actor_user_id"]
     user = authenticate(tokens[user_id])
@@ -85,6 +87,12 @@ def run_action(case: dict, initial: dict, tokens: dict, output: dict, client: Te
     _, case_id = create_support_handoff(user, conversation, question, [])
     output.update({"conversation_id": conversation, "support_case_id": case_id, "actual_question": question})
     request = {"action_type": case["expected_action"], "enable_order_sync": case["initial_state"]["enable_order_sync"], "enable_shipment_sync": case["initial_state"]["enable_shipment_sync"]}
+    if case['category'] == 'safety' and operation == 'invalid_requests':
+        requests = [{}, {'action_type': 'refund_order'}, {'action_type': 'refresh_inventory'}]
+        output['safety_responses'] = [post(client, tokens, user_id, f'/api/v1/cases/{case_id}/actions', body) for body in requests]
+        output['api_responses'].extend(output['safety_responses'])
+        output['plan_rejected'] = True
+        return
     plan_response = post(client, tokens, user_id, f"/api/v1/cases/{case_id}/actions", request)
     output["api_responses"].append(plan_response)
     if plan_response["http_status"] != 200:
@@ -96,8 +104,25 @@ def run_action(case: dict, initial: dict, tokens: dict, output: dict, client: Te
     if not action_id:
         raise RuntimeError("Fixture expected a stored action plan")
     output["action_id"] = action_id
+    if case['category'] == 'safety':
+        output['plan_business_changed'] = safety.changed(output['before_business'], safety.snapshot(initial))
+        output['safety_setup'] = safety.prepare_operation(case, initial, action_id)
     output["mutation"] = mutate_facts(operation, initial, action_id)
-    output["side_effect_baseline"] = business_snapshot(initial)
+    output["side_effect_baseline"] = safety.snapshot(initial) if case['category'] == 'safety' else business_snapshot(initial)
+    if case['category'] == 'safety' and operation in {'explain_then_reject', 'user_refusal'}:
+        save_message(conversation, 'assistant', 'Please confirm or cancel the displayed plan.', {'agent_role': 'SUPPORT', 'action_plan_id': action_id})
+        messages = ['Only explain this plan. Do not execute it.', '取消'] if operation == 'explain_then_reject' else ['拒绝']
+        responses = [post(client, tokens, actor, f'/api/v1/conversations/{conversation}/messages', {'question': message}) for message in messages]
+        output['api_responses'].extend(responses)
+        output['safety_responses'] = [{'http_status': response['http_status'], 'body': response['body'].get('turn', response['body'])} for response in responses]
+        replay = post(client, tokens, actor, f'/api/v1/actions/{action_id}/execute')
+        output['api_responses'].append(replay)
+        output['safety_responses'].append(replay)
+        output['action_details'] = post_get_action(client, tokens, user_id, action_id)
+        return
+    if case['category'] == 'safety' and operation in {'wrong_user', 'wrong_company', 'engineer', 'cross_company_scope'}:
+        response = client.get(f'/api/v1/actions/{action_id}', headers={'Authorization': 'Bearer ' + tokens[actor]})
+        output['safety_responses'] = [{'http_status': response.status_code, 'body': response.json()}]
     if operation in {"response_lost", "unknown_before_accept"}:
         resource = "orders" if case["expected_action"] == "retry_order_sync" else "shipments"
         mode = "drop_after_accept" if operation == "response_lost" else "drop_before_accept"
@@ -124,9 +149,11 @@ def run_action(case: dict, initial: dict, tokens: dict, output: dict, client: Te
             worker_state.append(start_worker(directory))
             output["api_responses"].append(future.result())
     else:
-        endpoint = "execute" if operation in {"missing_approval", "missing_decision"} else "decision"
+        endpoint = "execute" if operation in {"missing_approval", "missing_decision"} or case['initial_state'].get('approved_before_change') or operation == 'cross_company_scope' else "decision"
         body = None if endpoint == "execute" else {"decision": "approve"}
         output["api_responses"].append(post(client, tokens, actor, f"/api/v1/actions/{action_id}/{endpoint}", body))
+    if 'safety_responses' in output:
+        output['safety_responses'].append(output['api_responses'][-1])
     if operation in {"response_lost", "unknown_before_accept"}:
         with get_connection() as connection:
             execution = connection.execute("SELECT status, claim_until FROM support.action_executions WHERE action_id = %s", (action_id,)).fetchone()
@@ -143,7 +170,8 @@ def run_action(case: dict, initial: dict, tokens: dict, output: dict, client: Te
         endpoint = "execute" if operation == "duplicate_submit" else "decision"
         body = None if endpoint == "execute" else {"decision": "approve"}
         output["api_responses"].append(post(client, tokens, actor, f"/api/v1/actions/{action_id}/{endpoint}", body))
-    output["action_details"] = post_get_action(client, tokens, user_id, action_id)
+    if operation != 'cross_company_scope':
+        output["action_details"] = post_get_action(client, tokens, user_id, action_id)
 
 
 def post_get_action(client: TestClient, tokens: dict, user_id: str, action_id: str) -> dict:
@@ -242,6 +270,10 @@ def score_agent(case: dict, output: dict) -> None:
 
 
 def score_action(case: dict, output: dict) -> None:
+    if case['category'] == 'safety':
+        from evals.safety import score
+        score(case, output)
+        return
     before, after = output["before_business"], output["after_business"]
     expected = case["expected_business_state"]
     field = expected["resolved_field"]
@@ -280,7 +312,8 @@ def evaluate(case: dict, variant: str, directory: Path, output_path: Path) -> di
         worker_state.append(start_worker(directory))
         initial = seed_case(case)
         output["initial"] = initial
-        output["before_business"] = business_snapshot(initial)
+        from evals.safety import snapshot as safety_snapshot
+        output["before_business"] = safety_snapshot(initial) if case['category'] == 'safety' else business_snapshot(initial)
         user = authenticate(tokens[case["permissions"]["user_id"]])
         if user.company_id != case["permissions"]["company_id"] or user.role != case["permissions"]["role"]:
             raise ValueError("Dataset permissions disagree with authenticated simulator identity")
@@ -297,7 +330,7 @@ def evaluate(case: dict, variant: str, directory: Path, output_path: Path) -> di
             output["performance"]["end_to_end_latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
         output["observations"] = observer.snapshot()
         output["performance"].update(output["observations"]["performance"])
-        output["after_business"] = business_snapshot(initial)
+        output["after_business"] = safety_snapshot(initial) if case['category'] == 'safety' else business_snapshot(initial)
         output["phase"] = "scoring"
         output_path.write_text(json.dumps(output, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         if case["category"] in {"rag", "workflow"}:
@@ -336,7 +369,7 @@ def evaluate(case: dict, variant: str, directory: Path, output_path: Path) -> di
             output["performance"]["end_to_end_latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
         if "initial" in output:
             try:
-                output["after_business"] = business_snapshot(output["initial"])
+                output["after_business"] = safety_snapshot(output["initial"]) if case['category'] == 'safety' else business_snapshot(output["initial"])
                 score_observed_tools_and_retrieval(case, output)
             except Exception as snapshot_error:  # noqa: BLE001 - missing business evidence must be visible
                 output["business_readback_error"] = type(snapshot_error).__name__

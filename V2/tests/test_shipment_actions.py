@@ -77,6 +77,7 @@ def shipment_action_runtime(seeded_database: dict[str, str], monkeypatch: pytest
     monkeypatch.setattr("backend.app.support_action_execution.get_shipment_process_records", lambda user, shop_id, order_id: shipment_tool("GetShipmentProcessRecords", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.support_action_execution.get_platform_shipment", lambda user, shop_id, order_id: shipment_tool("GetPlatformShipment", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.support_action_execution.get_shop_sync_status", lambda user, shop_id: shipment_tool("GetShopSyncStatus", user, shop_id))
+    monkeypatch.setattr('backend.app.support_action_execution.get_shop_connection_status', lambda user, shop_id: business_tool('GetShopConnectionStatus', user, shop_id))
     monkeypatch.setattr("backend.app.support_action_execution.get_order", lambda user, shop_id, order_id: shipment_tool("GetOrder", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.support_action_execution.submit_shipment_repair", lambda payload: receive_shipment_repair(ShipmentRepairRequest(**payload), "test-service-token"))
 
@@ -147,6 +148,18 @@ def test_response_lost_after_platform_commit_reconciles_without_second_shipment(
         platform_count = connection.execute("SELECT COUNT(*) AS count FROM platform.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
         warehouse_count = connection.execute("SELECT COUNT(*) AS count FROM warehouse.shipments WHERE external_order_id = 'O-RECOVER-SHIP'").fetchone()["count"]
     assert (platform_count, warehouse_count) == (1, 1)
+
+
+def test_changed_authorization_blocks_shipment_before_submission(shipment_action_runtime: tuple[UserContext, str]) -> None:
+    user, case_id = shipment_action_runtime
+    proposed = build_shipment_action_plan(user, case_id, enable_shipment_sync=True)
+    with get_connection() as connection:
+        connection.execute("UPDATE merchant.shops SET connection_status = 'auth_expired' WHERE company_id = 'company-a' AND shop_id = 'shop-a'")
+    result = decide_action_plan(user, proposed['action_id'], 'approve')
+    assert result['status'] == 'blocked'
+    with get_connection() as connection:
+        assert connection.execute('SELECT COUNT(*) AS count FROM merchant.shipment_repair_receipts WHERE action_id = %s', (proposed['action_id'],)).fetchone()['count'] == 0
+        assert connection.execute('SELECT COUNT(*) AS count FROM support.action_executions WHERE action_id = %s', (proposed['action_id'],)).fetchone()['count'] == 0
 
 
 def test_changed_order_after_approval_blocks_shipment_recovery(shipment_action_runtime: tuple[UserContext, str]) -> None:

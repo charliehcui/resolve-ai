@@ -63,6 +63,7 @@ def action_runtime(seeded_database: dict[str, str], monkeypatch: pytest.MonkeyPa
     monkeypatch.setitem(READ_TOOL_FUNCTIONS, "GetOrderProcessRecords", lambda user, shop_id, order_id: business_tool("GetOrderProcessRecords", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.support_action_execution.get_order", lambda user, shop_id, order_id: business_tool("GetOrder", user, shop_id, order_id))
     monkeypatch.setattr("backend.app.support_action_execution.get_shop_sync_status", lambda user, shop_id: business_tool("GetShopSyncStatus", user, shop_id))
+    monkeypatch.setattr('backend.app.support_action_execution.get_shop_connection_status', lambda user, shop_id: business_tool('GetShopConnectionStatus', user, shop_id))
 
     def fake_mapping(user: UserContext, shop_id: str, platform_sku: str) -> ReadToolResult:
         with get_connection() as connection:
@@ -140,6 +141,21 @@ def test_expired_approval_and_changed_source_do_not_execute(action_runtime: dict
     with get_connection() as connection:
         count = connection.execute("SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id IN (%s, %s)", (expired["action_id"], changed["action_id"])).fetchone()["count"]
     assert count == 0
+
+
+def test_changed_authorization_without_version_change_blocks_before_submission(action_runtime: dict[str, str]) -> None:
+    user = authenticate(action_runtime['token_a'])
+    case_id, _, _ = create_missing_order_case(user, 'O-AUTH-CHANGED')
+    proposed = build_order_action_plan(user, case_id)
+    with get_connection() as connection:
+        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), proposed['action_id'], user.user_id))
+        connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (proposed['action_id'],))
+        connection.execute("UPDATE merchant.shops SET connection_status = 'auth_expired' WHERE company_id = %s AND shop_id = 'shop-a'", (user.company_id,))
+    result = execute_order_recovery(user, proposed['action_id'])
+    assert result['status'] == 'blocked'
+    with get_connection() as connection:
+        assert connection.execute('SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id = %s', (proposed['action_id'],)).fetchone()['count'] == 0
+        assert connection.execute('SELECT COUNT(*) AS count FROM support.action_executions WHERE action_id = %s', (proposed['action_id'],)).fetchone()['count'] == 0
 
 
 def test_persisted_approval_can_execute_after_process_restart(action_runtime: dict[str, str]) -> None:
