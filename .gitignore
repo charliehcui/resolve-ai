@@ -1,0 +1,42 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.local/
+
+# Python and test artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+cache/
+.coverage*
+coverage.xml
+htmlcov/
+
+# Local evaluation evidence, logs and databases
+reports/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Frontend and build artifacts
+node_modules/
+dist/
+build/
+coverage/
+test-results/
+playwright-report/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

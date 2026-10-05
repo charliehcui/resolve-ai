@@ -1,1 +1,0 @@
-"""ResolveAI backend application package."""
