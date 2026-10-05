@@ -72,7 +72,7 @@ Customer Agent 不读取后台业务状态。Handoff 后同一 Conversation 的 
 - 从 `.env.example` 创建且被 Git 忽略的 `V2/.env`
 - 仅在主动运行模型问答时需要可用的 OpenRouter / OpenRouter 配置
 
-模型名称和 Key 只从 `.env` 读取。`LANGSMITH_TRACING` 默认必须保持 `false`；只有以后明确批准远端追踪时才开启。不要把 `.env`、`.local/test_tokens.json`、`.local/service_tokens.json` 或任何 Secret 提交到 Git。
+模型名称和 Key 只从 `.env` 读取。正常应用可以设置 `LANGSMITH_TRACING=true`、`LANGSMITH_PROJECT=resolveai-v2`，使用 LangChain / LangGraph 原生追踪；关闭时设置 `LANGSMITH_TRACING=false`。`evals/` 入口始终关闭远端追踪，Docker 模拟服务和后台 Worker 也保持关闭，避免批量 Evaluation 或后台轮询消耗 Trace 配额。不要把 `.env`、`.local/test_tokens.json`、`.local/service_tokens.json` 或任何 Secret 提交到 Git。
 
 主要环境变量：
 
@@ -83,7 +83,7 @@ Customer Agent 不读取后台业务状态。Handoff 后同一 Conversation 的 
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Support 复杂调查 | 使用安全占位值，不调用 |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | Customer 文档向量；维度固定 1024 | 使用安全占位值，不导入文档 |
 | `RERANK_MODEL` / `RETRIEVAL_MODE` | 本地重排与检索模式 | 按 `.env.example` |
-| `LANGSMITH_TRACING` | 远端 Trace 上传 | 必须为 `false` |
+| `LANGSMITH_TRACING` | 正常应用远端 Trace 上传 | `true` 开启；`false` 关闭；`evals/` 始终关闭 |
 | `SUPPORT_MAX_*` | Support 工具、时间和错误预算 | 可选，使用代码默认值 |
 
 ## 安装与启动

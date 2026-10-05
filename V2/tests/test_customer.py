@@ -24,7 +24,7 @@ class FakeStructuredModel:
 
 def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
     model = FakeStructuredModel()
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     query_decision, _ = decide_customer_query_next_step("单子不进来", [])
     assert query_decision.rewrite_used is True
     assert model.calls == 1
@@ -32,7 +32,7 @@ def test_query_is_rewritten_at_most_once(monkeypatch) -> None:
 
 def test_legacy_question_without_version_is_clarified(monkeypatch) -> None:
     model = FakeStructuredModel()
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     query_decision, _ = decide_customer_query_next_step("旧版里的同步入口在哪里？", [])
     assert query_decision.decision == "clarify"
     assert "版本号" in query_decision.customer_message
@@ -41,7 +41,7 @@ def test_legacy_question_without_version_is_clarified(monkeypatch) -> None:
 def test_handoff_message_claims_only_the_real_role_transfer(monkeypatch) -> None:
     model = FakeStructuredModel()
     model.invoke = lambda messages: {"parsed": CustomerQueryDecision(decision="handoff", customer_message="Forwarded."), "raw": object()}
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     query_decision, _ = decide_customer_query_next_step("订单 O-1001 当前在哪里？", [])
     assert query_decision.decision == "handoff"
     assert "已转交 Support Agent" in query_decision.customer_message
@@ -51,7 +51,7 @@ def test_handoff_message_claims_only_the_real_role_transfer(monkeypatch) -> None
 def test_authenticated_company_is_never_a_product_filter(monkeypatch):
     model = FakeStructuredModel()
     model.invoke = lambda messages: {"parsed": CustomerQueryDecision(decision="search", search_query="General rules", product="tenant-test", version="2.0"), "raw": object()}
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     decision, _ = decide_customer_query_next_step("Explain tenant-test product rules", [], "tenant-test")
     assert decision.product is None and decision.version == "2.0"
 
@@ -59,7 +59,7 @@ def test_authenticated_company_is_never_a_product_filter(monkeypatch):
 def test_explicit_unknown_product_is_not_broadened(monkeypatch):
     model = FakeStructuredModel()
     model.invoke = lambda messages: {"parsed": CustomerQueryDecision(decision="search", search_query="Other product", product="unknown-product", version="3.0"), "raw": object()}
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     decision, _ = decide_customer_query_next_step("Other product", [], "tenant-test")
     assert decision.product == "unknown-product" and decision.version == "3.0"
 
@@ -77,7 +77,7 @@ def test_malformed_citation_never_reaches_uuid_database_query(monkeypatch):
 
 def test_standalone_compound_questions_preserve_the_exact_query(monkeypatch):
     model = FakeStructuredModel()
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     question = "状态变了应如何解释？之前的处理是否仍然有效？"
     decision, _ = decide_customer_query_next_step(question, [])
     assert decision.search_query == question and not decision.rewrite_used and model.calls == 1
@@ -88,7 +88,7 @@ def test_explicit_handoff_field_alias_preserves_customer_routing(monkeypatch, pa
     original = dict(payload)
     model = FakeStructuredModel()
     model.invoke = lambda messages: {"parsed": CustomerQueryDecision.model_validate(payload, strict=True), "raw": object()}
-    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda: model)
+    monkeypatch.setattr("backend.app.customer_agent.create_model", lambda **kwargs: model)
     decision, _ = decide_customer_query_next_step("查询订单 O-1001 的后台状态", [])
     assert decision.decision == "handoff"
     assert "已转交 Support Agent" in decision.customer_message

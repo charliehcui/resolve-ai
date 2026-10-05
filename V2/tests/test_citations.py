@@ -2,7 +2,7 @@ from backend.app.auth import authenticate
 from backend.app.citations import validate_claims
 from backend.app.customer_document_ingestion import import_product_documents
 from backend.app.customer_retrieval import fetch_visible_chunks
-from backend.app.models import AnswerClaim, ClaimValidationOutput, ClaimValidationResult
+from backend.app.models import AnswerClaim
 
 
 def test_forged_citation_is_removed(seeded_database: dict[str, str], fake_embeddings: None) -> None:
@@ -25,17 +25,12 @@ def test_other_company_cannot_validate_citation(seeded_database: dict[str, str],
     assert supported == []
 
 
-def test_semantically_unsupported_claim_is_removed(seeded_database: dict[str, str], fake_embeddings: None, monkeypatch) -> None:
+def test_fabricated_evidence_quote_is_removed_without_an_llm(seeded_database: dict[str, str], fake_embeddings: None) -> None:
     import_product_documents()
     user = authenticate(seeded_database["token_a"])
     chunks = fetch_visible_chunks(user)
-    claim = AnswerClaim(text="同步会自动补回所有历史订单", cited_chunk_ids=[chunks[0].chunk_id])
-
-    def unsupported(*args, **kwargs):
-        return ClaimValidationOutput(checks=[ClaimValidationResult(claim_index=0, supported=False, reason="资料没有支持全部历史订单")]), {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
-
-    monkeypatch.setattr("backend.app.citations.semantic_claim_checks", unsupported)
+    claim = AnswerClaim(text="同步会自动补回所有历史订单", cited_chunk_ids=[chunks[0].chunk_id], evidence_quote="Automatically backfill every historical order forever.")
     supported, removed, usage = validate_claims([claim], chunks, user, None)
     assert supported == []
-    assert "没有支持" in removed[0]
-    assert usage["total_tokens"] == 2
+    assert "原文锚点" in removed[0]
+    assert usage == {}

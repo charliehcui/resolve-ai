@@ -12,7 +12,7 @@ from backend.app.support_action_registry import ACTION_ALIASES, action_policy
 from backend.app.support_action_store import fields_match, get_action_details, get_evidence_ids, get_total_evidence_latency_ms, index_evidence_by_tool, save_action_step, save_read_tool_evidence
 from backend.app.support_cases import update_case
 from backend.app.support_diagnosis import CandidateAction
-from backend.app.support_evidence import load_evidence
+from backend.app.support_evidence import EvidenceRecord, load_evidence
 from backend.app.support_tools import ReadToolResult, call_read_service, execute_read_tool_batch
 
 ACTION_APPROVAL_MINUTES = 10
@@ -32,13 +32,17 @@ def reusable_plan(connection, case_id: str, key: str) -> tuple[str | None, str]:
         key = hashlib.sha256(f"{key}:{existing['action_id']}".encode()).hexdigest()
 
 
-def create_action_plan(user: UserContext, case_id: str, candidate: CandidateAction) -> dict[str, object]:
+def create_action_plan(user: UserContext, case_id: str, candidate: CandidateAction, decision_evidence: list[EvidenceRecord] | None = None) -> dict[str, object]:
     context = get_recovery_case_context(case_id, user)
     candidate_type = ACTION_ALIASES.get(candidate.action_type, candidate.action_type)
     policy = action_policy({"action_type": candidate_type})
     records = {record.evidence_id: record for record in load_evidence(case_id)}
     if not candidate.evidence_ids or not set(candidate.evidence_ids).issubset(records):
         raise ValueError("Candidate Action must cite actual Evidence from this case")
+    if decision_evidence is not None:
+        if any(record.evidence_id not in records for record in decision_evidence):
+            raise ValueError("Decision snapshot must belong to this case")
+        decision_evidence = [records[record.evidence_id] for record in decision_evidence]
     required_tools = {
         "retry_order_sync": {"GetOrder", "GetOrderProcessRecords"},
         "resend_shipment": {"GetWarehouseShipment", "GetShipmentProcessRecords", "GetPlatformShipment"},
@@ -61,9 +65,9 @@ def create_action_plan(user: UserContext, case_id: str, candidate: CandidateActi
         raise ValueError("Candidate Action lacks relevant supporting Evidence")
     builder = globals()[policy["builder"]]
     if candidate_type in {"retry_order_sync", "retry_failed_task", "resend_shipment"}:
-        details = builder(user, case_id, action_type=candidate_type)
+        details = builder(user, case_id, action_type=candidate_type, decision_evidence=decision_evidence)
     else:
-        details = builder(user, case_id)
+        details = builder(user, case_id, decision_evidence=decision_evidence)
     if details.get("action_id"):
         save_action_step(str(details["action_id"]), "candidate_validation", "passed", candidate.model_dump())
     return details
@@ -76,14 +80,29 @@ def inventory_snapshot(facts: dict[str, object]) -> dict[str, object]:
     return {"warehouse_sku": rule.get("warehouse_sku"), "rule_version": rule.get("rule_version"), "safety_stock": rule.get("safety_stock"), "warehouse_version": warehouse.get("version"), "physical_quantity": warehouse.get("physical_quantity"), "reserved_quantity": warehouse.get("reserved_quantity"), "expected_quantity": facts.get("expected_quantity")}
 
 
-def build_inventory_action_plan(user: UserContext, case_id: str) -> dict[str, object]:
+def decision_reads(case_id: str, user: UserContext, calls: list[dict[str, object]], shop_id: str, order_id: str, sku: str = "", decision_evidence: list[EvidenceRecord] | None = None) -> list[EvidenceRecord]:
+    # 只复用调用方显式传入的本次决策证据；独立请求、审批后或验证阶段默认重新读取。
+    reused = []
+    missing = []
+    for call in calls:
+        record = next((record for record in reversed(decision_evidence or []) if record.tool_name == call["name"] and record.request == call["args"] and record.source_service != "support"), None)
+        if record is None:
+            missing.append(call)
+        else:
+            reused.append(record)
+    if missing:
+        reused.extend(execute_read_tool_batch(case_id, user, missing, shop_id, order_id, sku))
+    return reused
+
+
+def build_inventory_action_plan(user: UserContext, case_id: str, decision_evidence: list[EvidenceRecord] | None = None) -> dict[str, object]:
     context = get_recovery_case_context(case_id, user)
     shop_id = str(context["known_shop_id"])
     sku = context["known_sku"]
     if not sku:
         raise ValueError("Inventory refresh requires a known SKU")
     calls = [{"name": "GetStockStatus", "args": {"shop_id": shop_id, "sku": sku}}, {"name": "GetShopSyncStatus", "args": {"shop_id": shop_id}}, {"name": "GetShopConnectionStatus", "args": {"shop_id": shop_id}}]
-    evidence = execute_read_tool_batch(case_id, user, calls, shop_id, "", str(sku))
+    evidence = decision_reads(case_id, user, calls, shop_id, "", str(sku), decision_evidence)
     indexed = index_evidence_by_tool(evidence)
     stock = indexed["GetStockStatus"]
     connection = indexed["GetShopConnectionStatus"]
@@ -115,10 +134,10 @@ def build_inventory_action_plan(user: UserContext, case_id: str) -> dict[str, ob
     return get_action_details(user, action_id)
 
 
-def build_reauthorization_action(user: UserContext, case_id: str) -> dict[str, object]:
+def build_reauthorization_action(user: UserContext, case_id: str, decision_evidence: list[EvidenceRecord] | None = None) -> dict[str, object]:
     context = get_recovery_case_context(case_id, user)
     shop_id = str(context["known_shop_id"])
-    evidence = execute_read_tool_batch(case_id, user, [{"name": "GetShopConnectionStatus", "args": {"shop_id": shop_id}}], shop_id, "")
+    evidence = decision_reads(case_id, user, [{"name": "GetShopConnectionStatus", "args": {"shop_id": shop_id}}], shop_id, "", decision_evidence=decision_evidence)
     connection = evidence[0]
     if connection.status != "success" or connection.response.get("connection_status") not in {"auth_expired", "forbidden"}:
         raise ValueError("Current shop connection does not require reauthorization")
@@ -163,7 +182,7 @@ def build_shipment_recovery_idempotency_key(company_id: str, shop_id: str, exter
 
 #判断当前订单是否适合执行“重新同步订单”
 @traceable(name="build_order_action_plan", run_type="chain")
-def build_order_action_plan(user: UserContext, case_id: str, enable_order_sync: bool = False, action_type: str = "retry_order_sync") -> dict[str, object]:
+def build_order_action_plan(user: UserContext, case_id: str, enable_order_sync: bool = False, action_type: str = "retry_order_sync", decision_evidence: list[EvidenceRecord] | None = None) -> dict[str, object]:
     case_context = get_recovery_case_context(case_id, user)
     shop_id = str(case_context["known_shop_id"])
     if not case_context["known_order_id"]:
@@ -179,7 +198,7 @@ def build_order_action_plan(user: UserContext, case_id: str, enable_order_sync: 
 
     if action_type == "retry_failed_task":
         read_tool_calls.append({"name": "GetWorkerTask", "args": {"shop_id": shop_id, "order_id": order_id}, "id": "plan-worker"})
-    evidence = execute_read_tool_batch(case_id, user, read_tool_calls, shop_id, order_id)
+    evidence = decision_reads(case_id, user, read_tool_calls, shop_id, order_id, decision_evidence=decision_evidence)
     evidence_by_tool_name = index_evidence_by_tool(evidence)
 
     source_order = evidence_by_tool_name["GetOrder"]
@@ -256,7 +275,7 @@ def build_order_action_plan(user: UserContext, case_id: str, enable_order_sync: 
 
 
 @traceable(name="build_shipment_action_plan", run_type="chain")
-def build_shipment_action_plan(user: UserContext, case_id: str, enable_shipment_sync: bool = False, action_type: str = "resend_shipment") -> dict[str, object]:
+def build_shipment_action_plan(user: UserContext, case_id: str, enable_shipment_sync: bool = False, action_type: str = "resend_shipment", decision_evidence: list[EvidenceRecord] | None = None) -> dict[str, object]:
     case_context = get_recovery_case_context(case_id, user)
     shop_id = str(case_context["known_shop_id"])
     order_id = str(case_context["known_order_id"])
@@ -270,7 +289,7 @@ def build_shipment_action_plan(user: UserContext, case_id: str, enable_shipment_
         {"name": "GetShopConnectionStatus", "args": {"shop_id": shop_id}, "id": "plan-connection"},
     ]
 
-    evidence = execute_read_tool_batch(case_id, user, read_tool_calls, shop_id, order_id)
+    evidence = decision_reads(case_id, user, read_tool_calls, shop_id, order_id, decision_evidence=decision_evidence)
     evidence_by_tool_name = index_evidence_by_tool(evidence)
 
     source_order = evidence_by_tool_name["GetOrder"]

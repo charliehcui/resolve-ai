@@ -346,3 +346,32 @@ Report: [reports/reliability/holdout/summary.md](../reports/reliability/holdout/
 
 Ground Truth erratum (not a new benchmark): the receipt-state-conflict inventory case was incorrectly labeled completed / one publication / awaiting_verification. The existing worker instead correctly blocked SOURCE_VERSION_CHANGED, produced zero effects and returned verification_failed. Original Holdout remains 4/5 (Task/Recovery 80%), including one label Evaluation Error; original automated failure categories and raw evidence are preserved. Only this canonical label and generator were corrected for future evaluation. No Agent/scorer change, rerun or rescore followed Holdout.
 Frozen run dataset SHA256: c3da1cb24f39aba8f7f040f093e532ee1c770508c5da5fbc7a3a95084e186fdd; corrected future dataset SHA256: 4cb21c8d447c8e318ceb3b10ca90ce3c2910a99d4c0ee5185c5c86f4e813ca4f.
+
+## Performance Baseline / Optimized — 2026-10-05
+
+Status: stopped with an unmet quality gate; the optimized column is the measured retained candidate, not a certified release. Baseline reused historical LangSmith evidence; final five representative application requests were fresh. No final complete 30 Development or Holdout was run.
+
+| Metric | Performance Baseline | Performance Optimized (unvalidated quality) |
+|---|---:|---:|
+| P50 | 26.241s | 12.223s |
+| P95 | 112.607s | 84.481s |
+| Tokens/request | 10868.6 | 8101.6 |
+| Actual cost/request | $0.000377265 | $0.000408396 |
+| LLM calls/request | 3.0 | 2.6 |
+
+Latest targeted + regression 6/8; Core 33/35; Unsupported 0/29; Error/Timeout 0/0. The two real omissions remain failed. The earlier interrupted attempt completed 12 cases, not a complete 30. The all-pass gate was never satisfied. P95 <=20s was not reached. Known added task cost and remaining unknown reserves are recorded in the report; provider price rose 50%, so actual cost/request increased 8.25%.
+
+Reports: [baseline](../reports/performance/baseline/summary.md), [stopped performance result](../reports/performance/optimized/summary.md), [targeted gate](../reports/performance/optimized/quality/targeted/summary.md).
+
+## Performance / Cost / Context continuation — 2026-10-05, quality gate failed
+
+Important status checkpoint, not a Final Benchmark. Three targeted repair rounds did not stabilize completeness/anchors. Continuation Generation experiments were reverted; previous Quick RAG, Support prefetch/context and same-Decision reuse work remain. No Ground Truth, retrieval, Safety/Reliability executor or evaluation scoring changes.
+
+- Last rejected candidate: run `20261005T083302Z-30c501e3`, 3/7; Core 21/28; Unsupported 0/18; Error/Timeout 0/0. Engineer-recheck, mapping-evidence, stock-version and OAuth-config failed. Results and full failed evidence are preserved. These scores do not belong to the restored entry code.
+- One earlier SLA Judge quote-validation error was reviewed offline from the saved answer; original error preserved. An incorrect engineer automatic pass was also rejected offline for missing open-ticket state. No Agent/Judge rerun for regrading, no Ground Truth edits.
+- Protection regression: 61 deterministic tests passed; no full Safety/Reliability Benchmark.
+- Quality Gate NOT PASSED. No final complete 30 Development, new five-request measurement, new application root traces, Workflow batch, provider comparison or Holdout in this continuation. One final complete 30 remains unused and blocked until stable quality/performance architecture. Historical full Development/Holdout runs above remain historical.
+- Existing five-root reference: P50/P95 15.187s/23.566s; simple RAG 8.081s, multi-source 18.400s, no-answer 9.181s, simple Support 15.187s, complex Support 24.857s; LLM 1.4/request; total tokens 5825; reasoning 416.2; actual USD/request 0.00028134288. This predates the entry's last binding edits; no final result or P95 <=20s certification.
+- Continuation confirmed added OpenRouter fee $0.0170721012. Current architecture round total known fee $0.0457216284; accounted $0.0466268124 including one earlier unknown reserve $0.000905184. Embeddings excluded; previous performance-round fees remain separate.
+
+Report: [continuation handoff](../reports/performance/optimized/summary.md). Latest rejected-candidate summaries/failures and offline adjudication: `reports/performance/optimized/quality/continuation/`. Original full indexes, failed candidate code and logs remain in `.local/quick-pipeline/`. Dataset SHA256 unchanged: `4cb21c8d447c8e318ceb3b10ca90ce3c2910a99d4c0ee5185c5c86f4e813ca4f`.

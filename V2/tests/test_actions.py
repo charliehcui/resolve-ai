@@ -213,6 +213,26 @@ def test_changed_authorization_without_version_change_blocks_before_submission(a
         assert connection.execute('SELECT COUNT(*) AS count FROM support.action_executions WHERE action_id = %s', (proposed['action_id'],)).fetchone()['count'] == 0
 
 
+def test_decision_snapshot_is_reused_but_authorization_is_fresh_before_write(action_runtime, monkeypatch):
+    from backend.app.support_action_plans import create_action_plan
+    from backend.app.support_diagnosis import CandidateAction
+    from backend.app.support_tools import execute_read_tool_batch
+    user = authenticate(action_runtime['token_a'])
+    case_id, _, _ = create_missing_order_case(user, 'O-SNAPSHOT')
+    calls = [{"name": name, "args": {"shop_id": "shop-a", "order_id": "O-SNAPSHOT"} if name in {"GetOrder", "GetOrderProcessRecords"} else {"shop_id": "shop-a"}} for name in ["GetOrder", "GetOrderProcessRecords", "GetShopSyncStatus", "GetShopConnectionStatus"]]
+    snapshot = execute_read_tool_batch(case_id, user, calls, "shop-a", "O-SNAPSHOT")
+    monkeypatch.setattr('backend.app.support_action_plans.execute_read_tool_batch', lambda *args: pytest.fail('Decision snapshot must not be re-read by the plan builder'))
+    action = create_action_plan(user, case_id, CandidateAction(action_type='retry_order_sync', reason='Current missing import', evidence_ids=[record.evidence_id for record in snapshot]), decision_evidence=snapshot)
+    assert {record.evidence_id for record in snapshot}.issubset(set(action['evidence_ids']))
+    with get_connection() as connection:
+        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), action['action_id'], user.user_id))
+        connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (action['action_id'],))
+        connection.execute("UPDATE merchant.shops SET connection_status = 'auth_expired' WHERE company_id = %s AND shop_id = 'shop-a'", (user.company_id,))
+    assert execute_order_recovery(user, action['action_id'])['status'] == 'blocked'
+    with get_connection() as connection:
+        assert connection.execute('SELECT COUNT(*) AS count FROM merchant.order_repair_receipts WHERE action_id = %s', (action['action_id'],)).fetchone()['count'] == 0
+
+
 def test_persisted_approval_can_execute_after_process_restart(action_runtime: dict[str, str]) -> None:
     user = authenticate(action_runtime["token_a"])
     case_id, _, _ = create_missing_order_case(user, "O-RESTART")

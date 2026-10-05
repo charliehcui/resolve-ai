@@ -116,10 +116,11 @@ def failure_reason(error: Exception) -> str | None:
 
 
 class OpenRouterModel:
-    def __init__(self, temperature: float, scope: str, reasoning_effort: str | None = None):
+    def __init__(self, temperature: float, scope: str, reasoning_effort: str | None = None, max_output_tokens: int | None = None):
         self.temperature = temperature
         self.scope = scope
         self.reasoning_effort = reasoning_effort
+        self.max_output_tokens = max_output_tokens
         self.callbacks = []
         self.tags = []
 
@@ -140,6 +141,8 @@ class OpenRouterModel:
         output_limit = int(os.getenv("OPENROUTER_MAX_OUTPUT_TOKENS", "4096"))
         if self.reasoning_effort == "low":
             output_limit = max(output_limit, 6144)
+        if self.max_output_tokens is not None and model != settings.openrouter_fallback_model:
+            output_limit = self.max_output_tokens
         return ChatOpenAI(model=model, api_key=settings.openrouter_api_key, base_url="https://openrouter.ai/api/v1", temperature=self.temperature, timeout=60, max_retries=0, max_tokens=output_limit, use_responses_api=False, extra_body=extra, callbacks=self.callbacks, tags=self.tags, **options)
 
     def recovery_endpoint(self, reason: str | None = None):
@@ -234,5 +237,5 @@ class OpenRouterModel:
         return RunnableLambda(invoke)
 
 
-def create_model(temperature: float = 0, max_retries: int = 0, scope: str = "application", reasoning_effort: str | None = None) -> OpenRouterModel:
-    return OpenRouterModel(temperature, scope, reasoning_effort)
+def create_model(temperature: float = 0, max_retries: int = 0, scope: str = "application", reasoning_effort: str | None = None, max_output_tokens: int | None = None) -> OpenRouterModel:
+    return OpenRouterModel(temperature, scope, reasoning_effort, max_output_tokens)

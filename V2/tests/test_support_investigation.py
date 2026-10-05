@@ -220,10 +220,28 @@ def test_attempted_identical_query_is_not_bound_again_but_other_requests_remain_
 def test_duplicate_requests_in_same_batch_execute_only_once(monkeypatch):
     call = {"name": "GetOrder", "args": {"shop_id": "shop-a", "order_id": "O-1"}}
     state = {"question": "Investigate", "handoff": {"handoff_id": "h", "conversation_id": "c", "company_id": "a", "customer_problem": "Order failed", "known_shop_id": "shop-a", "known_order_id": "O-1"}, "evidence": [], "started_at": time.perf_counter(), "usage": {}}
+    state["evidence"] = [EvidenceRecord(evidence_id="shop", sequence=1, batch_id="b", parallel=False, tool_name="GetShopSyncStatus", request={"shop_id": "shop-a"}, response={"sync_enabled": True}, source_service="merchant", status="success", latency_ms=1).model_dump()]
     monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: (SupportNextStep(next_step="use_tool", tool_calls=[call, call]), {}))
     result = decide_support_next_step_node(state)
     assert len(result["tool_calls"]) == 1
     assert result["tool_calls"][0]["args"] == call["args"]
+
+
+def test_known_order_primary_snapshot_does_not_call_a_planner(monkeypatch):
+    state = {"question": "Investigate", "handoff": {"handoff_id": "h", "conversation_id": "c", "company_id": "a", "customer_problem": "Order failed", "known_shop_id": "shop-a", "known_order_id": "O-1"}, "evidence": [], "started_at": time.perf_counter(), "usage": {}}
+    monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda *args: pytest.fail("Known primary reads need no LLM planner"))
+    result = decide_support_next_step_node(state)
+    assert {call["name"] for call in result["tool_calls"]} == {"GetOrder", "GetOrderProcessRecords"}
+    assert all(call["args"] == {"shop_id": "shop-a", "order_id": "O-1"} for call in result["tool_calls"])
+
+
+def test_second_model_call_cannot_open_another_tool_round(monkeypatch):
+    seen = []
+    state = {"question": "Investigate", "handoff": {"handoff_id": "h", "conversation_id": "c", "company_id": "a", "customer_problem": "Order failed", "known_shop_id": "shop-a", "known_order_id": "O-1"}, "evidence": [], "started_at": time.perf_counter(), "usage": {}, "llm_calls": 1}
+    state["evidence"] = [EvidenceRecord(evidence_id="source", sequence=1, batch_id="b", parallel=False, tool_name="GetOrder", request={"shop_id": "shop-a", "order_id": "O-1"}, response={}, source_service="platform", status="success", latency_ms=1).model_dump()]
+    monkeypatch.setattr("backend.app.support_workflow.decide_support_next_step", lambda question, handoff, evidence, remaining: (seen.append(remaining) or SupportNextStep(next_step="finish", investigation_complete=InvestigationComplete(summary="Insufficient evidence", confirmed_facts=[])), {}))
+    result = decide_support_next_step_node(state)
+    assert seen == [0] and result["llm_calls"] == 2 and not result["tool_calls"]
 
 
 @pytest.mark.parametrize("order,sku,required,excluded", [("O-1", None, "GetOrderProcessRecords", "GetStockStatus"), (None, "SKU-1", "GetStockStatus", "GetWorkerTask")])

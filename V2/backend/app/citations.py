@@ -2,16 +2,15 @@ import json
 import logging
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langsmith import traceable
 from openai import LengthFinishReasonError
 from pydantic import ValidationError
+from uuid import UUID
 
-from backend.app.config import PROJECT_ROOT
 from backend.app.database import get_connection
-from backend.app.models import AnswerClaim, ClaimValidationOutput, RetrievedChunk, UserContext, create_model
+from backend.app.models import AnswerClaim, RetrievedChunk, UserContext
 
-PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "citation_check.md"
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +21,7 @@ class StructuredOutputError(RuntimeError):
         self.usage = usage
 
 
+@traceable(name="structured_generation", run_type="chain", process_inputs=lambda inputs: {"stage": inputs["stage"]})
 def invoke_structured(model, schema: dict, output_type, messages: list, stage: str, expected_indices: list[int] | None = None, validate_output=None) -> tuple[object, dict, list[dict]]:
     structured_model = model.with_structured_output(schema, include_raw=True)
     events = []
@@ -72,7 +72,7 @@ def invoke_structured(model, schema: dict, output_type, messages: list, stage: s
 # 2. 属于当前公司
 # 3. 没有过期
 # 4. 如果指定 version，则版本也必须一致
-def authorized_chunk_ids(chunk_ids: list[str], user: UserContext, version: str | None) -> set[str]:
+def authorized_chunk_ids(chunk_ids: list[str], user: UserContext, version: str | None, product: str | None = None) -> set[str]:
     if not chunk_ids:
         return set()
 
@@ -83,6 +83,9 @@ def authorized_chunk_ids(chunk_ids: list[str], user: UserContext, version: str |
     if version:
         version_filter = "AND d.version = %s"
         parameters.append(version)
+    if product:
+        version_filter += " AND d.product = %s"
+        parameters.append(product)
 
     with get_connection() as connection:
         rows = connection.execute(
@@ -119,63 +122,9 @@ def usage_from_message(message: object) -> dict[str, int | None]:
     }
 
 
-# 让 LLM 判断：
-# Customer Agent 的结论，是否真的被引用资料支持
-@traceable(name="citation_claim_support", run_type="llm")
-def semantic_claim_checks(claims: list[AnswerClaim], chunks: list[RetrievedChunk], question: str = "", history: list[dict[str, object]] | None = None) -> tuple[ClaimValidationOutput, dict[str, int | None]]:
-    prompt = PROMPT_FILE.read_text(encoding="utf-8")
-
-    claim_lines = []
-
-    for index, claim in enumerate(claims):
-        cited_ids = ", ".join(claim.cited_chunk_ids)
-        claim_lines.append(f"[{index}] {claim.text} | 引用: {cited_ids} | 原文锚点: {claim.evidence_quote}")
-
-    claim_text = "\n".join(claim_lines)
-
-    needed_chunk_ids = set()
-
-    for claim in claims:
-        for chunk_id in claim.cited_chunk_ids:
-            needed_chunk_ids.add(chunk_id)
-
-    evidence_parts = []
-
-    for chunk in chunks:
-        if chunk.chunk_id in needed_chunk_ids:
-            evidence_parts.append(
-                f"[片段 {chunk.chunk_id}]\n"
-                f"{chunk.title}\n"
-                f"{chunk.content}"
-            )
-
-    evidence = "\n\n".join(evidence_parts)
-
-    model = create_model()
-
-    schema = ClaimValidationOutput.model_json_schema()
-    schema["$defs"]["ClaimValidationResult"]["properties"]["claim_index"]["enum"] = list(range(len(claims)))
-    schema["properties"]["checks"].update(minItems=len(claims), maxItems=len(claims))
-    messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(
-            content=(
-                f"用户原问题（未核实的题设）：\n{question}\n\n"
-                f"用户会话（未核实的题设）：\n{json.dumps((history or [])[-6:], ensure_ascii=False)}\n\n"
-                f"待检查结论：\n"
-                f"{claim_text}\n\n"
-                f"引用资料：\n"
-                f"{evidence}"
-            )
-        ),
-    ]
-
-    parsed_result, token_usage, _ = invoke_structured(model, schema, ClaimValidationOutput, messages, "citation_validation", list(range(len(claims))))
-    return parsed_result, token_usage
-
-
-# 完整检查每个结论
-def validate_claims(claims: list[AnswerClaim], chunks: list[RetrievedChunk], user: UserContext, version: str | None, question: str = "", history: list[dict[str, object]] | None = None) -> tuple[list[AnswerClaim], list[str], dict[str, int | None]]:
+# 只验证引用范围和真实原文锚点，不再调用语义检查模型。
+@traceable(name="citation_validation", run_type="chain")
+def validate_claims(claims: list[AnswerClaim], chunks: list[RetrievedChunk], user: UserContext, version: str | None, question: str = "", history: list[dict[str, object]] | None = None, product: str | None = None) -> tuple[list[AnswerClaim], list[str], dict[str, int | None]]:
     # 当前真正检索出来的 chunk
     retrieved_ids = set()
 
@@ -188,14 +137,14 @@ def validate_claims(claims: list[AnswerClaim], chunks: list[RetrievedChunk], use
     for claim in claims:
         for chunk_id in claim.cited_chunk_ids:
             if chunk_id in retrieved_ids:
-                requested_ids.append(chunk_id)
+                try:
+                    UUID(chunk_id)
+                    requested_ids.append(chunk_id)
+                except ValueError:
+                    pass
 
     # 去数据库检查这些引用是否合法
-    allowed_ids = authorized_chunk_ids(
-        requested_ids,
-        user,
-        version,
-    )
+    allowed_ids = authorized_chunk_ids(list(set(requested_ids)), user, version, product)
 
     scoped_claims: list[AnswerClaim] = []
     removed: list[str] = []
@@ -210,54 +159,15 @@ def validate_claims(claims: list[AnswerClaim], chunks: list[RetrievedChunk], use
             if chunk_id not in retrieved_ids or chunk_id not in allowed_ids:
                 has_invalid_citation = True
 
-        if claim.evidence_quote:
-            quote = "".join(claim.evidence_quote.split())
-            if not any(chunk.chunk_id in claim.cited_chunk_ids and quote in "".join(chunk.content.split()) for chunk in chunks):
-                # 表格可能被生成器拼成非连续原文；辅助锚点不能否决真实片段支持的事实。
-                logger.info("citation_anchor_not_verbatim")
-                claim = claim.model_copy(update={"evidence_quote": ""})
+        quote = "".join(claim.evidence_quote.split())
+        has_real_quote = bool(quote) and any(chunk.chunk_id in claim.cited_chunk_ids and quote in "".join(chunk.content.split()) for chunk in chunks)
         if has_no_citation or has_invalid_citation:
             removed.append(
                 f"{claim.text}（引用不存在、越权、过期或版本不匹配）"
             )
+        elif not has_real_quote:
+            removed.append(f"{claim.text}（缺少真实连续的原文锚点）")
         else:
             scoped_claims.append(claim)
 
-    # 如果所有结论都已经被删掉，就不用再调用 LLM
-    if not scoped_claims:
-        return [], removed, {
-            "input_tokens": None,
-            "output_tokens": None,
-            "total_tokens": None,
-        }
-
-    # 第二轮：让 LLM 检查“资料内容是否真的支持结论”
-    # Provider/格式失败是执行错误，不能伪装成所有事实无依据。
-    result, usage = semantic_claim_checks(scoped_claims, chunks, question, history)
-
-    # 把检查结果按照 claim_index 整理
-    checks = {}
-
-    for check in result.checks:
-        checks[check.claim_index] = check
-
-    supported: list[AnswerClaim] = []
-
-    # 第三轮：留下真正被资料支持的结论
-    for index, claim in enumerate(scoped_claims):
-        check = checks.get(index)
-
-        if check and check.supported:
-            supported.append(claim)
-
-        else:
-            if check:
-                reason = check.reason
-            else:
-                reason = "检查结果缺失"
-
-            removed.append(
-                f"{claim.text}（{reason}）"
-            )
-
-    return supported, removed, usage
+    return scoped_claims, removed, {}

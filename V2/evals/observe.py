@@ -75,7 +75,7 @@ class Observer(BaseCallbackHandler):
     def __enter__(self):
         from backend.app import citations, customer_agent, customer_workflow, support_action_execution, support_diagnosis, support_tools, support_workflow
 
-        for module, name in ((customer_agent, "create_model"), (citations, "create_model"), (support_diagnosis, "create_model")):
+        for module, name in ((customer_agent, "create_model"), (support_diagnosis, "create_model")):
             original = getattr(module, name)
 
             scope = "eval_support" if module is support_diagnosis else "eval_customer"
@@ -91,6 +91,7 @@ class Observer(BaseCallbackHandler):
         original_validation = customer_agent.validate_claims
 
         def observe_validation(claims, *args, **kwargs):
+            self.draft_claims = [claim.model_dump() for claim in claims]
             self.before_claims = [claim.model_dump() for claim in claims]
             self.save()
             result = original_validation(claims, *args, **kwargs)
@@ -100,17 +101,6 @@ class Observer(BaseCallbackHandler):
             return result
 
         self.stack.enter_context(patch.object(customer_agent, "validate_claims", observe_validation))
-        original_review = customer_agent.complete_answer_claims
-
-        def observe_review(question, chunks, history, claims, model):
-            self.draft_claims = [claim.model_dump() for claim in claims]
-            self.save()
-            result = original_review(question, chunks, history, claims, model)
-            self.completeness_review = result[2]
-            self.save()
-            return result
-
-        self.stack.enter_context(patch.object(customer_agent, "complete_answer_claims", observe_review))
         for module in (customer_agent, citations):
             original_structured = module.invoke_structured
 
@@ -126,15 +116,6 @@ class Observer(BaseCallbackHandler):
                     raise
 
             self.stack.enter_context(patch.object(module, "invoke_structured", observe_structured))
-        original_semantic = citations.semantic_claim_checks
-
-        def observe_semantic(*args, **kwargs):
-            result = original_semantic(*args, **kwargs)
-            self.citation_checks = result[0].model_dump()["checks"]
-            self.save()
-            return result
-
-        self.stack.enter_context(patch.object(citations, "semantic_claim_checks", observe_semantic))
         original_retrieval = customer_workflow.retrieve_customer_documents
 
         def observe_retrieval(*args, **kwargs):

@@ -368,7 +368,7 @@ def select_cases(cases: list, mode: str, category: str | None, case_ids: list[st
     return [by_id[case_id] for case_id in wanted], selected_modes
 
 
-def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "", workflow_stage: str | None = None, rag_stage: str | None = None, safety_stage: str | None = None, reliability_stage: str | None = None) -> dict:
+def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None, case_ids: list[str] | None = None, variants: list[str] | None = None, timeout: float = 180, output: Path | None = None, changes: str = "", workflow_stage: str | None = None, rag_stage: str | None = None, safety_stage: str | None = None, reliability_stage: str | None = None, record_history: bool = True) -> dict:
     cases = load_cases(suite)
     validation = validate_smoke(cases)
     if not validation["valid"]:
@@ -524,7 +524,7 @@ def run_evaluation(suite: Path, mode: str = "quick", category: str | None = None
         save_results(destination, manifest, results, directory)
         write_json(destination / "summary.json", summary)
         (destination / "summary.md").write_text(render_summary(summary, manifest), encoding="utf-8")
-        if rag_stage:
+        if rag_stage and record_history:
             from evals.rag import history_entry as rag_history_entry
             with (PROJECT_ROOT / "evals" / "BENCHMARK_HISTORY.md").open("a", encoding="utf-8") as handle:
                 handle.write(rag_history_entry(summary, manifest))

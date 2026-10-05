@@ -2,6 +2,7 @@ import json
 import re
 from uuid import uuid4
 
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from backend.app.database import get_connection
@@ -73,6 +74,7 @@ def find_attempted_steps(history: list[dict[str, object]], question: str) -> lis
     return attempted_steps
 
 #真正执行 Customer → Support 交接
+@traceable(name="customer_support_handoff", run_type="chain")
 def create_support_handoff(user: UserContext, conversation_id: str, question: str, history: list[dict[str, object]]) -> tuple[SupportHandoffRecord, str]:
     shop_id, order_id, sku = extract_support_ids(question)
     attempted_steps = find_attempted_steps(history, question)
@@ -263,4 +265,3 @@ def update_support_ids(conversation_id: str, user: UserContext, text: str) -> Su
 # ↓
 #
 # 返回 Handoff + case_id
-

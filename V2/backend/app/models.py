@@ -27,12 +27,13 @@ class Citation(BaseModel):  # 最终返回给用户的资料引用
 
 
 class AnswerClaim(BaseModel):  # AI 回答中的一个可以单独检查的结论
-    text: str = Field(description="一个可独立核查的简短中文事实；独立状态、条件、限制和下一步各自分条。题设用按题设/如果限定，不能声称已读取后台。")
-    cited_chunk_ids: list[str] = Field(description="回答实际使用的资料片段编号")
-    evidence_quote: str = Field(default="", description="从实际引用片段逐字摘取的一小段支持原文，不是改写；原文仅供内部核查，不写入最终回答。")
+    evidence_quote: str = Field(default="", description="从一个实际引用片段复制连续原文；保留标点和换行，JSON 中换行用转义字符，不用分号改写、拼接字段、加入片段编号或解释。原文仅供内部核查。")
+    cited_chunk_ids: list[str] = Field(description="evidence_quote 所在片段的完整 UUID；不能选同文件或同主题的相邻片段。")
+    text: str = Field(description="由本条原文支持的一个简短中文事实，回答对应子问题；独立状态、条件、限制和下一步各自分条。题设用按题设/如果限定，不能声称已读取后台。")
 
 
 class CustomerGeneratedClaims(BaseModel):  # Customer Agent 根据检索资料第一次生成出来的 Claims
+    subquestions: list[str] = Field(default_factory=list, description="用户真正询问的各个子问题，逐项列出后在 claims 中覆盖其结论、必要条件和下一步；不增加未询问的背景。")
     claims: list[AnswerClaim] = Field(description="仅依据提供资料生成的可核查结论，覆盖问题的各个部分。若资料不足，先说明具体缺失，再说明资料已确认的流程、可向谁确认和下一步；不要只重复限制或保证。")
 
 
@@ -64,8 +65,8 @@ class CustomerQueryDecision(BaseModel):  # Customer Agent 正式处理问题以�
     decision: Literal["search", "clarify", "handoff"]
     search_query: str = ""
     rewrite_used: bool = False
-    product: str | None = Field(default=None, description="明确指定的产品标识；公司/租户标识、错误码和版本号都不是产品。未明确指定产品时为 null")
-    version: str | None = Field(default=None, description="用户明确指定的产品版本号；未指定时为 null")
+    product: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_-]*$", description="明确指定的单个产品标识，例如 merchant-console；公司/租户标识、错误码和版本号都不是产品。未明确指定产品时为 null")
+    version: str | None = Field(default=None, pattern=r"^[0-9]+(?:\.[0-9]+)+$", description="当前请求适用的单个产品版本号，例如 2.0；不写解释、不拼多个版本，不把库存 version/source_version 或历史引用当作当前产品版本。未明确指定产品版本时为 null")
     customer_message: str = ""
 
     @model_validator(mode="before")

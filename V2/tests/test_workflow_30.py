@@ -56,7 +56,7 @@ def test_missing_receipt_creates_real_plan_path_instead_of_only_talking(monkeypa
     decision = InvestigationComplete(summary="需要人工检查未接收的订单", confirmed_facts=[ClaimWithEvidence(text="平台订单已付款", evidence_ids=["0"])])
     state = {"support_next_step": SupportNextStep(next_step="finish", investigation_complete=decision).model_dump(), "handoff": {"handoff_id": "h", "conversation_id": "c", "company_id": "a", "customer_problem": "恢复缺失订单", "known_shop_id": "shop-a", "known_order_id": "ORDER-1"}, "evidence": [record.model_dump() for record in records], "user": {"user_id": "u", "company_id": "a", "role": "staff", "name": "test"}, "case_id": "case-1"}
     calls = []
-    def create_plan(user, case_id, candidate):
+    def create_plan(user, case_id, candidate, decision_evidence=None):
         calls.append(candidate)
         return {"status": "proposed", "action_type": candidate.action_type, "approval_requirement": "user_confirmation"}
     monkeypatch.setattr("backend.app.support_workflow.create_action_plan", create_plan)

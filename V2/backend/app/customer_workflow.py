@@ -90,6 +90,7 @@ def generate_answer_node(state: CustomerWorkflowState) -> CustomerWorkflowState:
         state["history"],
         user,
         query_decision.version,
+        query_decision.product,
     )
 
     answer.usage = sum_token_usage(

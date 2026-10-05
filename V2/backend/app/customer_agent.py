@@ -2,14 +2,13 @@ import json
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langsmith import traceable
+from langsmith import trace, traceable
 
 from backend.app.citations import invoke_structured, validate_claims
 from backend.app.config import PROJECT_ROOT
-from backend.app.models import AnswerClaim, Citation, CustomerAnswer, CustomerClaimReview, CustomerGeneratedClaims, CustomerQueryDecision, RetrievedChunk, UserContext, create_model
+from backend.app.models import AnswerClaim, Citation, CustomerAnswer, CustomerGeneratedClaims, CustomerQueryDecision, RetrievedChunk, UserContext, create_model
 
 PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "customer.md"
-REVIEW_PROMPT_FILE = PROJECT_ROOT / "backend" / "prompts" / "answer_completeness.md"
 
 
 def get_token_usage(raw_message: object) -> dict[str, int | None]:
@@ -65,7 +64,7 @@ def format_customer_documents(chunks: list[RetrievedChunk]) -> str:
     document_sections: list[str] = []
 
     for chunk in chunks:
-        section = f"[片段 {chunk.chunk_id}]\n标题：{chunk.title}\n来源：{chunk.source_uri}\n版本：{chunk.version}\n内容：{chunk.content}"
+        section = f"[片段 {chunk.chunk_id}]\n{chunk.content}\n[片段结束]"
         document_sections.append(section)
 
     return "\n\n".join(document_sections)
@@ -96,8 +95,28 @@ def build_citations_from_claims(claims: list[AnswerClaim], chunks: list[Retrieve
     return citations
 
 #判断下一步是 search、clarify 还是 handoff
-@traceable(name="customer_query_next_step", run_type="llm")
+def direct_customer_query(question: str, history: list[dict[str, object]]) -> CustomerQueryDecision | None:
+    # 只有明确、独立的资料问题才绕过模型规划；真实对象、旧版和省略主语仍走原有路由。
+    if history or len(question) >= 70 or question.count("？") + question.count("?") > 1:
+        return None
+    if re.search(r"\b(?:shop|order)-[A-Za-z0-9_-]+|\bO-\d+|旧版|老版|历史版本|后台|当前状态|实时|帮我|请查|执行|转人工", question, re.IGNORECASE):
+        return None
+    if any(word in question for word in ("分别", "以及", "哪些", "条件", "如果", "能否", "区别", "比较", "和", "与", "但", "却")):
+        return None
+    if not re.search(r"规则|资料|文档|定义|含义|计算|如何|什么|是否说明|\b(?:docs?|documentation|definition|calculate)\b", question, re.IGNORECASE):
+        return None
+    versions = set(re.findall(r"(?<![\d.])\d+\.\d+(?:\.\d+)*(?![\d.])", question))
+    scope_free_question = re.sub(r"\bcompany-[A-Za-z0-9_-]+", "", question, flags=re.IGNORECASE)
+    if len(versions) > 1 or re.search(r"(?:产品|\bproduct)\s*[:：=]|\b[A-Za-z]+-[A-Za-z0-9_-]+", scope_free_question, re.IGNORECASE):
+        return None
+    return CustomerQueryDecision(decision="search", search_query=question, version=next(iter(versions), None))
+
+
+@traceable(name="customer_query_next_step", run_type="chain")
 def decide_customer_query_next_step(question: str, history: list[dict[str, object]], company_id: str | None = None) -> tuple[CustomerQueryDecision, dict[str, int | None]]:
+    direct = direct_customer_query(question, history)
+    if direct is not None:
+        return direct, {}
     recent_history = format_recent_history(history)
 
     instruction = """你是 Customer Agent 的查询规划器。只规划产品资料检索，不读取后台数据。
@@ -124,7 +143,7 @@ def decide_customer_query_next_step(question: str, history: list[dict[str, objec
         HumanMessage(content=f"最近会话：\n{recent_history}\n\n当前问题：{question}"),
     ]
 
-    model = create_model()
+    model = create_model(reasoning_effort="none", max_output_tokens=1024)
     query_decision, usage, _ = invoke_structured(model, CustomerQueryDecision.model_json_schema(), CustomerQueryDecision, messages, "query_planning")
     if company_id and query_decision.product == company_id:
         query_decision.product = None
@@ -180,43 +199,16 @@ def build_non_search_answer(query_decision: CustomerQueryDecision, usage: dict[s
         usage=usage,
     )
 
-@traceable(name="customer_answer_completeness", run_type="llm")
-def complete_answer_claims(question: str, chunks: list[RetrievedChunk], history: list[dict[str, object]], claims: list[AnswerClaim], model) -> tuple[list[AnswerClaim], dict, dict]:
-    schema = CustomerClaimReview.model_json_schema()
-    schema["$defs"]["AnswerClaim"]["properties"]["cited_chunk_ids"]["items"]["enum"] = [chunk.chunk_id for chunk in chunks]
-    schema["$defs"]["AnswerClaim"]["required"] = ["text", "cited_chunk_ids", "evidence_quote"]
-    schema["required"] = ["question_checks", "missing_answers", "remove_claim_indices", "claims"]
-    schema["properties"]["question_checks"]["minItems"] = 1
-    schema["$defs"]["CustomerQuestionCheck"]["properties"]["cited_chunk_ids"]["items"]["enum"] = [chunk.chunk_id for chunk in chunks]
-    schema["properties"]["remove_claim_indices"]["uniqueItems"] = True
-    if claims:
-        schema["properties"]["remove_claim_indices"]["items"]["enum"] = list(range(len(claims)))
-    else:
-        schema["properties"]["remove_claim_indices"]["maxItems"] = 0
-    data = {"question": question, "recent_history": format_recent_history(history), "retrieved_context": format_customer_documents(chunks), "draft_claims": [{"index": index, **claim.model_dump()} for index, claim in enumerate(claims)]}
-    messages = [SystemMessage(content=REVIEW_PROMPT_FILE.read_text(encoding="utf-8")), HumanMessage(content=json.dumps(data, ensure_ascii=False))]
-    def validate_review(review):
-        if not review.question_checks:
-            raise ValueError("Completeness review must check the requested subquestions")
-        if len(set(review.remove_claim_indices)) != len(review.remove_claim_indices) or any(index not in range(len(claims)) for index in review.remove_claim_indices):
-            raise ValueError("Completeness review used an invalid draft index")
-        chunk_ids = {chunk.chunk_id for chunk in chunks}
-        for check in review.question_checks:
-            if any(identifier not in chunk_ids for identifier in check.cited_chunk_ids) or any(index not in range(len(claims)) for index in check.draft_claim_indices):
-                raise ValueError("Completeness check used an invalid draft or source reference")
-        if any(not claim.cited_chunk_ids or any(identifier not in chunk_ids for identifier in claim.cited_chunk_ids) for claim in review.claims):
-            raise ValueError("Completeness additions require actual retrieved chunk IDs")
-    review, usage, _ = invoke_structured(model, schema, CustomerClaimReview, messages, "answer_completeness", validate_output=validate_review)
-    completed = [claim for index, claim in enumerate(claims) if index not in review.remove_claim_indices]
-    for claim in review.claims:
-        if claim.text not in [existing.text for existing in completed]:
-            completed.append(claim)
-    return completed, usage, review.model_dump()
+def needs_query_understanding(question: str, history: list[dict[str, object]]) -> bool:
+    if history or len(question) >= 70 or question.count("？") + question.count("?") > 1:
+        return True
+    complex_terms = ("分别", "除了", "以及", "哪些", "条件", "如果", "怎么办", "是否能", "能否", "有何", "区别", "比较", "和", "与", "但", "却")
+    return any(term in question for term in complex_terms)
 
 
 #根据搜索到的资料生成回答
-@traceable(name="customer_answer_from_documents", run_type="llm")
-def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], history: list[dict[str, object]], user: UserContext, version: str | None) -> CustomerAnswer:
+@traceable(name="customer_answer_from_documents", run_type="chain")
+def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], history: list[dict[str, object]], user: UserContext, version: str | None, product: str | None = None) -> CustomerAnswer:
     if len(chunks) == 0:
         return CustomerAnswer(
             answer="当前可见产品资料不足以回答这个问题，需要交给 Support 进一步处理。",
@@ -235,18 +227,18 @@ def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], 
 
     messages = [
         SystemMessage(content=prompt),
-        HumanMessage(content=f"最近会话：\n{recent_history}\n\n可见产品资料：\n{context}\n\n当前问题：{question}"),
+        HumanMessage(content=f"可见产品资料：\n{context}\n\n最近会话：\n{recent_history}\n\n当前问题：{question}\n\n当前资料范围：company={user.company_id}, product={product or '未指定'}, version={version or '未指定'}"),
     ]
 
-    model = create_model(temperature=0)
+    model = create_model(temperature=0) if needs_query_understanding(question, history) else create_model(temperature=0, reasoning_effort="none", max_output_tokens=3072)
     schema = CustomerGeneratedClaims.model_json_schema()
     schema["$defs"]["AnswerClaim"]["properties"]["cited_chunk_ids"]["items"]["enum"] = [chunk.chunk_id for chunk in chunks]
     schema["$defs"]["AnswerClaim"]["required"] = ["text", "cited_chunk_ids", "evidence_quote"]
     schema["$defs"]["AnswerClaim"]["properties"]["evidence_quote"]["minLength"] = 1
+    schema["required"] = ["subquestions", "claims"]
     parsed, draft_usage, _ = invoke_structured(model, schema, CustomerGeneratedClaims, messages, "answer_generation")
-    reviewed_claims, review_usage, _ = complete_answer_claims(question, chunks, history, parsed.claims, create_model(temperature=0, reasoning_effort="low"))
     claims = []
-    for claim in reviewed_claims:
+    for claim in parsed.claims:
         sentences = re.findall(r".+?(?:[。！？][”’」』]*|$)", claim.text, flags=re.DOTALL)
         for sentence in sentences:
             text = sentence.strip()
@@ -254,35 +246,36 @@ def generate_answer_from_documents(question: str, chunks: list[RetrievedChunk], 
                 if text != claim.text and "按题设" in claim.text and "按题设" not in text:
                     text = "按题设，" + text
                 claims.append(claim.model_copy(update={"text": text}))
-    supported, removed, check_usage = validate_claims(claims, chunks, user, version, question, history)
+    supported, removed, check_usage = validate_claims(claims, chunks, user, version, question, history, product)
 
-    if len(supported) == 0:
+    with trace("final_composition", run_type="chain"):
+        if len(supported) == 0:
+            return CustomerAnswer(
+                answer="引用检查未能证明关键结论，当前不能给出确定答案，需要进一步支持。",
+                citations=[],
+                removed_claims=removed,
+                needs_support=True,
+                usage=draft_usage,
+            )
+
+        citations = build_citations_from_claims(supported, chunks)
+
+        answer_lines: list[str] = []
+
+        for claim in supported:
+            answer_lines.append(claim.text)
+
+        answer_text = "\n".join(answer_lines)
+        total_usage = draft_usage
+
         return CustomerAnswer(
-            answer="引用检查未能证明关键结论，当前不能给出确定答案，需要进一步支持。",
-            citations=[],
+            answer=answer_text,
+            citations=citations,
+            claims=supported,
             removed_claims=removed,
-            needs_support=True,
-            usage=sum_token_usage(draft_usage, review_usage, check_usage),
+            needs_support=False,
+            usage=total_usage,
         )
-
-    citations = build_citations_from_claims(supported, chunks)
-
-    answer_lines: list[str] = []
-
-    for claim in supported:
-        answer_lines.append(claim.text)
-
-    answer_text = "\n".join(answer_lines)
-    total_usage = sum_token_usage(draft_usage, review_usage, check_usage)
-
-    return CustomerAnswer(
-        answer=answer_text,
-        citations=citations,
-        claims=supported,
-        removed_claims=removed,
-        needs_support=False,
-        usage=total_usage,
-    )
 
 
 

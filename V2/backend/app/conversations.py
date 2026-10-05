@@ -1,5 +1,7 @@
 import time
 
+from langsmith import traceable
+
 from backend.app.auth import authorize_conversation
 from backend.app.config import get_settings
 from backend.app.customer_workflow import run_customer_workflow
@@ -14,6 +16,7 @@ from backend.app.trace import current_trace_id
 from backend.app.user_intent import is_paused
 
 
+@traceable(name="resolveai_request", run_type="chain")
 def process_conversation_message(user: UserContext, question: str, conversation_id: str | None = None, retrieval_mode: str | None = None) -> dict[str, object]:
     """Run one conversation turn for every CLI/API/UI entry point."""
     settings = get_settings()

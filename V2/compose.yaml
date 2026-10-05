@@ -35,7 +35,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       WAREHOUSE_URL: http://warehouse:8003
-      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_TRACING: "false"
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
       LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
@@ -54,7 +54,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       MERCHANT_INGEST_URL: http://merchant:8002/events/orders
-      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_TRACING: "false"
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
       LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
@@ -75,7 +75,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       MERCHANT_SHIPMENT_URL: http://merchant:8002/events/shipments
-      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_TRACING: "false"
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
       LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
@@ -97,7 +97,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       PLATFORM_URL: http://platform:8001
       WAREHOUSE_URL: http://warehouse:8003
-      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_TRACING: "false"
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-resolveai-v2}
       LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}

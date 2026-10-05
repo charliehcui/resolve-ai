@@ -178,7 +178,7 @@ def test_support_agent_binds_only_registered_query_tools(monkeypatch: pytest.Mon
         known_order_id="O-1",
     )
     support_next_step, usage = decide_support_next_step("Investigate", handoff, [], 6)
-    assert bound_tools == READ_TOOL_SCHEMAS
+    assert {tool.__name__ for tool in bound_tools} == {"GetOrder", "GetOrderProcessRecords"}
     assert {tool.__name__ for tool in bound_tools}.isdisjoint({"InvestigationComplete", "MissingInformationRequest", "HumanSupportRequired"})
     assert support_next_step.next_step == "use_tool"
     assert support_next_step.tool_calls[0]["name"] == "GetOrder"
@@ -230,7 +230,7 @@ def test_support_agent_parses_finish_data_without_control_tool(monkeypatch: pyte
         known_order_id="O-1",
     )
     support_next_step, usage = decide_support_next_step("Investigate", handoff, [], 6)
-    assert bound_tools == READ_TOOL_SCHEMAS
+    assert {tool.__name__ for tool in bound_tools} == {"GetOrder", "GetOrderProcessRecords"}
     assert support_next_step.next_step == "finish"
     assert support_next_step.investigation_complete is not None
     assert support_next_step.investigation_complete.summary == "已确认"

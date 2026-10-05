@@ -83,7 +83,7 @@ def scenario_runtime(seeded_database, monkeypatch, tmp_path):
 def scripted_model(monkeypatch, scenario, calls):
     actions = {"order_sync_failure": "retry_order_sync", "shipment_sync_failure": "resend_shipment", "inventory_mismatch": "refresh_inventory", "worker_task_stuck": "retry_failed_task", "shop_authorization_expired": "request_reauthorization"}
 
-    def model(messages):
+    def model(messages, terminal_only=False, tools=None):
         calls.append(messages)
         text = messages[-1].content
         records = json.loads(text.split("Evidence:\n", 1)[1].split("\n\nRemaining tool budget:", 1)[0])
@@ -132,13 +132,13 @@ def test_agent_recommendation_user_confirmation_execution_and_verification(scena
     assert plan["risk_level"] == "low" and plan["approval_requirement"] == "user_confirmation"
     assert plan["execution"] is None
     assert all(record.observed_at is not None for record in load_evidence(plan["case_id"]))
-    assert len(calls) == 2  # Read selection, then diagnosis + recommendation together.
+    assert len(calls) == 1  # Known identifiers select reads directly, then one diagnosis.
     vague = process_conversation_message(user, "sounds reasonable", conversation_id)
     assert vague["action_plan"]["status"] == "proposed"
     confirmed = process_conversation_message(user, "确认执行", conversation_id)
     assert confirmed["status"] == "verified_resolved"
     assert confirmed["action_plan"]["verification"]["status"] == "verified_resolved"
-    assert len(calls) == 2  # No model calls for approval, execution or verification.
+    assert len(calls) == 1  # No model calls for approval, execution or verification.
     duplicate = decide_action_plan(user, plan["action_id"], "approve")
     assert duplicate["status"] == "verified_resolved"
     assert decide_action_plan(admin, plan["action_id"], "approve")["status"] == "verified_resolved"
@@ -299,7 +299,7 @@ def test_expired_plan_can_be_rebuilt_after_fresh_investigation(scenario_runtime,
     second = process_conversation_message(user, "重新检查", conversation_id)
     assert second["status"] == "awaiting_confirmation"
     assert second["action_plan_id"] != first["action_plan_id"]
-    assert len(calls) == 4
+    assert len(calls) == 2  # Each fresh investigation needs one diagnosis.
     with get_connection() as connection:
         assert connection.execute("SELECT status FROM support.action_proposals WHERE action_id = %s", (first["action_plan_id"],)).fetchone()["status"] == "expired"
 

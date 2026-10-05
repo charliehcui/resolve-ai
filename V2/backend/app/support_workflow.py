@@ -31,7 +31,7 @@ from backend.app.support_diagnosis import (
     primary_read_tools,
 )
 from backend.app.support_evidence import EvidenceRecord, load_evidence
-from backend.app.support_tools import READ_TOOL_FUNCTIONS, create_engineer_ticket, execute_read_tool_batch
+from backend.app.support_tools import READ_TOOL_FUNCTIONS, READ_TOOL_SCHEMAS, create_engineer_ticket, execute_read_tool_batch
 from backend.app.trace import current_trace_id
 from backend.app.user_intent import action_request
 
@@ -50,6 +50,7 @@ class SupportWorkflowState(TypedDict, total=False):
     usage: dict[str, int | None]
     started_at: float
     action_plan: dict[str, object] | None
+    llm_calls: int
 
 
 ERROR_EVIDENCE_STATUSES = {"forbidden", "unavailable", "error"}
@@ -195,6 +196,7 @@ def has_confirmed_business_blocker(records: list[EvidenceRecord], handoff: Suppo
 def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflowState:
     handoff = SupportHandoffRecord.model_validate(state["handoff"])
     evidence = load_evidence_records(state.get("evidence", []))
+    question = state.get("question", handoff.customer_problem)
 
     if len(handoff.missing_fields) > 0:
         labels = "、".join(handoff.missing_fields)
@@ -206,7 +208,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             "tool_calls": [],
         }
 
-    primary = primary_read_tools(handoff, state["question"])
+    primary = primary_read_tools(handoff, question)
     scoped = {record.tool_name: record for record in evidence if record.source_service != "support" and record.request.get("shop_id") == handoff.known_shop_id and record.request.get("order_id") == handoff.known_order_id}
     source, processing = scoped.get("GetOrder"), scoped.get("GetOrderProcessRecords")
     if primary == {"GetOrder", "GetOrderProcessRecords"} and source is not None and processing is not None:
@@ -225,7 +227,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
     time_budget_reached = elapsed_ms >= MAX_INVESTIGATION_MS
 
     terminal_only = tool_budget_reached or time_budget_reached or has_confirmed_business_blocker(evidence, handoff)
-    if terminal_only and not evidence:
+    if terminal_only and (not evidence or handoff.known_order_id and not scoped):
         human_support = HumanSupportRequired(reason="调查已达到本次预算上限，当前证据已保留。")
         support_next_step = SupportNextStep(next_step="human_support", human_support=human_support)
 
@@ -251,9 +253,19 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             "tool_calls": [],
         }
 
+    if not evidence and not terminal_only and primary:
+        identifiers = {"shop_id": handoff.known_shop_id, "order_id": handoff.known_order_id, "sku": handoff.known_sku}
+        calls = []
+        for schema in READ_TOOL_SCHEMAS:
+            if schema.__name__ in primary and all(identifiers.get(field) for field in schema.model_fields):
+                calls.append({"name": schema.__name__, "args": {field: identifiers[field] for field in schema.model_fields}})
+        if len(calls) == len(primary):
+            return {"support_next_step": SupportNextStep(next_step="use_tool", tool_calls=calls).model_dump(), "tool_calls": calls}
+
     # 预算耗尽或业务阻碍已确认后，只允许一次终止诊断，不再扩展读取。
-    remaining_tool_calls = 0 if terminal_only else MAX_TOOL_CALLS - len(evidence)
-    support_next_step, usage = decide_support_next_step(state["question"], handoff, evidence, remaining_tool_calls)
+    remaining_tool_calls = 0 if terminal_only or state.get("llm_calls", 0) >= 1 else MAX_TOOL_CALLS - len(evidence)
+    support_next_step, usage = decide_support_next_step(question, handoff, evidence, remaining_tool_calls)
+    model_calls = state.get("llm_calls", 0) + 1
     total_usage = sum_token_usage(state.get("usage", {}), usage)
 
     if support_next_step.next_step == "use_tool":
@@ -271,6 +283,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
                 "support_next_step": support_next_step.model_dump(),
                 "tool_calls": [],
                 "usage": total_usage,
+                "llm_calls": model_calls,
             }
 
         if len(read_calls) > remaining_tool_calls:
@@ -281,6 +294,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
                 "support_next_step": support_next_step.model_dump(),
                 "tool_calls": [],
                 "usage": total_usage,
+                "llm_calls": model_calls,
             }
 
         previous_calls: set[tuple[str, str]] = set()
@@ -302,12 +316,13 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             previous_calls.add(tool_key)
 
         if len(new_calls) == 0:
-            if evidence:
+            if evidence and model_calls < 2:
                 # 模型只重复已有读取时，只允许一次无读取工具的终止判断。
-                support_next_step, usage = decide_support_next_step(state["question"], handoff, evidence, 0)
+                support_next_step, usage = decide_support_next_step(question, handoff, evidence, 0)
+                model_calls += 1
                 total_usage = sum_token_usage(total_usage, usage)
                 if support_next_step.next_step != "use_tool":
-                    return {"support_next_step": support_next_step.model_dump(), "tool_calls": [], "usage": total_usage}
+                    return {"support_next_step": support_next_step.model_dump(), "tool_calls": [], "usage": total_usage, "llm_calls": model_calls}
             human_support = HumanSupportRequired(reason="没有新的安全查询可以执行。")
             support_next_step = SupportNextStep(next_step="human_support", human_support=human_support)
 
@@ -315,6 +330,7 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
                 "support_next_step": support_next_step.model_dump(),
                 "tool_calls": [],
                 "usage": total_usage,
+                "llm_calls": model_calls,
             }
 
         support_next_step.tool_calls = new_calls
@@ -323,12 +339,14 @@ def decide_support_next_step_node(state: SupportWorkflowState) -> SupportWorkflo
             "support_next_step": support_next_step.model_dump(),
             "tool_calls": new_calls,
             "usage": total_usage,
+            "llm_calls": model_calls,
         }
 
     return {
         "support_next_step": support_next_step.model_dump(),
         "tool_calls": [],
         "usage": total_usage,
+        "llm_calls": model_calls,
     }
 
 
@@ -413,7 +431,7 @@ def build_investigation_answer_node(state: SupportWorkflowState) -> SupportWorkf
         return {"answer": answer, "status": status, "action_plan": None}
     user = UserContext.model_validate(state["user"])
     try:
-        plan = create_action_plan(user, state["case_id"], diagnosis.recommended_action)
+        plan = create_action_plan(user, state["case_id"], diagnosis.recommended_action, decision_evidence=evidence)
     except ValueError as error:
         return {"answer": f"{answer}\n建议动作未通过当前事实检查：{error}。需要人工进一步确认。", "status": "pending_human", "action_plan": None}
     if plan["status"] == "user_action_required":
@@ -500,6 +518,7 @@ def run_support_workflow(question: str, user: UserContext, conversation_id: str)
             "usage": {},
             "started_at": started_at,
             "action_plan": None,
+            "llm_calls": 0,
         }
 
         workflow_config = {

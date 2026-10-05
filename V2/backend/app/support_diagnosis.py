@@ -87,7 +87,7 @@ def call_support_model(messages: list[BaseMessage], terminal_only: bool = False,
     return model_with_tools.invoke(messages)
 
 
-@traceable(name="support_next_step", run_type="llm")
+@traceable(name="support_next_step", run_type="chain")
 def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evidence: list[EvidenceRecord], remaining_calls: int) -> tuple[SupportNextStep, dict[str, int | None]]:
     prompt = get_support_prompt_path().read_text(encoding="utf-8")
 
@@ -96,7 +96,7 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
     validation_errors: list[str] = []
 
     for record in evidence:
-        item = record.model_dump()
+        item = {"evidence_id": record.evidence_id, "tool_name": record.tool_name, "request": record.request, "response": record.response, "status": record.status, "source_service": record.source_service}
         if is_read_validation_error(record):
             item["evidence_kind"] = "argument_validation_error"
             validation_errors.append(f"工具参数校验失败，后台业务状态未查询：{record.response.get('error_code')} [{record.evidence_id}]")
@@ -137,7 +137,7 @@ def decide_support_next_step(question: str, handoff: SupportHandoffRecord, evide
     if prioritized:
         available_tools = prioritized
 
-    handoff_text = json.dumps(handoff.model_dump(), ensure_ascii=False)
+    handoff_text = json.dumps({"customer_problem": handoff.customer_problem, "shop_id": handoff.known_shop_id, "order_id": handoff.known_order_id, "sku": handoff.known_sku, "attempted_steps": handoff.attempted_steps}, ensure_ascii=False)
     evidence_text = json.dumps(evidence_items, ensure_ascii=False, default=str)
     terminal_schemas = {
         "request_information": MissingInformationRequest.model_json_schema(),
