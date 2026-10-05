@@ -148,7 +148,7 @@ def acquire_action_execution(action_id: str, request_id: str) -> str:
             connection.execute("INSERT INTO support.action_executions (execution_id, action_id, request_id, status, claim_until, trace_id) VALUES (%s, %s, %s, 'claimed', %s, %s)", (str(uuid4()), action_id, request_id, execution_lease_until, current_trace_id()))
         elif execution_row["status"] == "submitted":
             return "submitted"
-        elif execution_row["status"] == "claimed" and execution_row["claim_until"] > current_time:
+        elif execution_row["status"] in {"claimed", "unknown"} and execution_row["claim_until"] > current_time:
             return "busy"
         else:
             connection.execute("UPDATE support.action_executions SET status = 'claimed', claim_until = %s, attempts = attempts + 1, error_type = NULL, trace_id = %s, updated_at = NOW() WHERE action_id = %s", (execution_lease_until, current_trace_id(), action_id))

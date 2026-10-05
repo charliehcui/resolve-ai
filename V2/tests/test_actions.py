@@ -11,11 +11,66 @@ from backend.app.models import UserContext
 from backend.app.support_action_approvals import decide_action_plan, get_action_details
 from backend.app.support_action_execution import execute_order_recovery
 from backend.app.support_action_plans import build_order_action_plan
+from backend.app.support_action_verification import wait_for_order_verification as real_wait_for_order_verification
 from backend.app.support_tools import READ_TOOL_FUNCTIONS, ReadToolResult
 from simulator.services import common
 from simulator.services.common import OrderEvent, OrderRepairRequest
 from simulator.services.merchant import receive_order_repair, store_order_event
 from simulator.services.worker import process_next_recovery_task, process_next_task
+
+
+def test_unknown_execution_keeps_live_lease_and_reuses_execution_after_expiry(action_runtime: dict[str, str]) -> None:
+    from backend.app.support_action_execution import acquire_action_execution
+
+    user = authenticate(action_runtime['token_a'])
+    case_id, _, _ = create_missing_order_case(user, 'O-UNKNOWN-LEASE')
+    action = build_order_action_plan(user, case_id)
+    action_id = action['action_id']
+    request_id = str(uuid4())
+    with get_connection() as connection:
+        connection.execute("INSERT INTO support.action_decisions (decision_id, action_id, decision, decided_by) VALUES (%s, %s, 'approved', %s)", (str(uuid4()), action_id, user.user_id))
+        connection.execute("UPDATE support.action_proposals SET status = 'approved' WHERE action_id = %s", (action_id,))
+    assert acquire_action_execution(action_id, request_id) == 'acquired'
+    with get_connection() as connection:
+        connection.execute("UPDATE support.action_executions SET status = 'unknown' WHERE action_id = %s", (action_id,))
+        original = connection.execute('SELECT execution_id, request_id, attempts FROM support.action_executions WHERE action_id = %s', (action_id,)).fetchone()
+    assert acquire_action_execution(action_id, request_id) == 'busy'
+    with get_connection() as connection:
+        unchanged = connection.execute('SELECT execution_id, request_id, attempts FROM support.action_executions WHERE action_id = %s', (action_id,)).fetchone()
+        assert unchanged == original
+        connection.execute("UPDATE support.action_executions SET claim_until = NOW() - INTERVAL '1 second' WHERE action_id = %s", (action_id,))
+    assert acquire_action_execution(action_id, request_id) == 'acquired'
+    with get_connection() as connection:
+        retried = connection.execute('SELECT execution_id, request_id, attempts FROM support.action_executions WHERE action_id = %s', (action_id,)).fetchone()
+    assert retried['execution_id'] == original['execution_id'] and retried['request_id'] == original['request_id']
+    assert retried['attempts'] == original['attempts'] + 1
+
+
+@pytest.mark.parametrize('changed_source', [False, True])
+def test_verification_deadline_preserves_pending_until_actual_worker_outcome(action_runtime: dict[str, str], monkeypatch: pytest.MonkeyPatch, changed_source: bool) -> None:
+    user = authenticate(action_runtime['token_a'])
+    case_id, event_id, _ = create_missing_order_case(user, 'O-PENDING-VERIFY')
+    action = build_order_action_plan(user, case_id)
+    action_id = action['action_id']
+    monkeypatch.setattr('backend.app.support_action_verification.wait_for_order_verification', lambda user, action_id: get_action_details(user, action_id))
+    assert decide_action_plan(user, action_id, 'approve')['status'] == 'awaiting_verification'
+
+    def actual_receipt(action: dict) -> dict:
+        with get_connection() as connection:
+            return dict(connection.execute('SELECT t.status AS task_status FROM merchant.order_repair_receipts r JOIN merchant.order_recovery_tasks t ON t.receipt_id = r.receipt_id WHERE r.action_id = %s', (action['action_id'],)).fetchone())
+
+    monkeypatch.setattr('backend.app.support_action_execution.get_existing_recovery_receipt', actual_receipt)
+    waiting = real_wait_for_order_verification(user, action_id, timeout_seconds=0)
+    assert waiting['status'] == 'awaiting_verification' and waiting['verification']['status'] == 'pending'
+    if changed_source:
+        with get_connection() as connection:
+            connection.execute("UPDATE platform.orders SET payment_status = 'cancelled', version = version + 1 WHERE event_id = %s", (event_id,))
+    process_next_recovery_task()
+    finished = real_wait_for_order_verification(user, action_id, timeout_seconds=0)
+    assert finished['status'] == ('verification_failed' if changed_source else 'verified_resolved')
+    with get_connection() as connection:
+        assert connection.execute('SELECT COUNT(*) AS count FROM merchant.orders WHERE event_id = %s', (event_id,)).fetchone()['count'] == (0 if changed_source else 1)
+        assert connection.execute('SELECT COUNT(*) AS count FROM support.action_executions WHERE action_id = %s', (action_id,)).fetchone()['count'] == 1
 
 
 def create_missing_order_case(user: UserContext, order_id: str = "O-RECOVER") -> tuple[str, str, str]:

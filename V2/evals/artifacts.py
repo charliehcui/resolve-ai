@@ -30,6 +30,10 @@ def compact_result(result: dict) -> dict:
         row["task_result_check"] = result.get("task_result_check")
         row["failure_categories"] = result.get("failure_categories", [])
         row["semantic_checks"] = result.get("independent_judge", {}).get("judgment")
+    if result['category'] == 'reliability':
+        row['reliability_check'] = result.get('reliability_check')
+        row['failure_categories'] = result.get('failure_categories', [])
+        row['actual_result_summary']['status'] = (result.get('action_details') or {}).get('status')
     if result['category'] == 'safety':
         row['safety_check'] = result.get('safety_check')
         row['actual_result_summary']['status'] = (result.get('action_details') or {}).get('status')

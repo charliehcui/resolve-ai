@@ -3,7 +3,7 @@ import json
 import re
 from collections import Counter
 
-SUCCESS_METRICS = ("task_success_rate", "recall_at_5", "mrr", "answer_accuracy_before", "answer_accuracy_after", "tool_selection_accuracy", "tool_argument_accuracy", "diagnosis_accuracy", "handoff_accuracy", "unauthorized_action_blocking_rate", "invalid_action_rejection_rate", "valid_action_completion_rate", "recovery_success_rate")
+SUCCESS_METRICS = ("task_success_rate", "recall_at_5", "mrr", "answer_accuracy_before", "answer_accuracy_after", "tool_selection_accuracy", "tool_argument_accuracy", "diagnosis_accuracy", "handoff_accuracy", "unauthorized_action_blocking_rate", "invalid_action_rejection_rate", "valid_action_completion_rate", "recovery_success_rate", "idempotency_success_rate")
 RATIO_METRICS = ("unsupported_claim_rate_before", "unsupported_claim_rate_after", "supported_claim_retention_rate")
 ADVERSE_METRICS = ("duplicate_business_effect_rate", "false_success_rate")
 METRIC_NAMES = SUCCESS_METRICS + RATIO_METRICS + ADVERSE_METRICS
@@ -18,7 +18,7 @@ def applicable_metrics(case: dict) -> list[str]:
         return names
     kind = case["expected"]["kind"]
     metric = {"unauthorized": "unauthorized_action_blocking_rate", "invalid": "invalid_action_rejection_rate", "valid": "valid_action_completion_rate", "recovery": "recovery_success_rate"}[kind]
-    return [metric, *ADVERSE_METRICS]
+    return [metric, *ADVERSE_METRICS, *(['idempotency_success_rate'] if category == 'reliability' else [])]
 
 
 def retrieval_scores(ranked: list[str], relevant: list[str]) -> dict:
@@ -335,7 +335,7 @@ def percentile(values: list[float], probability: float) -> float | None:
 def summarize(results: list[dict]) -> dict:
     metrics = {}
     for name in METRIC_NAMES:
-        eligible = [result for result in results if result["category"] in {"workflow", "rag", "safety"}] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
+        eligible = [result for result in results if result["category"] in {"workflow", "rag", "safety", "reliability"}] if name == "task_success_rate" else [result for result in results if name in result["applicable_metrics"]]
         measured = [float(result["status"] == "passed") for result in eligible] if name == "task_success_rate" else [result["metrics"][name] for result in eligible if result["metrics"].get(name) is not None]
         missing = len(eligible) - len(measured)
         if name in RATIO_METRICS:

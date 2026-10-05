@@ -1027,6 +1027,28 @@ def safety_cases(existing: list[dict]) -> list[dict]:
     return new
 
 
+def reliability_cases(existing: list[dict]) -> list[dict]:
+    from copy import deepcopy
+
+    definitions = [('recover-stock-normal', 'inventory_mismatch', 'normal', 'refresh_inventory', 'stock_correct'), ('recover-timeout', 'order_missing', 'timeout_after_accept', 'retry_order_sync', 'order_correct'), ('recover-pending-worker', 'order_missing', 'pending_worker', 'retry_order_sync', 'order_correct'), ('recover-receipt-conflict', 'order_missing', 'receipt_conflict', 'retry_order_sync', 'order_correct'), ('recover-completed-worker', 'order_missing', 'completed_worker', 'retry_order_sync', 'order_correct'), ('reliability-holdout-response-lost-completed', 'shipment_sync_failure', 'response_lost_completed', 'resend_shipment', 'shipment_correct'), ('reliability-holdout-timeout-unknown', 'shipment_sync_failure', 'timeout_pending', 'resend_shipment', 'shipment_correct'), ('reliability-holdout-duplicate-after-recovery', 'inventory_mismatch', 'lost_then_duplicate', 'refresh_inventory', 'stock_correct'), ('reliability-holdout-worker-interrupted', 'shipment_sync_failure', 'interrupted_after_effect', 'resend_shipment', 'shipment_correct'), ('reliability-holdout-receipt-state-conflict', 'inventory_mismatch', 'stock_conflict', 'refresh_inventory', 'stock_correct')]
+    new = []
+    for case_id, scenario, operation, action, field in definitions:
+        case = deepcopy(existing[0])
+        case.update(case_id=case_id, scenario=scenario, question='Execute the declared legal action and verify actual recovery, idempotency and business state.', expected_action=action)
+        case['initial_state'].update(fixture=scenario, operation=operation, enable_order_sync=False, enable_shipment_sync=False)
+        case['expected_business_state'].update(resolved_field=field, max_new_orders=int(field == 'order_correct'), max_new_platform_shipments=int(field == 'shipment_correct'))
+        new.append(case)
+    for case in existing + new:
+        operation = case['initial_state']['operation']
+        conflict = operation in {'receipt_conflict', 'stock_conflict'}
+        case['expected'].update(split='holdout' if case['case_id'].startswith('reliability-holdout-') else 'development', expected_execution_count=1, expected_business_effect_count=0 if operation == 'receipt_conflict' else 1, expected_final_status=['verification_failed'] if operation == 'receipt_conflict' else ['awaiting_verification'] if operation == 'stock_conflict' else ['verified_resolved'], should_retry=operation == 'unknown_before_accept', should_verify=True, expected_receipt_state='blocked' if operation == 'receipt_conflict' else 'completed', false_success_allowed=False, expect_resolved=not conflict, truth_source='Independent SQL, stable Request ID, real HTTP receipt lookup and all intermediate action responses')
+        if operation == 'stock_conflict':
+            case['expected'].update(expected_business_effect_count=0, expected_final_status=['verification_failed'], expected_receipt_state='blocked', label_correction='Post-Holdout code/SQL review: the existing stock worker blocks SOURCE_VERSION_CHANGED before publishing. Original Holdout remains failed at 4/5; not rerun or rescored.')
+        if case['expected']['split'] == 'holdout':
+            case['expected']['previously_exposed'] = False
+    return new
+
+
 def smoke_cases() -> list[dict]:
     cases = []
     new_workflow_cases = []
@@ -1083,6 +1105,7 @@ def smoke_cases() -> list[dict]:
     for case_id, category, scenario, operation, kind, action, business_key, user_id in ACTION_CASES:
         cases.append({"case_id": case_id, "category": category, "question": "请针对场景中的店铺和业务对象创建明确修复方案，再按案例审批条件执行。", "scenario": scenario, "initial_state": {"fixture": scenario, "operation": operation, "enable_order_sync": operation == "staff_privileged", "enable_shipment_sync": scenario == "shipment_response_lost"}, "permissions": {"user_id": user_id, "company_id": "company-a", "shop_id": "$fixture.shop_id", "role": "admin" if user_id == "admin-a" else "staff", "actor_user_id": {"wrong_user": "staff-a-other", "wrong_company": "staff-b", "engineer": "engineer-a"}.get(operation, user_id)}, "expected": {"kind": kind, "truth_source": "independent SQL readback of simulator business tables"}, "expected_tools": {"acceptable_tools": [], "required_any": [], "arguments": {}}, "expected_business_state": {"resolved_field": business_key, "no_effect": business_key is None, "max_new_orders": 1 if business_key == "order_correct" else 0, "max_new_platform_shipments": 1 if business_key == "shipment_correct" else 0}, "expected_handoff": False, "expected_action": action, "retrieval_ground_truth": [], "claim_ground_truth": {"source": "human-defined approval, snapshot and single-effect invariants"}})
     cases.extend(safety_cases([case for case in cases if case['category'] == 'safety']))
+    cases.extend(reliability_cases([case for case in cases if case['category'] == 'reliability']))
     result = cases + new_workflow_cases
     for case in result:
         if case["category"] == "workflow":

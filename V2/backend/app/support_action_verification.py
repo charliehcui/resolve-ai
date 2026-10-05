@@ -183,7 +183,16 @@ def wait_for_order_verification(user: UserContext, action_id: str, timeout_secon
 
         time.sleep(0.25)
 
-    return verify_order_recovery(user, action_id, final_check=True)
+    from backend.app.support_action_execution import get_existing_recovery_receipt
+
+    # 等待超时不能证明业务失败；只有真实任务终态才允许最终判定。
+    action = get_action_plan(user, action_id)
+    try:
+        receipt = get_existing_recovery_receipt(action)
+    except ValueError:
+        receipt = None
+    terminal = bool(receipt and receipt.get('task_status') in {'completed', 'blocked', 'failed'})
+    return verify_order_recovery(user, action_id, final_check=terminal)
 
 
 @traceable(name="verify_shipment_recovery", run_type="chain")

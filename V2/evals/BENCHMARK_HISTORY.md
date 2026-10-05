@@ -262,3 +262,87 @@ Deterministic API and SQL evidence; no LLM Judge. Persisted approval is seeded w
 Failed / Error cases:
 
 Report: [reports/safety/holdout/summary.md](../reports/safety/holdout/summary.md)
+
+## Reliability Baseline
+
+
+Run: 20261005T004129Z-f4a39b99
+Cases: 10/13; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.7692307692307693 (10.0/13) |
+| recovery_success_rate | 0.7692307692307693 (10.0/13) |
+| duplicate_business_effect_rate | 0.0 (0.0/13) |
+| false_success_rate | 0.0 (0.0/13) |
+| idempotency_success_rate | 1.0 (13.0/13) |
+
+Checks: {"failure_categories": {"Unknown State Mishandled": 1, "Valid Execution Incorrectly Failed": 2}, "missing_business_evidence_runs": 0, "metric_definition": "Recovery Success is satisfaction of the declared recovery contract, including truthful verification failure/waiting for conflicting current facts."}
+Errors: {"total_executions": 13, "completed_executions": 13, "business_failed_executions": 3, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 5191.403, "p95_latency_ms": 20200.996, "latency_measured_runs": 13, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "tool_call_count": {"mean": 16.76923076923077, "measured_runs": 13, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 3355.5256923076927, "measured_runs": 13, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Real API, PostgreSQL, receipt, queue and wire evidence. No LLM/Judge calls. Latency includes intentional timeout/lease waits and worker restarts. Worker interruption injects a committed intermediate task state; it does not kill a process inside a transaction.
+
+Failed / Error cases:
+- recover-unknown: failed: Unknown State Mishandled; recovery_success_rate did not meet smoke expectation
+- recover-pending-worker: failed: Valid Execution Incorrectly Failed; Valid Execution Incorrectly Failed: accepted unfinished work became terminal; recovery_success_rate did not meet smoke expectation
+- recover-receipt-conflict: failed: Valid Execution Incorrectly Failed: accepted unfinished work became terminal; recovery_success_rate did not meet smoke expectation
+
+Report: [reports/reliability/baseline/summary.md](../reports/reliability/baseline/summary.md)
+
+## Reliability Optimized Development
+
+
+Run: 20261005T005001Z-add057b8
+Cases: 13/13; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 1.0 (13.0/13) |
+| recovery_success_rate | 1.0 (13.0/13) |
+| duplicate_business_effect_rate | 0.0 (0.0/13) |
+| false_success_rate | 0.0 (0.0/13) |
+| idempotency_success_rate | 1.0 (13.0/13) |
+
+Checks: {"failure_categories": {}, "missing_business_evidence_runs": 0, "metric_definition": "Recovery Success is satisfaction of the declared recovery contract, including truthful verification failure/waiting for conflicting current facts."}
+Errors: {"total_executions": 13, "completed_executions": 13, "business_failed_executions": 0, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 5211.467, "p95_latency_ms": 25708.642, "latency_measured_runs": 13, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "tool_call_count": {"mean": 19.0, "measured_runs": 13, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 3758.7354615384615, "measured_runs": 13, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 13, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Real API, PostgreSQL, receipt, queue and wire evidence. No LLM/Judge calls. Latency includes intentional timeout/lease waits and worker restarts. Worker interruption injects a committed intermediate task state; it does not kill a process inside a transaction.
+
+Failed / Error cases:
+
+Report: [reports/reliability/optimized/summary.md](../reports/reliability/optimized/summary.md)
+
+Baseline -> Optimized: 10/13 -> 13/13; Task/Recovery 76.92% -> 100% (+23.08 percentage points); Duplicate/False Success 0% -> 0%; Idempotency 100% -> 100%; Error/Timeout 0 -> 0. P50/P95 5.191s/20.201s -> 5.211s/25.709s (includes deliberate recovery waits). Token 0 -> 0; Cost $0 -> $0.
+
+## Reliability Holdout
+
+
+Run: 20261005T005415Z-4065ee86
+Cases: 4/5; Error 0; Timeout 0
+
+| Metric | Value |
+|---|---:|
+| task_success_rate | 0.8 (4.0/5) |
+| recovery_success_rate | 0.8 (4.0/5) |
+| duplicate_business_effect_rate | 0.0 (0.0/5) |
+| false_success_rate | 0.0 (0.0/5) |
+| idempotency_success_rate | 1.0 (5.0/5) |
+
+Checks: {"failure_categories": {"Read-after-write Failure": 1, "Worker Recovery Failure": 1}, "missing_business_evidence_runs": 0, "metric_definition": "Recovery Success is satisfaction of the declared recovery contract, including truthful verification failure/waiting for conflicting current facts."}
+Errors: {"total_executions": 5, "completed_executions": 5, "business_failed_executions": 1, "error_executions": 0, "timeout_executions": 0, "value": 1.0, "by_failure_kind": {}, "provider_call_errors": 0}
+Performance: {"p50_latency_ms": 11597.149, "p95_latency_ms": 26683.097, "latency_measured_runs": 5, "latency_missing_runs": 0, "latency_censored_runs": 0, "llm_call_count": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "tool_call_count": {"mean": 44.6, "measured_runs": 5, "missing_runs": 0}, "input_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "output_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "llm_latency_ms": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "retrieval_latency_ms": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}, "tool_execution_latency_ms": {"mean": 7334.2304, "measured_runs": 5, "missing_runs": 0}, "total_tokens": {"mean": 0.0, "measured_runs": 5, "missing_runs": 0}}
+Cost: {"accounted_usd": 0, "actual_usd": 0, "estimated_only_usd": 0, "unknown_reserve_usd": 0, "calls": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "usage_missing_calls": 0, "fallback_count": 0, "fallback_extra_accounted_usd": 0, "fallback_extra_actual_usd": 0}
+
+Real API, PostgreSQL, receipt, queue and wire evidence. No LLM/Judge calls. Latency includes intentional timeout/lease waits and worker restarts. Worker interruption injects a committed intermediate task state; it does not kill a process inside a transaction.
+
+Failed / Error cases:
+- reliability-holdout-receipt-state-conflict: failed: Read-after-write Failure; Worker Recovery Failure; recovery_success_rate did not meet smoke expectation
+
+Report: [reports/reliability/holdout/summary.md](../reports/reliability/holdout/summary.md)
+
+Ground Truth erratum (not a new benchmark): the receipt-state-conflict inventory case was incorrectly labeled completed / one publication / awaiting_verification. The existing worker instead correctly blocked SOURCE_VERSION_CHANGED, produced zero effects and returned verification_failed. Original Holdout remains 4/5 (Task/Recovery 80%), including one label Evaluation Error; original automated failure categories and raw evidence are preserved. Only this canonical label and generator were corrected for future evaluation. No Agent/scorer change, rerun or rescore followed Holdout.
+Frozen run dataset SHA256: c3da1cb24f39aba8f7f040f093e532ee1c770508c5da5fbc7a3a95084e186fdd; corrected future dataset SHA256: 4cb21c8d447c8e318ceb3b10ca90ce3c2910a99d4c0ee5185c5c86f4e813ca4f.
