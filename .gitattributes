@@ -1,0 +1,2 @@
+# RAG 来源冻结哈希包含 CRLF 字节，各平台检出时保持相同换行符。
+docs/product/*.md text eol=crlf
