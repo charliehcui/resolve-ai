@@ -34,37 +34,93 @@ ResolveAI 面向电商 SaaS 平台的技术支持场景，通过两个 Agent 协
 
 ```mermaid
 flowchart TD
-    U["User / React / CLI"] --> API["FastAPI / Session"]
+    U["User"] --> API["FastAPI / Conversation"]
 
-    API --> CA["Customer Agent · LangGraph"]
-    CA --> Decision{"Query Decision"}
+    %% =========================
+    %% Customer Agent
+    %% =========================
+    subgraph CUSTOMER["Customer Agent"]
+        CA["Customer Agent · LangGraph"]
+        Decision{"Query Decision"}
 
-    Decision -->|"Search"| RAG["RAG Pipeline"]
-    RAG --> Search["Vector / Hybrid / Rerank"]
-    Search --> DB[("PostgreSQL + pgvector")]
-    Search --> Claims["Answer Generation / Claim Validation"]
-    Claims --> CA
+        CA --> Decision
 
-    Decision -->|"Direct Answer"| Answer["Customer Response"]
-    CA -->|"Validated Answer"| Answer
+        Decision -->|"Direct Answer"| Direct["Direct Response"]
+        Decision -->|"Search Knowledge"| Query["Query Understanding / Rewrite"]
+        Decision -->|"Business Investigation"| Handoff["Structured Handoff"]
+    end
 
-    Decision -->|"Handoff"| H["Structured Handoff"]
-    H --> SA["Support Agent · Tool Calling"]
+    API --> CA
+    Direct --> Response["Response to User"]
 
-    SA --> Tools["Read-only Business Tools"]
-    Tools --> Sim["Platform / Merchant / Worker / Warehouse"]
-    Tools --> SA
+    %% =========================
+    %% RAG
+    %% =========================
+    subgraph RAG["RAG Pipeline"]
+        Query --> Retrieval["Retrieval"]
 
-    SA --> Diagnosis["Diagnosis / Action Plan"]
-    Diagnosis --> Approval["Confirmation / Approval"]
-    Approval --> Guard["Authorization / State Validation"]
-    Guard --> Execute["Business Action"]
-    Execute --> Verify["Result Verification"]
-    Verify --> Result["Result / Engineer Ticket"]
+        Retrieval --> Vector["Vector Search"]
+        Retrieval --> Hybrid["Hybrid Search<br/>Vector + BM25 + RRF"]
+        Retrieval --> Rerank["Hybrid + Rerank"]
 
-    SA -->|"Unresolved"| Result
-    Result --> API
-    Answer --> API
+        Vector --> TopK["Top-K Documents"]
+        Hybrid --> TopK
+        Rerank --> TopK
+
+        TopK --> Generate["Answer / Claim Generation"]
+        Generate --> Validate["Citation / Scope / Evidence Validation"]
+        Validate --> RAGAnswer["Validated Answer"]
+    end
+
+    RAGAnswer --> Response
+
+    %% =========================
+    %% Support Agent
+    %% =========================
+    subgraph SUPPORT["Support Agent"]
+        Handoff --> SA["Support Agent"]
+
+        SA --> CoreTools["Deterministic Core Tool Routing"]
+        CoreTools --> ReadTools["Read-only Business Tools"]
+        ReadTools --> Evidence["Business Evidence"]
+
+        Evidence --> Diagnose["Diagnosis"]
+
+        Diagnose -->|"Need More Evidence"| ExtraTools["LLM-selected Additional Tools"]
+        ExtraTools --> ReadTools
+
+        Diagnose -->|"Missing Information"| AskUser["Ask User for Information"]
+        Diagnose -->|"Cannot Resolve"| Human["Engineer Ticket"]
+        Diagnose -->|"Investigation Complete"| Action{"Candidate Action?"}
+
+        Action -->|"No Action Needed"| SupportAnswer["Support Response"]
+        Action -->|"User Action Required"| UserAction["User Completes External Action"]
+        Action -->|"Recoverable Action"| Plan["Action Plan"]
+
+        Plan --> Approval["User Confirmation / Admin Approval"]
+        Approval --> PreCheck["Re-read Current State / Authorization"]
+        PreCheck --> Execute["Controlled Business Action"]
+        Execute --> Verify["Read-after-write Verification"]
+
+        Verify --> SupportAnswer
+    end
+
+    AskUser --> Response
+    Human --> Response
+    UserAction --> Response
+    SupportAnswer --> Response
+
+    %% =========================
+    %% Business / Data
+    %% =========================
+    KB[("PostgreSQL + pgvector<br/>Knowledge Base")] --> Retrieval
+
+    ReadTools --> Business["Platform / Merchant / Warehouse / Worker"]
+    Execute --> Business
+    Business --> Verify
+
+    Response --> API
+    API --> U
 ```
 
 **架构设计原则：LLM 负责语义理解与决策建议，确定性程序负责权限检查、业务执行及结果验证。**
@@ -80,9 +136,10 @@ flowchart TD
 使用 **LangGraph** 编排 Agent 工作流，将知识问答和业务调查拆分为两个独立职责。
 
 - Customer Agent 根据用户问题选择直接回答、RAG 检索或 Handoff。
-- Support Agent 根据已有证据动态选择工具，并在调查完成后生成诊断结论及候选操作。
+- Support Agent 优先通过确定性路由获取核心业务证据，再根据调查需要动态选择额外工具。
 - 结构化 Handoff 传递用户问题、已尝试步骤、已知业务标识和缺失信息。
 - 调查设置调用次数、执行时间和错误预算，避免无限循环。
+- 调查完成后根据证据决定直接回答、请求补充信息、建议操作或升级人工处理。
 
 ### 2. RAG 检索与回答验证
 
@@ -90,6 +147,7 @@ flowchart TD
 
 - 支持 Markdown、PDF、DOCX、XLSX 等资料导入与分块。
 - 提供 Vector、Hybrid、Hybrid + Rerank 三种检索模式。
+- Hybrid Search 结合向量检索、BM25 与 RRF 融合结果。
 - 支持公司、产品、版本及有效期等元数据过滤。
 - 结合 Query Rewrite、Retrieval Diversity 优化查询与结果覆盖。
 - 通过 Claim Validation 检查生成答案的引用范围、版本及原文支持。
@@ -100,7 +158,7 @@ flowchart TD
 
 ### 3. Tool Calling 与业务诊断
 
-Support Agent 通过动态工具调用调查后台状态，而不是仅根据用户描述猜测问题。
+Support Agent 结合确定性工具路由与动态 Tool Calling 调查后台状态，而不是仅根据用户描述猜测问题。
 
 支持的业务场景包括：
 
@@ -110,7 +168,9 @@ Support Agent 通过动态工具调用调查后台状态，而不是仅根据用
 - 店铺连接状态调查
 - 故障升级与 Engineer Ticket
 
-模型负责选择只读工具并提出候选动作；具体执行权限由业务代码控制。
+系统优先查询已知业务对象和核心状态。当现有证据不足时，由 LLM 选择额外的只读工具继续调查。
+
+诊断完成后，模型可以提出候选动作，但不能自行授予执行权限。对于需要用户重新授权等外部操作的情况，由用户完成相应步骤。
 
 ### 4. 安全执行与故障恢复
 
